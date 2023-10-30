@@ -341,6 +341,36 @@ private:
     case AlignRelaxable:
       // Ignore when the relaxation pass did not run
       break;
+    case Page64Lo20: {
+      uint64_t Target = TargetAddress + Addend;
+      uint64_t TargetPage = (Target + 0x80000000 +
+                             ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
+                            ~static_cast<uint64_t>(0xfff);
+      uint64_t PCPage = (FixupAddress - 8) & ~static_cast<uint64_t>(0xfff);
+
+      int64_t PageDelta = TargetPage - PCPage;
+
+      uint32_t RawInstr = *(little32_t *)FixupPtr;
+      uint32_t Imm51_32 = extractBits(PageDelta >> 32, /*Hi=*/19, /*Lo=*/0)
+                          << 5;
+      *(little32_t *)FixupPtr = RawInstr | Imm51_32;
+      break;
+    }
+    case Page64Hi12: {
+      uint64_t Target = TargetAddress + Addend;
+      uint64_t TargetPage = (Target + 0x80000000 +
+                             ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
+                            ~static_cast<uint64_t>(0xfff);
+      uint64_t PCPage = (FixupAddress - 12) & ~static_cast<uint64_t>(0xfff);
+
+      int64_t PageDelta = TargetPage - PCPage;
+
+      uint32_t RawInstr = *(little32_t *)FixupPtr;
+      uint32_t Imm63_52 = extractBits(PageDelta >> 32, /*Hi=*/31, /*Lo=*/20)
+                          << 10;
+      *(little32_t *)FixupPtr = RawInstr | Imm63_52;
+      break;
+    }
     default:
       return make_error<JITLinkError>(
           "In graph " + G.getName() + ", section " + B.getSection().getName() +
@@ -606,6 +636,10 @@ private:
       return Page20;
     case ELF::R_LARCH_PCALA_LO12:
       return PageOffset12;
+    case ELF::R_LARCH_PCALA64_LO20:
+      return Page64Lo20;
+    case ELF::R_LARCH_PCALA64_HI12:
+      return Page64Hi12;
     case ELF::R_LARCH_GOT_PC_HI20:
       return RequestGOTAndTransformToPage20;
     case ELF::R_LARCH_GOT_PC_LO12:
