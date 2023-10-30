@@ -194,6 +194,32 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///
   PCAddLo12,
 
+  /// The signed 20-bit delta from the fixup page to the page containing the
+  /// target. Only used for loongarch64 and when the code model is large.
+  /// Because in this case, offset is represented by 64-bit. Delta computed
+  /// here is 32 to 51 bits.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend - (Fixup & ~0xffffffff)) >> 32 : int20
+  ///
+  /// Notes:
+  ///   For LU32i_D fixups.
+  ///
+  Page64Lo20,
+
+  /// The signed 12-bit delta from the fixup page to the page containing the
+  /// target. Only used for loongarch64 and when the code model is large.
+  /// Because in this case, offset is represented by 64-bit. Delta computed
+  /// here is 52 to 63 bits.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend - (Fixup & ~0xffffffff)) >> 52 : int12
+  ///
+  /// Notes:
+  ///   For LU52i_D fixups.
+  ///
+  Page64Hi12,
+
   /// A GOT entry getter/constructor, transformed to Page20 pointing at the GOT
   /// entry for the original target.
   ///
