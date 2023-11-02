@@ -158,7 +158,8 @@ private:
     case Delta64:
       *(little64_t *)FixupPtr = TargetAddress - FixupAddress + Addend;
       break;
-    case Page20: {
+    case Page20:
+    case RequestGOTAndTransformToPage20: {
       uint64_t Target = TargetAddress + Addend;
       uint64_t TargetPage =
           (Target + (Target & 0x800)) & ~static_cast<uint64_t>(0xfff);
@@ -173,7 +174,8 @@ private:
       *(little32_t *)FixupPtr = RawInstr | Imm31_12;
       break;
     }
-    case PageOffset12: {
+    case PageOffset12:
+    case RequestGOTAndTransformToPageOffset12: {
       uint64_t TargetOffset = (TargetAddress + Addend) & 0xfff;
 
       uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
