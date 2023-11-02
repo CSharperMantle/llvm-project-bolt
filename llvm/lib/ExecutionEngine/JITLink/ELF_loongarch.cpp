@@ -341,7 +341,8 @@ private:
     case AlignRelaxable:
       // Ignore when the relaxation pass did not run
       break;
-    case Page64Lo20: {
+    case Page64Lo20:
+    case RequestGOT64AndTransformToPage64Lo20: {
       uint64_t Target = TargetAddress + Addend;
       uint64_t TargetPage = (Target + 0x80000000 +
                              ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
@@ -356,7 +357,8 @@ private:
       *(little32_t *)FixupPtr = RawInstr | Imm51_32;
       break;
     }
-    case Page64Hi12: {
+    case Page64Hi12:
+    case RequestGOT64AndTransformToPage64Hi12: {
       uint64_t Target = TargetAddress + Addend;
       uint64_t TargetPage = (Target + 0x80000000 +
                              ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
@@ -681,6 +683,10 @@ private:
       return PCAddLo12;
     case ELF::R_LARCH_GOT_PCADD_HI20:
       return RequestGOTAndTransformToPCAddHi20;
+    case ELF::R_LARCH_GOT64_PC_LO20:
+      return RequestGOT64AndTransformToPage64Lo20;
+    case ELF::R_LARCH_GOT64_PC_HI12:
+      return RequestGOT64AndTransformToPage64Hi12;
     }
 
     return make_error<JITLinkError>(

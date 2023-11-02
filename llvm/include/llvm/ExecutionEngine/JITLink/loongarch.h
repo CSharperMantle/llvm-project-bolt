@@ -412,6 +412,40 @@ enum EdgeKind_loongarch : Edge::Kind {
   /// aligned and then remove these edges from the graph.
   ///
   AlignRelaxable,
+
+  /// A GOT entry getter/constructor, transformed to Page64Lo20 pointing at
+  /// the GOT entry for the original target. Also only used for loongarch64 and
+  /// when the code model is large.
+  ///
+  /// Indicates that this edge should be transformed into a Page64Lo20
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToPage64Lo20,
+
+  /// A GOT entry getter/constructor, transformed to Page64Hi12 pointing at
+  /// the GOT entry for the original target. Also only used for loongarch64 and
+  /// when the code model is large.
+  ///
+  /// Indicates that this edge should be transformed into a Page64Hi12
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToPage64Hi12,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
@@ -499,6 +533,12 @@ public:
       break;
     case RequestGOTAndTransformToPCAddHi20:
       KindToSet = PCAddHi20;
+      break;
+    case RequestGOT64AndTransformToPage64Lo20:
+      KindToSet = Page64Lo20;
+      break;
+    case RequestGOT64AndTransformToPage64Hi12:
+      KindToSet = Page64Hi12;
       break;
     default:
       return false;
