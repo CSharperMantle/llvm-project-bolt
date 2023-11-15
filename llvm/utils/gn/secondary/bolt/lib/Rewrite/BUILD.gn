@@ -48,4 +48,8 @@ static_library("Rewrite") {
     defines += [ "X86_AVAILABLE" ]
     deps += [ "//bolt/lib/Target/X86" ]
   }
+  if (llvm_build_LoongArch) {
+    defines += [ "LOONGARCH_AVAILABLE" ]
+    deps += [ "//bolt/lib/Target/LoongArch" ]
+  }
 }

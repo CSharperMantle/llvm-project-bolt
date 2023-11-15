@@ -34,6 +34,12 @@ write_lit_config("lit_site_cfg") {
     }
     bolt_targets_to_build_string += "X86"
   }
+  if (llvm_build_LoongArch) {
+    if (bolt_targets_to_build_string != "") {
+      bolt_targets_to_build_string += " "
+    }
+    bolt_targets_to_build_string += "LoongArch"
+  }
 
   # Fully-qualified instead of relative for LIT_SITE_CFG_IN_HEADER.
   input = "//bolt/test/lit.site.cfg.py.in"

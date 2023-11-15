@@ -1,0 +1,20 @@
+static_library("LoongArch") {
+  output_name = "LLVMBOLTTargetLoongArch"
+  configs += [ "//llvm/utils/gn/build:bolt_code" ]
+  deps = [
+    "//bolt/lib/Core",
+    "//llvm/lib/MC",
+    "//llvm/lib/Support",
+    "//llvm/lib/Target/LoongArch/MCTargetDesc",
+  ]
+  sources = [
+    "LoongArchMCPlusBuilder.cpp",
+  ]
+
+  # This target reaches into the internal headers of LLVM's LoongArch library.
+  # That target doesn't expect that, so it doesn't use public_deps for
+  # tblgen-generated headers used only in internal headers (...which this
+  # target here questionably includes). So depend on the target that generates
+  # those headers here.
+  include_dirs = [ "//llvm/lib/Target/LoongArch" ]
+}

@@ -2,7 +2,7 @@ import("//llvm/lib/Target/write_target_def_file.gni")
 
 bolt_targets_to_build = []
 foreach(target, llvm_targets_to_build) {
-  if (target == "AArch64" || target == "RISCV" || target == "X86") {
+  if (target == "AArch64" || target == "RISCV" || target == "X86" || target == "LoongArch") {
     bolt_targets_to_build += [ target ]
   }
 }
