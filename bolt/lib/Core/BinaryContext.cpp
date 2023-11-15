@@ -203,6 +203,10 @@ Expected<std::unique_ptr<BinaryContext>> BinaryContext::createBinaryContext(
     FeaturesStr = Features->getString();
     break;
   }
+  case llvm::Triple::loongarch64:
+    ArchName = "loongarch64";
+    FeaturesStr = "+64bit,+d,+f,+ual"; // TODO: Add more features?
+    break;
   default:
     return createStringError(std::errc::not_supported,
                              "BOLT-ERROR: Unrecognized machine in ELF file");

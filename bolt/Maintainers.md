@@ -32,6 +32,11 @@ aaupov@meta.com (email), [aaupov](https://github.com/aaupov) (GitHub)
 Maksim Panchenko
 maks@meta.com (email), [maksfb](https://github.com/maksfb) (GitHub)
 
+### LoongArch Backend
+
+Zhao Qi
+zhaoqi01@loongson.cn (email)
+
 ### Profiling
 
 Amir Ayupov

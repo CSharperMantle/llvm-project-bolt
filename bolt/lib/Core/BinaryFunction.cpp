@@ -1468,7 +1468,7 @@ Error BinaryFunction::disassemble() {
         if (BC.isAArch64())
           handleAArch64IndirectCall(Instruction, Offset);
       }
-    } else if (BC.isRISCV()) {
+    } else if (BC.isRISCV() || BC.isLoongArch()) {
       // Check if there's a relocation associated with this instruction.
       for (auto Itr = Relocations.lower_bound(Offset),
                 ItrE = Relocations.lower_bound(Offset + Size);
