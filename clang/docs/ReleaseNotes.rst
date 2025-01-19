@@ -573,6 +573,7 @@ Bug Fixes to C++ Support
 - Fixed a crash when an immediate-invoked ``consteval`` lambda is used as an invalid initializer. (#GH185270)
 - Fixed an assertion failure when using a global destructor with a target with a non-default program address space. (#GH186484)
 
+<<<<<<< HEAD
 - Inherited constructors in ``dllexport`` classes are now exported for ABI-compatible cases, matching
   MSVC behavior. Constructors with variadic arguments or callee-cleanup parameters are not yet supported
   and produce a warning. (#GH162640)
@@ -584,6 +585,133 @@ Bug Fixes to C++ Support
 - Fixed a crash in Itanium C++ name mangling for a lambda in a local class field initializer inside a constructor/destructor. (#GH176395)
 - Fixed crashes in Itanium C++ name mangling for lambdas with trailing requires-clauses involving requires-expressions. (#GH100774) (#GH123854)
 - Fixed an invalid rejection and assertion failure while generating ``operator=`` for fields with the ``__restrict`` qualifier. (#GH37979)
+=======
+- Fixed a crash when an expression with a dependent ``__typeof__`` type is used as the operand of a unary operator. (#GH97646)
+- Fixed incorrect pack expansion of init-capture references in requires expresssions.
+- Fixed a failed assertion when checking invalid delete operator declaration. (#GH96191)
+- Fix a crash when checking destructor reference with an invalid initializer. (#GH97230)
+- Clang now correctly parses potentially declarative nested-name-specifiers in pointer-to-member declarators.
+- Fix a crash when checking the initializer of an object that was initialized
+  with a string literal. (#GH82167)
+- Fix a crash when matching template template parameters with templates which have
+  parameters of different class type. (#GH101394)
+- Clang now correctly recognizes the correct context for parameter
+  substitutions in concepts, so it doesn't incorrectly complain of missing
+  module imports in those situations. (#GH60336)
+- Fix init-capture packs having a size of one before being instantiated. (#GH63677)
+- Clang now preserves the unexpanded flag in a lambda transform used for pack expansion. (#GH56852), (#GH85667),
+  (#GH99877), (#GH122417).
+- Fixed a bug when diagnosing ambiguous explicit specializations of constrained member functions.
+- Fixed an assertion failure when selecting a function from an overload set that includes a
+  specialization of a conversion function template.
+- Correctly diagnose attempts to use a concept name in its own definition;
+  A concept name is introduced to its scope sooner to match the C++ standard. (#GH55875)
+- Properly reject defaulted relational operators with invalid types for explicit object parameters,
+  e.g., ``bool operator==(this int, const Foo&)`` (#GH100329), and rvalue reference parameters.
+- Properly reject defaulted copy/move assignment operators that have a non-reference explicit object parameter.
+- Clang now properly handles the order of attributes in `extern` blocks. (#GH101990).
+- Fixed an assertion failure by preventing null explicit object arguments from being deduced. (#GH102025).
+- Correctly check constraints of explicit instantiations of member functions. (#GH46029)
+- When performing partial ordering of function templates, clang now checks that
+  the deduction was consistent. Fixes (#GH18291).
+- Fixes to several issues in partial ordering of template template parameters, which
+  were documented in the test suite.
+- Fixed an assertion failure about a constraint of a friend function template references to a value with greater
+  template depth than the friend function template. (#GH98258)
+- Clang now rebuilds the template parameters of out-of-line declarations and specializations in the context
+  of the current instantiation in all cases.
+- Fix evaluation of the index of dependent pack indexing expressions/types specifiers (#GH105900)
+- Correctly handle subexpressions of an immediate invocation in the presence of implicit casts. (#GH105558)
+- Clang now correctly handles direct-list-initialization of a structured bindings from an array. (#GH31813)
+- Mangle placeholders for deduced types as a template-prefix, such that mangling
+  of template template parameters uses the correct production. (#GH106182)
+- Fixed an assertion failure when converting vectors to int/float with invalid expressions. (#GH105486)
+- Template parameter names are considered in the name lookup of out-of-line class template
+  specialization right before its declaration context. (#GH64082)
+- Fixed a constraint comparison bug for friend declarations. (#GH78101)
+- Fix handling of ``_`` as the name of a lambda's init capture variable. (#GH107024)
+- Fix an issue with dependent source location expressions (#GH106428), (#GH81155), (#GH80210), (#GH85373)
+- Fixed a bug in the substitution of empty pack indexing types. (#GH105903)
+- Clang no longer tries to capture non-odr used default arguments of template parameters of generic lambdas (#GH107048)
+- Fixed a bug where defaulted comparison operators would remove ``const`` from base classes. (#GH102588)
+- Fix a crash when using ``source_location`` in the trailing return type of a lambda expression. (#GH67134)
+- A follow-up fix was added for (#GH61460), as the previous fix was not entirely correct. (#GH86361), (#GH112352)
+- Fixed a crash in the typo correction of an invalid CTAD guide. (#GH107887)
+- Fixed a crash when clang tries to substitute parameter pack while retaining the parameter
+  pack. (#GH63819), (#GH107560)
+- Fix a crash when a static assert declaration has an invalid close location. (#GH108687)
+- Avoided a redundant friend declaration instantiation under a certain ``consteval`` context. (#GH107175)
+- Fixed an assertion failure in debug mode, and potential crashes in release mode, when
+  diagnosing a failed cast caused indirectly by a failed implicit conversion to the type of the constructor parameter.
+- Fixed an assertion failure by adjusting integral to boolean vector conversions (#GH108326)
+- Fixed a crash when mixture of designated and non-designated initializers in union. (#GH113855)
+- Fixed an issue deducing non-type template arguments of reference type. (#GH73460)
+- Fixed an issue in constraint evaluation, where type constraints on the lambda expression
+  containing outer unexpanded parameters were not correctly expanded. (#GH101754)
+- Fixes crashes with function template member specializations, and increases
+  conformance of explicit instantiation behaviour with MSVC. (#GH111266)
+- Fixed a bug in constraint expression comparison where the ``sizeof...`` expression was not handled properly
+  in certain friend declarations. (#GH93099)
+- Clang now instantiates the correct lambda call operator when a lambda's class type is
+  merged across modules. (#GH110401)
+- Fix a crash when parsing a pseudo destructor involving an invalid type. (#GH111460)
+- Fixed an assertion failure when invoking recovery call expressions with explicit attributes
+  and undeclared templates. (#GH107047), (#GH49093)
+- Clang no longer crashes when a lambda contains an invalid block declaration that contains an unexpanded
+  parameter pack. (#GH109148)
+- Fixed overload handling for object parameters with top-level cv-qualifiers in explicit member functions (#GH100394)
+- Fixed a bug in lambda captures where ``constexpr`` class-type objects were not properly considered ODR-used in
+  certain situations. (#GH47400), (#GH90896)
+- Fix erroneous templated array size calculation leading to crashes in generated code. (#GH41441)
+- During the lookup for a base class name, non-type names are ignored. (#GH16855)
+- Fix a crash when recovering an invalid expression involving an explicit object member conversion operator. (#GH112559)
+- Clang incorrectly considered a class with an anonymous union member to not be
+  const-default-constructible even if a union member has a default member initializer.
+  (#GH95854).
+- Fixed an assertion failure when evaluating an invalid expression in an array initializer. (#GH112140)
+- Fixed an assertion failure in range calculations for conditional throw expressions. (#GH111854)
+- Clang now correctly ignores previous partial specializations of member templates explicitly specialized for
+  an implicitly instantiated class template specialization. (#GH51051)
+- Fixed an assertion failure caused by invalid enum forward declarations. (#GH112208)
+- Name independent data members were not correctly initialized from default member initializers. (#GH114069)
+- Fixed expression transformation for ``[[assume(...)]]``, allowing using pack indexing expressions within the
+  assumption if they also occur inside of a dependent lambda. (#GH114787)
+- Lambdas now capture function types without considering top-level const qualifiers. (#GH84961)
+- Clang now uses valid deduced type locations when diagnosing functions with trailing return type
+  missing placeholder return type. (#GH78694)
+- Fixed a bug where bounds of partially expanded pack indexing expressions were checked too early. (#GH116105)
+- Fixed an assertion failure caused by using ``consteval`` in condition in consumed analyses. (#GH117385)
+- Fixed an assertion failure caused by invalid default argument substitutions in non-defining
+  friend declarations. (#GH113324)
+- Fix a crash caused by incorrect argument position in merging deduced template arguments. (#GH113659)
+- Fixed a parser crash when using pack indexing as a nested name specifier. (#GH119072)
+- Fixed a null pointer dereference issue when heuristically computing ``sizeof...(pack)`` expressions. (#GH81436)
+- Fixed an assertion failure caused by mangled names with invalid identifiers. (#GH112205)
+- Fixed an incorrect lambda scope of generic lambdas that caused Clang to crash when computing potential lambda
+  captures at the end of a full expression. (#GH115931)
+- Clang no longer rejects deleting a pointer of incomplete enumeration type. (#GH99278)
+- Fixed recognition of ``std::initializer_list`` when it's surrounded with ``extern "C++"`` and exported
+  out of a module (which is the case e.g. in MSVC's implementation of ``std`` module). (#GH118218)
+- Fixed a pack expansion issue in checking unexpanded parameter sizes. (#GH17042)
+- Fixed a bug where captured structured bindings were modifiable inside non-mutable lambda (#GH95081)
+- Passing incomplete types to ``__is_base_of`` and other builtin type traits for which the corresponding
+  standard type trait mandates a complete type is now a hard (non-sfinae-friendly) error
+  (`LWG3929 <https://wg21.link/LWG3929>`__.) (#GH121278)
+- Clang now identifies unexpanded parameter packs within the type constraint on a non-type template parameter. (#GH88866)
+- Fixed an issue while resolving type of expression indexing into a pack of values of non-dependent type (#GH121242)
+- Fixed a crash when __PRETTY_FUNCTION__ or __FUNCSIG__ (clang-cl) appears in the trailing return type of the lambda (#GH121274)
+- Fixed a crash caused by the incorrect construction of template arguments for CTAD alias guides when type
+  constraints are applied. (#GH122134)
+- Fixed canonicalization of pack indexing types - Clang did not always recognized identical pack indexing. (#GH123033)
+- Fixed a nested lambda substitution issue for constraint evaluation. (#GH123441)
+- Fixed various false diagnostics related to the use of immediate functions. (#GH123472)
+- Fix immediate escalation not propagating through inherited constructors.  (#GH112677)
+- Fixed assertions or false compiler diagnostics in the case of C++ modules for
+  lambda functions or inline friend functions defined inside templates (#GH122493).
+- Clang now rejects declaring an alias template with the same name as its template parameter. (#GH123423)
+- Correctly determine the implicit constexprness of lambdas in dependent contexts. (#GH97958) (#GH114234)
+- Implement Itanium mangling for pack indexing. (#GH112003)
+>>>>>>> ca55a3fd1ca8 ([Clang] Mangling of pack indexing type and expression for itanium)
 
 Bug Fixes to AST Handling
 ^^^^^^^^^^^^^^^^^^^^^^^^^
