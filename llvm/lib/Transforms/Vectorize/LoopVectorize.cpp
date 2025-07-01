@@ -7051,6 +7051,17 @@ VPlanPtr LoopVectorizationPlanner::tryToBuildVPlan(VPlanPtr Plan,
                    Range);
   }
 
+  // Interleave memory: for each Interleave Group we marked earlier as relevant
+  // for this VPlan, replace the Recipes widening its memory instructions with a
+  // single VPInterleaveRecipe at its insertion point.
+  RUN_VPLAN_PASS(VPlanTransforms::createInterleaveGroups, *Plan,
+                 InterleaveGroups, CM.isEpilogueAllowed());
+
+  // Convert memory recipes to strided access recipes if the strided access is
+  // legal and profitable.
+  RUN_VPLAN_PASS(VPlanTransforms::convertToStridedAccesses, *Plan, CostCtx,
+                 Range);
+
   // Ensure scalar VF plans only contain VF=1, as required by hasScalarVFOnly.
   if (Range.Start.isScalar())
     Range.End = Range.Start * 2;
@@ -7058,12 +7069,6 @@ VPlanPtr LoopVectorizationPlanner::tryToBuildVPlan(VPlanPtr Plan,
   for (ElementCount VF : Range)
     Plan->addVF(VF);
   Plan->setName("Initial VPlan");
-
-  // Interleave memory: for each Interleave Group we marked earlier as relevant
-  // for this VPlan, replace the Recipes widening its memory instructions with a
-  // single VPInterleaveRecipe at its insertion point.
-  RUN_VPLAN_PASS(VPlanTransforms::createInterleaveGroups, *Plan,
-                 InterleaveGroups, CM.isEpilogueAllowed());
 
   // Replace VPValues for known constant strides.
   RUN_VPLAN_PASS(VPlanTransforms::replaceSymbolicStrides, *Plan, PSE,
