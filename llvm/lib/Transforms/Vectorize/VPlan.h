@@ -2220,21 +2220,25 @@ protected:
 };
 
 /// A recipe to compute the pointers for widened memory accesses of \p
+/// SourceElementTy, with the \p Stride expressed in units of \p
 /// SourceElementTy. Unrolling adds an extra offset operand for unrolled parts >
 /// 0 and it produces `GEP Ptr, Offset`. The offset for unrolled part 0 is 0.
 class VPVectorPointerRecipe : public VPRecipeWithIRFlags {
   Type *SourceElementTy;
 
 public:
-  VPVectorPointerRecipe(VPValue *Ptr, Type *SourceElementTy,
+  VPVectorPointerRecipe(VPValue *Ptr, Type *SourceElementTy, VPValue *Stride,
                         GEPNoWrapFlags GEPFlags, DebugLoc DL)
-      : VPRecipeWithIRFlags(VPRecipeBase::VPVectorPointerSC, Ptr, GEPFlags, DL),
+      : VPRecipeWithIRFlags(VPRecipeBase::VPVectorPointerSC,
+                            ArrayRef<VPValue *>({Ptr, Stride}), GEPFlags, DL),
         SourceElementTy(SourceElementTy) {}
 
   VP_CLASSOF_IMPL(VPRecipeBase::VPVectorPointerSC)
 
+  VPValue *getStride() const { return getOperand(1); }
+
   VPValue *getOffset() {
-    return getNumOperands() == 2 ? getOperand(1) : nullptr;
+    return getNumOperands() > 2 ? getOperand(2) : nullptr;
   }
 
   void execute(VPTransformState &State) override;
@@ -2256,8 +2260,9 @@ public:
   }
 
   VPVectorPointerRecipe *clone() override {
-    auto *Clone = new VPVectorPointerRecipe(getOperand(0), SourceElementTy,
-                                            getGEPNoWrapFlags(), getDebugLoc());
+    auto *Clone =
+        new VPVectorPointerRecipe(getOperand(0), SourceElementTy, getStride(),
+                                  getGEPNoWrapFlags(), getDebugLoc());
     if (auto *Off = getOffset())
       Clone->addOperand(Off);
     return Clone;
@@ -3659,9 +3664,9 @@ struct VPWidenStridedLoadRecipe final : public VPWidenMemoryRecipe,
   VPWidenStridedLoadRecipe(LoadInst &Load, VPValue *Addr, VPValue *Stride,
                            VPValue *VF, VPValue *Mask,
                            const VPIRMetadata &Metadata, DebugLoc DL)
-      : VPWidenMemoryRecipe(
-            VPRecipeBase::VPWidenStridedLoadSC, Load, {Addr, Stride, VF},
-            /*Consecutive=*/false, /*Reverse=*/false, Metadata, DL),
+      : VPWidenMemoryRecipe(VPRecipeBase::VPWidenStridedLoadSC, Load,
+                            {Addr, Stride, VF},
+                            /*Consecutive=*/false, Metadata, DL),
         VPRecipeValue(this, &Load) {
     setMask(Mask);
   }
@@ -3686,7 +3691,7 @@ struct VPWidenStridedLoadRecipe final : public VPWidenMemoryRecipe,
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   /// Print the recipe.
   void printRecipe(raw_ostream &O, const Twine &Indent,
-             VPSlotTracker &SlotTracker) const override;
+                   VPSlotTracker &SlotTracker) const override;
 #endif
 
   /// Returns true if the recipe only uses the first lane of operand \p Op.
