@@ -6308,6 +6308,8 @@ public:
 
     // Merge two access paths into one.
     void mergeAccessPaths(const AccessPathSetTy *AccessPathsNew) const {
+      assert(AccessPathsNew != nullptr &&
+             "Expected the set of access paths to be non null!");
       for (auto *Path : *AccessPathsNew)
         if (!existsChain(Path))
           AccessPaths->insert(Path);
@@ -6315,6 +6317,8 @@ public:
 
     // Check if the given access paths are same.
     bool checkAccessPathsAreSame(const AccessPathSetTy *AccessPathsR) const {
+      assert(AccessPathsR != nullptr &&
+             "Expected the set of access paths to be non null!");
       bool IsSame = true;
       if (AccessPaths->size() != AccessPathsR->size())
         return false;
@@ -6328,6 +6332,10 @@ public:
 
     // Check if the chain exists in the AccessPathsSet.
     bool existsChain(const AccessPathTy *NewPath) const {
+
+      if (AccessPaths == nullptr)
+        return false;
+
       for (auto *OldPath : *AccessPaths)
         if (*OldPath == *NewPath)
           return true;
@@ -6338,6 +6346,11 @@ public:
     void dumpAccessPaths(raw_ostream &O) const {
       O << "Print all access paths found:"
         << "\n";
+
+      if (AccessPaths == nullptr) {
+        O << "Could not find any access paths!\n";
+      }
+
       for (auto *It : *AccessPaths) {
         O << "Backtrack a unique access path:\n";
         for (Value *Ins : *It) {
