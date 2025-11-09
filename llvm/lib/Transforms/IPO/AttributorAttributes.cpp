@@ -1142,7 +1142,13 @@ struct AAPointerInfoImpl
            (reachesReturn()
                 ? (" (returned:" +
                    join(map_range(ReturnedOffsets,
-                                  [](int64_t O) { return std::to_string(O); }),
+                                  [](AA::RangeTy O) {
+                                    return std::string("(") +
+                                           std::to_string(O.Offset) +
+                                           std::string(",") +
+                                           std::to_string(O.Size) +
+                                           std::string(")");
+                                  }),
                         ", ") +
                    ")")
                 : "");
@@ -1159,26 +1165,27 @@ struct AAPointerInfoImpl
   bool reachesReturn() const override {
     return !ReturnedOffsets.isUnassigned();
   }
-  void addReturnedOffsetsTo(OffsetInfo &OI) const override {
+  void addReturnedOffsetsTo(OffsetInfo &OI, Value &Origin) const override {
     if (ReturnedOffsets.isUnknown()) {
-      OI.setUnknown();
+      OI.setUnknown(Origin);
       return;
     }
 
     OffsetInfo MergedOI;
     for (auto Offset : ReturnedOffsets) {
       OffsetInfo TmpOI = OI;
-      TmpOI.addToAll(Offset);
+      TmpOI.addToAll(Offset.Offset);
       MergedOI.merge(TmpOI);
     }
     OI = std::move(MergedOI);
   }
 
-  ChangeStatus setReachesReturn(const OffsetInfo &ReachedReturnedOffsets) {
+  ChangeStatus setReachesReturn(const OffsetInfo &ReachedReturnedOffsets,
+                                Value &V) {
     if (ReturnedOffsets.isUnknown())
       return ChangeStatus::UNCHANGED;
     if (ReachedReturnedOffsets.isUnknown()) {
-      ReturnedOffsets.setUnknown();
+      ReturnedOffsets.setUnknown(V);
       return ChangeStatus::CHANGED;
     }
     if (ReturnedOffsets.merge(ReachedReturnedOffsets))
@@ -1481,7 +1488,7 @@ struct AAPointerInfoImpl
     ChangeStatus Changed = ChangeStatus::UNCHANGED;
     const auto &OtherAAImpl = static_cast<const AAPointerInfoImpl &>(OtherAA);
     bool IsByval = OtherAAImpl.getAssociatedArgument()->hasByValAttr();
-    Changed |= setReachesReturn(OtherAAImpl.ReturnedOffsets);
+    Changed |= setReachesReturn(OtherAAImpl.ReturnedOffsets, CB);
 
     // Combine the accesses bin by bin.
     const auto &State = OtherAAImpl.getState();
@@ -1824,7 +1831,7 @@ ChangeStatus AAPointerInfoFloating::updateImpl(Attributor &A) {
     if (auto *RI = dyn_cast<ReturnInst>(Usr)) {
       if (RI->getFunction() == getAssociatedFunction()) {
         auto &PtrOI = OffsetInfoMap[CurPtr];
-        Changed |= setReachesReturn(PtrOI);
+        Changed |= setReachesReturn(PtrOI, *CurPtr);
         return true;
       }
       return false;
@@ -2082,7 +2089,7 @@ ChangeStatus AAPointerInfoFloating::updateImpl(Attributor &A) {
         if (!CSRetPI)
           return false;
         OffsetInfo OI = OffsetInfoMap[CurPtr];
-        CSArgPI->addReturnedOffsetsTo(OI);
+        CSArgPI->addReturnedOffsetsTo(OI, *CurPtr);
         Changed =
             translateAndAddState(A, *CSRetPI, OI, *CB, IsRetMustAcc) | Changed;
         return isValidState();
@@ -13737,8 +13744,9 @@ struct AAAllocationInfoImpl : public AAAllocationInfo {
         [](DenseMap<Instruction *, DenseMap<AA::RangeTy, AA::RangeTy>> &Map,
            Instruction *LocalInst, const AA::RangeTy &OldRange,
            const AA::RangeTy &NewRange) {
+          auto [It, Inserted] = Map.try_emplace(LocalInst);
           DenseMap<AA::RangeTy, AA::RangeTy> &NewBinsForInstruction =
-              Map.getOrInsertDefault(LocalInst);
+              It->second;
 
           NewBinsForInstruction.insert(std::make_pair(OldRange, NewRange));
         };
@@ -14070,11 +14078,12 @@ private:
     if (OldOffset == NewComputedOffset)
       return false;
 
-    AA::RangeTy &NewRange = NewComputedOffsets.getOrInsertDefault(OldRange);
+    auto [It, Inserted] = NewComputedOffsets.try_emplace(OldRange);
+    AA::RangeTy &NewRange = It->second;
     NewRange.Offset = NewComputedOffset;
     NewRange.Size = Size;
 
-    return true;
+    return Inserted;
   }
 
   // A helper function to check if simplified values exists for the current

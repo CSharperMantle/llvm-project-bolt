@@ -94,8 +94,8 @@ define i8 @call_simplifiable_2() {
 ; TUNIT-SAME: () #[[ATTR0]] {
 ; TUNIT-NEXT:  entry:
 ; TUNIT-NEXT:    [[BYTES1:%.*]] = alloca [2 x i8], align 1
-; TUNIT-NEXT:    [[NEWGEP:%.*]] = getelementptr [2 x i8], ptr [[BYTES1]], i64 0
-; TUNIT-NEXT:    [[NEWGEP2:%.*]] = getelementptr [2 x i8], ptr [[BYTES1]], i64 1
+; TUNIT-NEXT:    [[NEWGEP2:%.*]] = getelementptr [2 x i8], ptr [[BYTES1]], i64 0
+; TUNIT-NEXT:    [[NEWGEP:%.*]] = getelementptr [2 x i8], ptr [[BYTES1]], i64 1
 ; TUNIT-NEXT:    ret i8 4
 ;
 ; CGSCC: Function Attrs: mustprogress nofree nosync nounwind willreturn memory(none)
@@ -198,13 +198,13 @@ define i8 @call_partially_simplifiable_1() {
 ; TUNIT-LABEL: define {{[^@]+}}@call_partially_simplifiable_1
 ; TUNIT-SAME: () #[[ATTR0]] {
 ; TUNIT-NEXT:  entry:
-; TUNIT-NEXT:    [[BYTES:%.*]] = alloca [1024 x i8], align 16
-; TUNIT-NEXT:    [[I2:%.*]] = getelementptr inbounds [1024 x i8], ptr [[BYTES]], i64 0, i64 2
-; TUNIT-NEXT:    store i8 2, ptr [[I2]], align 2
-; TUNIT-NEXT:    [[I3:%.*]] = getelementptr inbounds [1024 x i8], ptr [[BYTES]], i64 0, i64 3
-; TUNIT-NEXT:    store i8 3, ptr [[I3]], align 1
-; TUNIT-NEXT:    [[I4:%.*]] = getelementptr inbounds [1024 x i8], ptr [[BYTES]], i64 0, i64 4
-; TUNIT-NEXT:    [[R:%.*]] = call i8 @sum_two_different_loads(ptr nofree noundef nonnull readonly align 2 captures(none) dereferenceable(1022) [[I2]], ptr nofree noundef nonnull readonly captures(none) dereferenceable(1021) [[I3]]) #[[ATTR3:[0-9]+]]
+; TUNIT-NEXT:    [[BYTES1:%.*]] = alloca [3 x i8], align 1
+; TUNIT-NEXT:    [[NEWGEP3:%.*]] = getelementptr [3 x i8], ptr [[BYTES1]], i64 0
+; TUNIT-NEXT:    store i8 2, ptr [[NEWGEP3]], align 2
+; TUNIT-NEXT:    [[NEWGEP:%.*]] = getelementptr [3 x i8], ptr [[BYTES1]], i64 1
+; TUNIT-NEXT:    store i8 3, ptr [[NEWGEP]], align 1
+; TUNIT-NEXT:    [[NEWGEP2:%.*]] = getelementptr [3 x i8], ptr [[BYTES1]], i64 2
+; TUNIT-NEXT:    [[R:%.*]] = call i8 @sum_two_different_loads(ptr nofree noundef nonnull readonly align 2 captures(none) dereferenceable(1022) [[NEWGEP3]], ptr nofree noundef nonnull readonly captures(none) dereferenceable(1021) [[NEWGEP]]) #[[ATTR3:[0-9]+]]
 ; TUNIT-NEXT:    ret i8 [[R]]
 ;
 ; CGSCC: Function Attrs: mustprogress nofree nosync nounwind willreturn memory(none)
@@ -289,7 +289,8 @@ entry:
 ;.
 ; TUNIT: attributes #[[ATTR0]] = { mustprogress nofree norecurse nosync nounwind willreturn memory(none) }
 ; TUNIT: attributes #[[ATTR1]] = { mustprogress nofree norecurse nosync nounwind willreturn memory(argmem: read) }
-; TUNIT: attributes #[[ATTR2]] = { nofree norecurse nosync nounwind willreturn memory(read) }
+; TUNIT: attributes #[[ATTR2]] = { nofree nosync nounwind willreturn memory(read) }
+; TUNIT: attributes #[[ATTR3]] = { nofree norecurse nosync nounwind willreturn memory(read) }
 ;.
 ; CGSCC: [[META0]] = !{}
 ;.

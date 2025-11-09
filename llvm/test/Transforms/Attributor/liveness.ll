@@ -2591,7 +2591,7 @@ define void @bad_gep() {
 ; TUNIT-NEXT:  entry:
 ; TUNIT-NEXT:    [[N1:%.*]] = alloca [0 x i8], align 1
 ; TUNIT-NEXT:    [[M2:%.*]] = alloca [0 x i8], align 1
-; TUNIT-NEXT:    call void @llvm.lifetime.start.p0(i64 noundef 1, ptr noalias nocapture nofree noundef nonnull dereferenceable(1) [[N1]]) #[[ATTR18:[0-9]+]]
+; TUNIT-NEXT:    call void @llvm.lifetime.start.p0(ptr noalias nofree noundef nonnull captures(none) dereferenceable(1) [[N1]]) #[[ATTR18:[0-9]+]]
 ; TUNIT-NEXT:    br label [[EXIT:%.*]]
 ; TUNIT:       while.body:
 ; TUNIT-NEXT:    unreachable
@@ -2609,7 +2609,7 @@ define void @bad_gep() {
 ; CGSCC-NEXT:  entry:
 ; CGSCC-NEXT:    [[N1:%.*]] = alloca [0 x i8], align 1
 ; CGSCC-NEXT:    [[M2:%.*]] = alloca [0 x i8], align 1
-; CGSCC-NEXT:    call void @llvm.lifetime.start.p0(i64 noundef 1, ptr noalias nocapture nofree noundef nonnull dereferenceable(1) [[N1]]) #[[ATTR21:[0-9]+]]
+; CGSCC-NEXT:    call void @llvm.lifetime.start.p0(ptr noalias nofree noundef nonnull captures(none) dereferenceable(1) [[N1]]) #[[ATTR21:[0-9]+]]
 ; CGSCC-NEXT:    br label [[EXIT:%.*]]
 ; CGSCC:       while.body:
 ; CGSCC-NEXT:    unreachable
