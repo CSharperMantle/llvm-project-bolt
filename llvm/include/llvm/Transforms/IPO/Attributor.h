@@ -5869,8 +5869,9 @@ public:
   /// actually translate the list of offsets to a RangeList.
   struct OffsetInfo {
     using VecTy = SmallVector<AA::RangeTy>;
+    using OriginTy = SmallPtrSet<Value *, 4>;
     // A map to store depth 1 predecessors per offset.
-    using OriginsTy = SmallVector<SmallPtrSet<Value *, 4>>;
+    using OriginsTy = SmallVector<OriginTy>;
     using const_iterator = VecTy::const_iterator;
     OriginsTy Origins;
     VecTy Ranges;
@@ -5901,7 +5902,7 @@ public:
 
     // Set the size of the offset for all ranges.
     void setSizeAll(uint64_t Size) {
-      for (auto &Range : Ranges)
+      for (AA::RangeTy &Range : Ranges)
         Range.Size = Size;
     }
 
@@ -5933,11 +5934,11 @@ public:
     // We need to increment all ranges by Inc and add an origin V to all
     // offsets.
     void addToAll(int64_t Inc, Value &V) {
-      for (auto &Range : Ranges)
+      for (AA::RangeTy &Range : Ranges)
         Range.Offset += Inc;
 
       if (!Origins.empty()) {
-        for (auto &Origin : Origins)
+        for (OriginTy &Origin : Origins)
           Origin.insert(&V);
       } else {
         for (size_t Index = 0; Index < Ranges.size(); Index++) {
@@ -5949,7 +5950,7 @@ public:
 
     // Increment all ranges by Inc.
     void addToAll(int64_t Inc) {
-      for (auto &Range : Ranges)
+      for (AA::RangeTy &Range : Ranges)
         Range.Offset += Inc;
     }
 
@@ -5960,7 +5961,7 @@ public:
     bool merge(const OffsetInfo &R) {
       bool Changed = false;
 
-      for (const auto &Range : R.Ranges) {
+      for (const AA::RangeTy &Range : R.Ranges) {
         if (!is_contained(Ranges, Range)) {
           Changed = true;
           break;
@@ -5977,7 +5978,7 @@ public:
       Ranges.erase(std::unique(Ranges.begin(), Ranges.end()), Ranges.end());
 
       OriginsTy ToBeMergeOrigins = R.Origins;
-      for (auto &Origin : ToBeMergeOrigins)
+      for (OriginTy &Origin : ToBeMergeOrigins)
         Origins.emplace_back(Origin);
 
       return Changed;
@@ -5991,7 +5992,7 @@ public:
 
       // We cannot return if nothing changed since we might still be adding a
       // new Origin.
-      for (const auto &Range : Ranges) {
+      for (const AA::RangeTy &Range : Ranges) {
         if (!is_contained(Ranges, Range)) {
           Changed = true;
           break;
@@ -6002,8 +6003,8 @@ public:
       // ensure elements are unique.
       sort(Ranges.begin(), Ranges.end());
       Ranges.erase(std::unique(Ranges.begin(), Ranges.end()), Ranges.end());
-      auto &ROffsets = R.Ranges;
-      for (auto Offset : ROffsets) {
+      const VecTy &ROffsets = R.Ranges;
+      for (AA::RangeTy Offset : ROffsets) {
         auto *It = std::find(Ranges.begin(), Ranges.end(), Offset);
         if (It == Ranges.end())
           continue;
@@ -6088,7 +6089,7 @@ public:
       }
 
       bool Changed = false;
-      auto LPos = Ranges.begin();
+      AA::RangeTy *LPos = Ranges.begin();
       for (auto &R : RHS.Ranges) {
         auto Result = insert(LPos, R);
         if (isUnknown())
@@ -6322,7 +6323,7 @@ public:
 
     // Merge two access paths into one.
     void mergeAccessPaths(const AccessPathSetTy &AccessPathsNew) {
-      for (auto *Path : AccessPathsNew)
+      for (AccessPathTy *Path : AccessPathsNew)
         if (Path && !existsChain(*Path)) {
           AccessPaths.insert(Path);
         }
@@ -6334,7 +6335,7 @@ public:
       if (AccessPaths.size() != AccessPathsR.size())
         return false;
 
-      for (auto *Path : AccessPathsR) {
+      for (AccessPathTy *Path : AccessPathsR) {
         if (Path && !existsChain(*Path))
           IsSame = false;
       }
@@ -6346,7 +6347,7 @@ public:
       if (AccessPaths.empty())
         return false;
 
-      for (auto *OldPath : AccessPaths)
+      for (AccessPathTy *OldPath : AccessPaths)
         if (OldPath && (*OldPath == NewPath))
           return true;
 
@@ -6361,7 +6362,7 @@ public:
         return;
       }
 
-      for (auto *It : AccessPaths) {
+      for (AccessPathTy *It : AccessPaths) {
         if (It) {
           O << "Backtrack a unique access path:\n";
           for (Value *Ins : *It)
