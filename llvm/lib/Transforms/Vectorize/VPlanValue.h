@@ -51,7 +51,6 @@ class LLVM_ABI_FOR_TEST VPValue {
   friend struct VPSymbolicValue;
   friend class VPRecipeValue;
   friend class VPRegionValue;
-  friend class VPWidenMemIntrinsicRecipe;
 
   const unsigned char SubclassID; ///< Subclass identifier (for isa/dyn_cast).
 
