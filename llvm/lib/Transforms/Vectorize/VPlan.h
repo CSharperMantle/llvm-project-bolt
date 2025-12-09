@@ -2050,10 +2050,6 @@ public:
   /// Return the cost of this vector memory intrinsic.
   InstructionCost computeCost(ElementCount VF,
                               VPCostContext &Ctx) const override;
-
-  void setMask(VPValue *Mask) { setOperand(2, Mask); }
-
-  VPValue *getMask() const { return getOperand(2); }
 };
 
 /// A recipe for widening Call instructions using library calls.
