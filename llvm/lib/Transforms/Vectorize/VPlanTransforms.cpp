@@ -2920,14 +2920,6 @@ static VPRecipeBase *optimizeMaskToEVL(VPValue *HeaderMask,
         *I, I->getDebugLoc());
   }
 
-  if (auto *StridedL = dyn_cast<VPWidenStridedLoadRecipe>(&CurRecipe))
-    if (StridedL->isMasked() &&
-        match(StridedL->getMask(), m_RemoveMask(HeaderMask, Mask)))
-      return new VPWidenStridedLoadRecipe(
-          *cast<LoadInst>(&StridedL->getIngredient()), StridedL->getAddr(),
-          StridedL->getStride(), &EVL, Mask, *StridedL,
-          StridedL->getDebugLoc());
-
   VPValue *StoredVal;
   if (match(&CurRecipe, m_MaskedStore(m_VPValue(Addr), m_VPValue(StoredVal),
                                       m_RemoveMask(HeaderMask, Mask))))
@@ -3050,17 +3042,14 @@ static void fixupVFUsersForEVL(VPlan &Plan, VPValue &EVL) {
   VPRegionBlock *LoopRegion = Plan.getVectorLoopRegion();
   VPBasicBlock *Header = LoopRegion->getEntryBasicBlock();
 
-  assert(
-      all_of(
-          Plan.getVF().users(),
-          [&LoopRegion](VPUser *U) {
-            auto *R = cast<VPRecipeBase>(U);
-            return (R->getParent()->getParent() != LoopRegion) ||
-                   isa<VPVectorEndPointerRecipe, VPScalarIVStepsRecipe,
-                       VPWidenIntOrFpInductionRecipe, VPWidenStridedLoadRecipe>(
-                       R);
-          }) &&
-      "User of VF that we can't transform to EVL.");
+  assert(all_of(Plan.getVF().users(),
+                [&LoopRegion](VPUser *U) {
+                  auto *R = cast<VPRecipeBase>(U);
+                  return (R->getParent()->getParent() != LoopRegion) ||
+                         isa<VPVectorEndPointerRecipe, VPScalarIVStepsRecipe,
+                             VPWidenIntOrFpInductionRecipe>(R);
+                }) &&
+         "User of VF that we can't transform to EVL.");
   Plan.getVF().replaceUsesWithIf(&EVL, [](VPUser &U, unsigned Idx) {
     return isa<VPWidenIntOrFpInductionRecipe, VPScalarIVStepsRecipe>(U);
   });
