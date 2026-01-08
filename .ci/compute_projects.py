@@ -25,7 +25,6 @@ PROJECT_DEPENDENCIES = {
     "compiler-rt": {"clang", "lld"},
     "cross-project-tests": {"clang", "lldb", "lld"},
     "libc": {"clang", "lld"},
-    "openmp": {"clang", "lld"},
     "flang": {"llvm", "clang"},
     "flang-rt": {"flang"},
     "lldb": {"llvm", "clang"},
@@ -33,6 +32,8 @@ PROJECT_DEPENDENCIES = {
     "lld": {"llvm"},
     "mlir": {"llvm"},
     "polly": {"llvm"},
+    "openmp": {"clang", "lld"},
+    "offload": {"clang", "lld", "flang"},
 }
 
 # This mapping describes the additional projects that should be tested when a
@@ -66,7 +67,6 @@ DEPENDENTS_TO_TEST = {
         "mlir",
         "polly",
         "flang",
-        "openmp",
     },
 }
 
@@ -74,7 +74,11 @@ DEPENDENTS_TO_TEST = {
 # but not necessarily run for testing. The only case of this currently is lldb
 # which needs some runtimes enabled for tests.
 DEPENDENT_RUNTIMES_TO_BUILD = {
-    "lldb": {"libcxx", "libcxxabi", "libunwind", "compiler-rt"}
+    "lldb": {"libcxx", "libcxxabi", "libunwind", "compiler-rt"},
+    "clang": {"openmp", "offload"},
+    "llvm": {"openmp", "offload"},
+    "lld": {"openmp", "offload"},
+    ".ci": {"openmp", "offload"},
 }
 
 # This mapping describes runtimes that should be tested when the key project is
@@ -87,7 +91,9 @@ DEPENDENT_RUNTIMES_TO_TEST = {
     "compiler-rt": {"compiler-rt"},
     "flang": {"flang-rt"},
     "flang-rt": {"flang-rt"},
-    ".ci": {"compiler-rt", "libc", "flang-rt", "libclc"},
+    "openmp": {"openmp"},
+    "offload": {"offload"},
+    ".ci": {"compiler-rt", "libc", "flang-rt", "libclc", "openmp", "offload"},
 }
 DEPENDENT_RUNTIMES_TO_TEST_NEEDS_RECONFIG = {
     "llvm": {"libcxx", "libcxxabi", "libunwind"},
@@ -96,7 +102,7 @@ DEPENDENT_RUNTIMES_TO_TEST_NEEDS_RECONFIG = {
 }
 
 EXCLUDE_LINUX = {
-    "openmp",  # https://github.com/google/llvm-premerge-checks/issues/410
+    "cross-project-tests",  # TODO(issues/132796): Tests are failing.
 }
 
 # Runtimes configured for cross-compilation using LLVM_RUNTIME_TARGETS.
@@ -115,6 +121,7 @@ EXCLUDE_WINDOWS = {
     "libcxxabi",
     "libunwind",
     "flang-rt",
+    "offload",
 }
 
 # These are projects that we should test if the project itself is changed but
@@ -136,6 +143,7 @@ EXCLUDE_MAC = {
     "libcxx",
     "libcxxabi",
     "libunwind",
+    "offload",
 }
 
 PROJECT_CHECK_TARGETS = {
@@ -158,7 +166,6 @@ PROJECT_CHECK_TARGETS = {
     "lld": "check-lld",
     "lldb": "check-lldb",
     "mlir": "check-mlir",
-    "openmp": "check-openmp",
     "polly": "check-polly",
     "lit": "check-lit",
 }
@@ -171,6 +178,8 @@ RUNTIMES = {
     "libc",
     "flang-rt",
     "libclc",
+    "openmp",
+    "offload",
 }
 
 # Meta projects are projects that need explicit handling but do not reside
