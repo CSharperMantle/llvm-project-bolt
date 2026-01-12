@@ -68,7 +68,7 @@ define void @single_constant_stride_int_scaled(ptr %p) {
 ; CHECK-UF2-NEXT:    [[TMP18:%.*]] = getelementptr i32, ptr [[P]], i64 [[TMP8]]
 ; CHECK-UF2-NEXT:    [[TMP11:%.*]] = getelementptr i32, ptr [[P]], <vscale x 4 x i64> [[TMP9]]
 ; CHECK-UF2-NEXT:    [[TMP12:%.*]] = getelementptr i32, ptr [[P]], <vscale x 4 x i64> [[TMP10]]
-; CHECK-UF2-NEXT:    [[TMP19:%.*]] = shl i64 [[TMP3]], 3
+; CHECK-UF2-NEXT:    [[TMP19:%.*]] = mul i64 [[TMP3]], 8
 ; CHECK-UF2-NEXT:    [[TMP20:%.*]] = getelementptr i32, ptr [[TMP18]], i64 [[TMP19]]
 ; CHECK-UF2-NEXT:    [[WIDE_MASKED_GATHER:%.*]] = call <vscale x 4 x i32> @llvm.experimental.vp.strided.load.nxv4i32.p0.i64(ptr align 4 [[TMP18]], i64 32, <vscale x 4 x i1> splat (i1 true), i32 [[TMP16]])
 ; CHECK-UF2-NEXT:    [[WIDE_MASKED_GATHER1:%.*]] = call <vscale x 4 x i32> @llvm.experimental.vp.strided.load.nxv4i32.p0.i64(ptr align 4 [[TMP20]], i64 32, <vscale x 4 x i1> splat (i1 true), i32 [[TMP16]])
@@ -179,7 +179,7 @@ define void @single_constant_stride_int_iv(ptr %p) {
 ; CHECK-UF2-NEXT:    [[TMP18:%.*]] = getelementptr i32, ptr [[P]], i64 [[TMP17]]
 ; CHECK-UF2-NEXT:    [[TMP9:%.*]] = getelementptr i32, ptr [[P]], <vscale x 4 x i64> [[VEC_IND]]
 ; CHECK-UF2-NEXT:    [[TMP10:%.*]] = getelementptr i32, ptr [[P]], <vscale x 4 x i64> [[STEP_ADD]]
-; CHECK-UF2-NEXT:    [[TMP19:%.*]] = shl i64 [[TMP3]], 6
+; CHECK-UF2-NEXT:    [[TMP19:%.*]] = mul i64 [[TMP3]], 64
 ; CHECK-UF2-NEXT:    [[TMP14:%.*]] = getelementptr i32, ptr [[TMP18]], i64 [[TMP19]]
 ; CHECK-UF2-NEXT:    [[WIDE_MASKED_GATHER:%.*]] = call <vscale x 4 x i32> @llvm.experimental.vp.strided.load.nxv4i32.p0.i64(ptr align 4 [[TMP18]], i64 256, <vscale x 4 x i1> splat (i1 true), i32 [[TMP15]])
 ; CHECK-UF2-NEXT:    [[WIDE_MASKED_GATHER1:%.*]] = call <vscale x 4 x i32> @llvm.experimental.vp.strided.load.nxv4i32.p0.i64(ptr align 4 [[TMP14]], i64 256, <vscale x 4 x i1> splat (i1 true), i32 [[TMP15]])
