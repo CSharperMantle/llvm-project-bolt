@@ -96,6 +96,8 @@ Type *VPTypeAnalysis::inferScalarTypeForRecipe(const VPInstruction *R) {
     return IntegerType::get(Ctx, 1);
   case VPInstruction::ExplicitVectorLength:
     return Type::getIntNTy(Ctx, 32);
+  case VPInstruction::IncomingAliasMask:
+    return IntegerType::get(Ctx, 1);
   case VPInstruction::FirstOrderRecurrenceSplice:
   case VPInstruction::Not:
   case VPInstruction::CalculateTripCountMinusVF:
@@ -109,6 +111,7 @@ Type *VPTypeAnalysis::inferScalarTypeForRecipe(const VPInstruction *R) {
     return inferScalarType(R->getOperand(1));
   case VPInstruction::FirstActiveLane:
   case VPInstruction::LastActiveLane:
+  case VPInstruction::NumActiveLanes:
     // Assume that the maximum possible number of elements in a vector fits
     // within the index type for the default address space.
     return DL.getIndexType(Ctx, 0);
