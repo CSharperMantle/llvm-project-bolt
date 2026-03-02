@@ -1320,7 +1320,6 @@ namespace PointerCmp {
 }
 
 namespace ExpandOnOPTEPointers {
-
   template <class _BidirectionalIterator>
   constexpr void inplace_merge(_BidirectionalIterator __first,
                                _BidirectionalIterator __middle) {

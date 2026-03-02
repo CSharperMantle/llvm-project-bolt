@@ -327,8 +327,8 @@ static bool interp__builtin_strcmp(InterpState &S, CodePtr OpPC,
 
     if (Steps >= Limit)
       break;
-    const Pointer &PA = A.atIndex(IndexA);
-    const Pointer &PB = B.atIndex(IndexB);
+    PtrView PA = A.view().atIndex(IndexA);
+    PtrView PB = B.view().atIndex(IndexB);
     if (!CheckRange(S, OpPC, PA, AK_Read) ||
         !CheckRange(S, OpPC, PB, AK_Read)) {
       return false;
@@ -400,7 +400,7 @@ static bool interp__builtin_strlen(InterpState &S, CodePtr OpPC,
 
   size_t Len = 0;
   for (size_t I = StrPtr.getIndex();; ++I, ++Len) {
-    const Pointer &ElemPtr = StrPtr.atIndex(I);
+    PtrView ElemPtr = StrPtr.view().atIndex(I);
 
     if (!CheckRange(S, OpPC, ElemPtr, AK_Read))
       return false;
@@ -6581,8 +6581,8 @@ bool SetThreeWayComparisonField(InterpState &S, CodePtr OpPC,
   assert(R->getNumFields() == 1);
 
   unsigned FieldOffset = R->getField(0u)->Offset;
-  const Pointer &FieldPtr = Ptr.atField(FieldOffset);
-  PrimType FieldT = *S.getContext().classify(FieldPtr.getType());
+  PtrView FieldPtr = Ptr.view().atField(FieldOffset);
+  PrimType FieldT = FieldPtr.getFieldDesc()->getPrimType();
 
   INT_TYPE_SWITCH(FieldT,
                   FieldPtr.deref<T>() = T::from(IntValue.getSExtValue()));
@@ -6590,7 +6590,7 @@ bool SetThreeWayComparisonField(InterpState &S, CodePtr OpPC,
   return true;
 }
 
-static void zeroAll(Pointer &Dest) {
+static void zeroAll(PtrView Dest) {
   const Descriptor *Desc = Dest.getFieldDesc();
 
   if (Desc->isPrimitive()) {
@@ -6604,7 +6604,7 @@ static void zeroAll(Pointer &Dest) {
   if (Desc->isRecord()) {
     const Record *R = Desc->ElemRecord;
     for (const Record::Field &F : R->fields()) {
-      Pointer FieldPtr = Dest.atField(F.Offset);
+      PtrView FieldPtr = Dest.atField(F.Offset);
       zeroAll(FieldPtr);
     }
     return;
@@ -6622,22 +6622,22 @@ static void zeroAll(Pointer &Dest) {
 
   if (Desc->isCompositeArray()) {
     for (unsigned I = 0, N = Desc->getNumElems(); I != N; ++I) {
-      Pointer ElemPtr = Dest.atIndex(I).narrow();
+      PtrView ElemPtr = Dest.atIndex(I).narrow();
       zeroAll(ElemPtr);
     }
     return;
   }
 }
 
-static bool copyComposite(InterpState &S, CodePtr OpPC, const Pointer &Src,
-                          Pointer &Dest, bool Activate);
-static bool copyRecord(InterpState &S, CodePtr OpPC, const Pointer &Src,
-                       Pointer &Dest, bool Activate = false) {
+static bool copyComposite(InterpState &S, CodePtr OpPC, PtrView Src,
+                          PtrView Dest, bool Activate);
+static bool copyRecord(InterpState &S, CodePtr OpPC, PtrView Src, PtrView Dest,
+                       bool Activate = false) {
   [[maybe_unused]] const Descriptor *SrcDesc = Src.getFieldDesc();
   const Descriptor *DestDesc = Dest.getFieldDesc();
 
   auto copyField = [&](const Record::Field &F, bool Activate) -> bool {
-    Pointer DestField = Dest.atField(F.Offset);
+    PtrView DestField = Dest.atField(F.Offset);
     if (OptPrimType FT = S.Ctx.classify(F.Decl->getType())) {
       TYPE_SWITCH(*FT, {
         DestField.deref<T>() = Src.atField(F.Offset).deref<T>();
@@ -6658,14 +6658,14 @@ static bool copyRecord(InterpState &S, CodePtr OpPC, const Pointer &Src,
   for (const Record::Field &F : R->fields()) {
     if (R->isUnion()) {
       // For unions, only copy the active field. Zero all others.
-      const Pointer &SrcField = Src.atField(F.Offset);
+      PtrView SrcField = Src.atField(F.Offset);
       if (SrcField.isActive()) {
         if (!copyField(F, /*Activate=*/true))
           return false;
       } else {
         if (!CheckMutable(S, OpPC, Src.atField(F.Offset)))
           return false;
-        Pointer DestField = Dest.atField(F.Offset);
+        PtrView DestField = Dest.atField(F.Offset);
         zeroAll(DestField);
       }
     } else {
@@ -6675,7 +6675,7 @@ static bool copyRecord(InterpState &S, CodePtr OpPC, const Pointer &Src,
   }
 
   for (const Record::Base &B : R->bases()) {
-    Pointer DestBase = Dest.atField(B.Offset);
+    PtrView DestBase = Dest.atField(B.Offset);
     if (!copyRecord(S, OpPC, Src.atField(B.Offset), DestBase, Activate))
       return false;
   }
@@ -6684,8 +6684,8 @@ static bool copyRecord(InterpState &S, CodePtr OpPC, const Pointer &Src,
   return true;
 }
 
-static bool copyComposite(InterpState &S, CodePtr OpPC, const Pointer &Src,
-                          Pointer &Dest, bool Activate = false) {
+static bool copyComposite(InterpState &S, CodePtr OpPC, PtrView Src,
+                          PtrView Dest, bool Activate = false) {
   assert(Src.isLive() && Dest.isLive());
 
   [[maybe_unused]] const Descriptor *SrcDesc = Src.getFieldDesc();
@@ -6698,7 +6698,7 @@ static bool copyComposite(InterpState &S, CodePtr OpPC, const Pointer &Src,
     assert(SrcDesc->getNumElems() == DestDesc->getNumElems());
     PrimType ET = DestDesc->getPrimType();
     for (unsigned I = 0, N = DestDesc->getNumElems(); I != N; ++I) {
-      Pointer DestElem = Dest.atIndex(I);
+      PtrView DestElem = Dest.atIndex(I);
       TYPE_SWITCH(ET, {
         DestElem.deref<T>() = Src.elem<T>(I);
         DestElem.initialize();
@@ -6711,8 +6711,8 @@ static bool copyComposite(InterpState &S, CodePtr OpPC, const Pointer &Src,
     assert(SrcDesc->isCompositeArray());
     assert(SrcDesc->getNumElems() == DestDesc->getNumElems());
     for (unsigned I = 0, N = DestDesc->getNumElems(); I != N; ++I) {
-      const Pointer &SrcElem = Src.atIndex(I).narrow();
-      Pointer DestElem = Dest.atIndex(I).narrow();
+      PtrView SrcElem = Src.atIndex(I).narrow();
+      PtrView DestElem = Dest.atIndex(I).narrow();
       if (!copyComposite(S, OpPC, SrcElem, DestElem, Activate))
         return false;
     }
@@ -6730,7 +6730,7 @@ bool DoMemcpy(InterpState &S, CodePtr OpPC, const Pointer &Src, Pointer &Dest) {
   if (!Dest.isBlockPointer() || Dest.getFieldDesc()->isPrimitive())
     return false;
 
-  return copyComposite(S, OpPC, Src, Dest);
+  return copyComposite(S, OpPC, Src.view(), Dest.view());
 }
 
 } // namespace interp
