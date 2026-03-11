@@ -162,7 +162,7 @@ PROJECT_CHECK_TARGETS = {
     "lld": "check-lld",
     "lldb": "check-lldb",
     "mlir": "check-mlir",
-    "openmp": "check-openmp",
+    "openmp": "openmp",
     "polly": "check-polly",
     "lit": "check-lit",
     "offload": "offload",
