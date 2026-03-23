@@ -318,7 +318,7 @@ define void @alias_mask_reverse_iterate(ptr noalias %ptrA, ptr %ptrB, ptr %ptrC,
 ; CHECK-TF-NEXT:    [[OFFSET_IDX:%.*]] = sub i64 [[IV_START]], [[INDEX]]
 ; CHECK-TF-NEXT:    [[TMP8:%.*]] = getelementptr inbounds i8, ptr [[PTRA]], i64 [[OFFSET_IDX]]
 ; CHECK-TF-NEXT:    [[TMP9:%.*]] = sub nuw nsw i64 [[TMP4]], 1
-; CHECK-TF-NEXT:    [[TMP10:%.*]] = mul i64 [[TMP9]], -1
+; CHECK-TF-NEXT:    [[TMP10:%.*]] = sub i64 0, [[TMP9]]
 ; CHECK-TF-NEXT:    [[TMP11:%.*]] = getelementptr i8, ptr [[TMP8]], i64 [[TMP10]]
 ; CHECK-TF-NEXT:    [[REVERSE:%.*]] = call <vscale x 16 x i1> @llvm.vector.reverse.nxv16i1(<vscale x 16 x i1> [[ACTIVE_LANE_MASK]])
 ; CHECK-TF-NEXT:    [[WIDE_MASKED_LOAD:%.*]] = call <vscale x 16 x i8> @llvm.masked.load.nxv16i8.p0(ptr align 1 [[TMP11]], <vscale x 16 x i1> [[REVERSE]], <vscale x 16 x i8> poison)
