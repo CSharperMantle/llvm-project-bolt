@@ -1386,17 +1386,6 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
       }
     }
 
-    auto GetOptimalAlignForParam = [&DL, F, &Arg](Type *Ty) -> Align {
-      if (MaybeAlign StackAlign =
-              getAlign(*F, Arg.getArgNo() + AttributeList::FirstArgIndex))
-        return StackAlign.value();
-
-      Align TypeAlign = getFunctionParamOptimizedAlign(F, Ty, DL);
-      MaybeAlign ParamAlign =
-          Arg.hasByValAttr() ? Arg.getParamAlign() : MaybeAlign();
-      return std::max(TypeAlign, ParamAlign.valueOrOne());
-    };
-
     if (Arg.hasByValAttr()) {
       // param has byVal attribute.
       Type *ETy = Arg.getParamByValType();
@@ -1407,7 +1396,7 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
       //        PAL.getParamAlignment
       // size = typeallocsize of element type
       const Align OptimalAlign =
-          IsKernelFunc ? GetOptimalAlignForParam(ETy)
+          IsKernelFunc ? getOptimalAlignForParam(F, Arg, ETy, DL)
                        : getFunctionByValParamAlign(
                              F, ETy, Arg.getParamAlign().valueOrOne(), DL);
 
@@ -1421,7 +1410,7 @@ void NVPTXAsmPrinter::emitFunctionParamList(const Function *F, raw_ostream &O) {
       // <a>  = optimal alignment for the element type; always multiple of
       //        PAL.getParamAlignment
       // size = typeallocsize of element type
-      Align OptimalAlign = GetOptimalAlignForParam(Ty);
+      Align OptimalAlign = getOptimalAlignForParam(F, Arg, Ty, DL);
 
       O << "\t.param .align " << OptimalAlign.value() << " .b8 " << ParamSym
         << "[" << DL.getTypeAllocSize(Ty) << "]";
