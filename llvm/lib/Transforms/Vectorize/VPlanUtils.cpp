@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "VPlanUtils.h"
+#include "LoopVectorizationPlanner.h"
 #include "VPlanAnalysis.h"
 #include "VPlanCFG.h"
 #include "VPlanDominatorTree.h"
@@ -789,53 +790,28 @@ VPInstruction *vputils::findComputeReductionResult(VPReductionPHIRecipe *PhiR) {
       cast<VPSingleDefRecipe>(SelR));
 }
 
-bool vputils::isUsedByLoadStoreAddress(const VPValue *V) {
-  SmallPtrSet<const VPValue *, 4> Seen;
-  SmallVector<const VPValue *> WorkList = {V};
-
-  while (!WorkList.empty()) {
-    const VPValue *Cur = WorkList.pop_back_val();
-    if (!Seen.insert(Cur).second)
-      continue;
-
-    auto *Blend = dyn_cast<VPBlendRecipe>(Cur);
-    // Skip blends that use V only through a compare by checking if any incoming
-    // value was already visited.
-    if (Blend && none_of(seq<unsigned>(0, Blend->getNumIncomingValues()),
-                         [&](unsigned I) {
-                           return Seen.contains(Blend->getIncomingValue(I));
-                         }))
-      continue;
-
-    for (VPUser *U : Cur->users()) {
-      if (auto *InterleaveR = dyn_cast<VPInterleaveBase>(U))
-        if (InterleaveR->getAddr() == Cur)
-          return true;
-      if (auto *RepR = dyn_cast<VPReplicateRecipe>(U)) {
-        if (RepR->getOpcode() == Instruction::Load &&
-            RepR->getOperand(0) == Cur)
-          return true;
-        if (RepR->getOpcode() == Instruction::Store &&
-            RepR->getOperand(1) == Cur)
-          return true;
-      }
-      if (auto *MemR = dyn_cast<VPWidenMemoryRecipe>(U)) {
-        if (MemR->getAddr() == Cur && MemR->isConsecutive())
-          return true;
-      }
-    }
-
-    // The legacy cost model only supports scalarization loads/stores with phi
-    // addresses, if the phi is directly used as load/store address. Don't
-    // traverse further for Blends.
-    if (Blend)
-      continue;
-
-    // Only traverse further through users that also define a value (and can
-    // thus have their own users walked).
-    for (VPUser *U : Cur->users())
-      if (auto *SDR = dyn_cast<VPSingleDefRecipe>(U))
-        WorkList.push_back(SDR);
+VPValue *VPSCEVExpander::expand(const SCEV *S) {
+  if (auto *C = dyn_cast<SCEVConstant>(S))
+    return Plan.getOrAddLiveIn(C->getValue());
+  if (auto *U = dyn_cast<SCEVUnknown>(S))
+    return Plan.getOrAddLiveIn(U->getValue());
+  if (isa<SCEVVScale>(S))
+    return Builder.createNaryOp(VPInstruction::VScale, {}, S->getType());
+  if (auto *Mul = dyn_cast<SCEVMulExpr>(S)) {
+    VPIRFlags::WrapFlagsTy WrapFlags(Mul->hasNoUnsignedWrap(),
+                                     Mul->hasNoSignedWrap());
+    // Chain the operands with Mul, matching SCEVExpander behavior of applying
+    // wrap flags to all chained multiplies.
+    VPValue *Result = expand(Mul->getOperand(0));
+    for (const SCEVUse &Op : drop_begin(Mul->operands()))
+      Result = Builder.createOverflowingOp(Instruction::Mul,
+                                           {Result, expand(Op)}, WrapFlags, DL);
+    return Result;
   }
-  return false;
+  // Unsupported SCEV kind; fall back to VPExpandSCEVRecipe. This is only
+  // valid when the builder's insertion point is in the entry block, as
+  // expandSCEVs only processes VPExpandSCEVRecipes there.
+  assert(Builder.getInsertBlock() == Plan.getEntry() &&
+         "VPExpandSCEVRecipe fallback requires insertion in the entry block");
+  return Builder.createExpandSCEV(S);
 }
