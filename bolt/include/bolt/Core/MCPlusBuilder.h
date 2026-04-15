@@ -2521,6 +2521,23 @@ public:
     return 2;
   }
 
+  /// Return true if this target requires instructions to be wrapped in
+  /// BUNDLE MCInsts before emission (e.g. Hexagon VLIW packets).
+  virtual bool requiresBundleEmission() const { return false; }
+
+  /// Return true if the instruction is a .new value consumer that requires
+  /// its producer to be in the same VLIW packet (e.g. Hexagon .new value
+  /// stores and .new compare-and-jump instructions).
+  virtual bool isNewValueConsumer(const MCInst &Inst) const { return false; }
+
+  /// Create a BUNDLE MCInst from a sequence of individual instructions.
+  /// Used by targets that require bundle emission (e.g. Hexagon).
+  virtual MCInst createBundle(MCContext &Ctx, ArrayRef<MCInst> Instrs,
+                              bool InnerLoop = false,
+                              bool OuterLoop = false) const {
+    llvm_unreachable("not implemented");
+  }
+
   // AliasMap caches a mapping of registers to the set of registers that
   // alias (are sub or superregs of itself, including itself).
   std::vector<BitVector> AliasMap;
@@ -2543,6 +2560,11 @@ MCPlusBuilder *createRISCVMCPlusBuilder(const MCInstrAnalysis *,
                                         const MCInstrInfo *,
                                         const MCRegisterInfo *,
                                         const MCSubtargetInfo *);
+
+MCPlusBuilder *createHexagonMCPlusBuilder(const MCInstrAnalysis *,
+                                          const MCInstrInfo *,
+                                          const MCRegisterInfo *,
+                                          const MCSubtargetInfo *);
 
 } // namespace bolt
 } // namespace llvm
