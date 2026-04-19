@@ -8697,3 +8697,54 @@ bool CombinerHelper::matchCtls(MachineInstr &CtlzMI,
 
   return true;
 }
+
+// Fold shr ( add ( ext X, ext Y ), 1 ) -> avgfloor ( x, y )
+// Fold shr ( add ( ext X, ext Y, 1 ), 1 ) -> avgceil ( x, y )
+bool CombinerHelper::matchAVG(MachineInstr &MI, MachineRegisterInfo &MRI,
+                              bool IsSigned, bool IsCeil) const {
+  assert((MI.getOpcode() == TargetOpcode::G_LSHR ||
+          MI.getOpcode() == TargetOpcode::G_ASHR) &&
+         "Expected G_LSHR/G_ASHR");
+
+  Register Dst = MI.getOperand(0).getReg();
+  LLT DstTy = MRI.getType(Dst);
+
+  unsigned TargetOpc;
+  if (IsCeil)
+    TargetOpc = IsSigned ? TargetOpcode::G_SAVGCEIL : TargetOpcode::G_UAVGCEIL;
+  else
+    TargetOpc =
+        IsSigned ? TargetOpcode::G_SAVGFLOOR : TargetOpcode::G_UAVGFLOOR;
+
+  return isLegal({TargetOpc, {DstTy}});
+}
+
+void CombinerHelper::applyAVG(MachineIRBuilder &B, MachineInstr &MI, Register X,
+                              Register Y, bool IsSigned, bool IsCeil) const {
+  MachineRegisterInfo &MRI = *B.getMRI();
+  Register Dst = MI.getOperand(0).getReg();
+
+  LLT DstTy = MRI.getType(Dst);
+  LLT XTy = MRI.getType(X);
+
+  unsigned TargetOpc;
+  if (IsCeil)
+    TargetOpc = IsSigned ? TargetOpcode::G_SAVGCEIL : TargetOpcode::G_UAVGCEIL;
+  else
+    TargetOpc =
+        IsSigned ? TargetOpcode::G_SAVGFLOOR : TargetOpcode::G_UAVGFLOOR;
+
+  if (XTy == DstTy) {
+    B.buildInstr(TargetOpc, {Dst}, {X, Y});
+    MI.eraseFromParent();
+    return;
+  }
+
+  auto Avg = B.buildInstr(TargetOpc, {XTy}, {X, Y});
+  if (IsSigned)
+    B.buildSExt(Dst, Avg);
+  else
+    B.buildZExt(Dst, Avg);
+
+  MI.eraseFromParent();
+}

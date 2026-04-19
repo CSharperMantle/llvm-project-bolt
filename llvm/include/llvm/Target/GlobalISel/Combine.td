@@ -2300,6 +2300,70 @@ def overflow_combines: GICombineGroup<[
   match_subo_no_overflow
 ]>;
 
+
+def avgfloor_u_match : GICombineRule<
+  (defs root:$dst, build_fn_matchinfo:$matchinfo),
+  (match (G_ZEXT $ext1, $x),
+         (G_ZEXT $ext2, $y),
+         (G_ADD $sum, $ext1, $ext2),
+         (G_LSHR $dst, $sum, 1):$mi,
+         [{ return Helper.matchAVG(*${mi}, MRI, /*IsSigned=*/false, /*IsCeil=*/false); }]),
+  (apply [{ Helper.applyAVG(B, *${mi}, ${x}.getReg(), ${y}.getReg(), /*IsSigned=*/false, /*IsCeil=*/false); }])
+>;
+
+def avgfloor_s_match : GICombineRule<
+  (defs root:$dst, build_fn_matchinfo:$matchinfo),
+  (match (G_SEXT $ext1, $x),
+         (G_SEXT $ext2, $y),
+         (G_ADD $sum, $ext1, $ext2),
+         (G_ASHR $dst, $sum, 1):$mi,
+         [{ return Helper.matchAVG(*${mi}, MRI, /*IsSigned=*/true, /*IsCeil=*/false); }]),
+  (apply [{ Helper.applyAVG(B, *${mi}, ${x}.getReg(), ${y}.getReg(), /*IsSigned=*/true, /*IsCeil=*/false); }])
+>;
+
+def avgceil_sum : GICombinePatFrag<
+  (outs root:$root),
+  (ins $ext1, $ext2),
+  [
+    (pattern (G_ADD $inner, $ext1, $ext2), (G_ADD $root, $inner, 1)),
+    (pattern (G_ADD $inner, $ext1, 1),  (G_ADD $root, $inner, $ext2))
+  ]
+>;
+
+def avgceil_u_sum : GICombinePatFrag<
+  (outs root:$root),
+  (ins $x, $y),
+  [
+    (pattern (G_ZEXT $ext1, $x), (G_ZEXT $ext2, $y), (G_ADD $inner, $ext1, $ext2), (G_ADD $root, $inner, 1)),
+    (pattern (G_ZEXT $ext1, $x), (G_ZEXT $ext2, $y), (G_ADD $inner, $ext1, 1),  (G_ADD $root, $inner, $ext2))
+  ]
+>;
+
+def avgceil_s_sum : GICombinePatFrag<
+  (outs root:$root),
+  (ins $x, $y),
+  [
+    (pattern (G_SEXT $ext1, $x), (G_SEXT $ext2, $y), (G_ADD $inner, $ext1, $ext2), (G_ADD $root, $inner, 1)),
+    (pattern (G_SEXT $ext1, $x), (G_SEXT $ext2, $y), (G_ADD $inner, $ext1, 1),  (G_ADD $root, $inner, $ext2))
+  ]
+>;
+
+def avgceil_u_match : GICombineRule<
+  (defs root:$dst, build_fn_matchinfo:$matchinfo),
+  (match (avgceil_u_sum $sum, $x, $y),
+         (G_LSHR $dst, $sum, 1):$mi,
+         [{ return Helper.matchAVG(*${mi}, MRI, /*IsSigned=*/false, /*IsCeil=*/true); }]),
+  (apply [{ Helper.applyAVG(B, *${mi}, ${x}.getReg(), ${y}.getReg(), /*IsSigned=*/false, /*IsCeil=*/true); }])
+>;
+
+def avgceil_s_match : GICombineRule<
+  (defs root:$dst, build_fn_matchinfo:$matchinfo),
+  (match (avgceil_s_sum $sum, $x, $y),
+         (G_ASHR $dst, $sum, 1):$mi,
+         [{ return Helper.matchAVG(*${mi}, MRI, /*IsSigned=*/true, /*IsCeil=*/true); }]),
+  (apply [{ Helper.applyAVG(B, *${mi}, ${x}.getReg(), ${y}.getReg(), /*IsSigned=*/true, /*IsCeil=*/true); }])
+>;
+
 // FIXME: These should use the custom predicate feature once it lands.
 def undef_combines : GICombineGroup<[undef_to_fp_zero, undef_to_int_zero,
                                      undef_to_negative_one,
@@ -2389,7 +2453,8 @@ def all_combines : GICombineGroup<[integer_reassoc_combines, trivial_combines,
     sext_trunc, zext_trunc, prefer_sign_combines, shuffle_combines,
     combine_use_vector_truncate, merge_combines, overflow_combines,
     truncsat_combines, lshr_of_trunc_of_lshr, ctls_combines, add_shift, sub_one_from_sub,
-    binop_with_neg, sub_minus_one]>;
+    binop_with_neg, sub_minus_one, avgfloor_u_match, avgfloor_s_match,
+    avgceil_u_match, avgceil_s_match]>;
 
 // A combine group used to for prelegalizer combiners at -O0. The combines in
 // this group have been selected based on experiments to balance code size and

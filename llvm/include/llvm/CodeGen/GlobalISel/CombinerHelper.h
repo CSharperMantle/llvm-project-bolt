@@ -1060,6 +1060,12 @@ public:
   // (ctlz (or (shl (xor x, (sra x, bitwidth-1)), 1), 1) -> (ctls x)
   bool matchCtls(MachineInstr &CtlzMI, BuildFnTy &MatchInfo) const;
 
+  bool matchAVG(MachineInstr &MI, MachineRegisterInfo &MRI, bool IsSigned,
+                bool IsCeil) const;
+
+  void applyAVG(MachineIRBuilder &B, MachineInstr &MI, Register X, Register Y,
+                bool IsSigned, bool IsCeil) const;
+
 private:
   /// Checks for legality of an indexed variant of \p LdSt.
   bool isIndexedLoadStoreLegal(GLoadStore &LdSt) const;
