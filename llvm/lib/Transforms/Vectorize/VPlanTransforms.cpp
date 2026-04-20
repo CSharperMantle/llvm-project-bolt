@@ -6569,7 +6569,7 @@ void VPlanTransforms::convertToStridedAccesses(VPlan &Plan,
 
       Type *LoadTy = TypeInfo.inferScalarType(LoadR);
       Align Alignment = LoadR->getAlign();
-      auto IsProfitable = [&](ElementCount VF) -> bool {
+      auto IsProfitable = [&](ElementCount VF) {
         Type *DataTy = toVectorTy(LoadTy, VF);
         if (!Ctx.TTI.isLegalStridedLoadStore(DataTy, Alignment))
           return false;
