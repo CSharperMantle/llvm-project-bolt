@@ -116,7 +116,7 @@ define void @uniform_store_i1(ptr noalias %dst, ptr noalias %start, i64 %N) {
 ; CHECK-NEXT:    [[INDEX:%.*]] = phi i64 [ 0, [[VECTOR_PH]] ], [ [[INDEX_NEXT:%.*]], [[VECTOR_BODY]] ]
 ; CHECK-NEXT:    [[POINTER_PHI:%.*]] = phi ptr [ [[START]], [[VECTOR_PH]] ], [ [[PTR_IND:%.*]], [[VECTOR_BODY]] ]
 ; CHECK-NEXT:    [[TMP2:%.*]] = getelementptr i8, ptr [[POINTER_PHI]], <32 x i64> <i64 0, i64 8, i64 16, i64 24, i64 32, i64 40, i64 48, i64 56, i64 64, i64 72, i64 80, i64 88, i64 96, i64 104, i64 112, i64 120, i64 128, i64 136, i64 144, i64 152, i64 160, i64 168, i64 176, i64 184, i64 192, i64 200, i64 208, i64 216, i64 224, i64 232, i64 240, i64 248>
-; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds i64, <32 x ptr> [[TMP2]], i64 1
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds i64, <32 x ptr> [[TMP2]], <32 x i64> splat (i64 1)
 ; CHECK-NEXT:    [[TMP7:%.*]] = icmp eq <32 x ptr> [[TMP5]], [[BROADCAST_SPLAT]]
 ; CHECK-NEXT:    [[TMP8:%.*]] = extractelement <32 x i1> [[TMP7]], i64 31
 ; CHECK-NEXT:    store i1 [[TMP8]], ptr [[DST:%.*]], align 1

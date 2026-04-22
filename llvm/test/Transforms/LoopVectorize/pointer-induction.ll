@@ -142,7 +142,7 @@ define void @pointer_induction_used_as_vector(ptr noalias %start.1, ptr noalias 
 ; CHECK-NEXT:    [[TMP4:%.*]] = extractelement <4 x ptr> [[VECTOR_GEP]], i64 0
 ; CHECK-NEXT:    [[OFFSET_IDX:%.*]] = shl i64 [[INDEX]], 3
 ; CHECK-NEXT:    [[NEXT_GEP:%.*]] = getelementptr i8, ptr [[START_1]], i64 [[OFFSET_IDX]]
-; CHECK-NEXT:    [[TMP2:%.*]] = getelementptr inbounds i8, <4 x ptr> [[VECTOR_GEP]], i64 1
+; CHECK-NEXT:    [[TMP2:%.*]] = getelementptr inbounds i8, <4 x ptr> [[VECTOR_GEP]], <4 x i64> splat (i64 1)
 ; CHECK-NEXT:    store <4 x ptr> [[TMP2]], ptr [[NEXT_GEP]], align 8
 ; CHECK-NEXT:    [[WIDE_LOAD:%.*]] = load <4 x i8>, ptr [[TMP4]], align 1
 ; CHECK-NEXT:    [[TMP6:%.*]] = add <4 x i8> [[WIDE_LOAD]], splat (i8 1)

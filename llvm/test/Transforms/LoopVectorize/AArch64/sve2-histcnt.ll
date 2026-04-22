@@ -547,9 +547,12 @@ define void @histogram_array_4op_gep_nonzero_const_idx(i64 noundef %N, ptr reado
 ; CHECK-NEXT:    [[IV:%.*]] = phi i64 [ 0, [[ENTRY]] ], [ [[IV_NEXT:%.*]], [[FOR_BODY]] ]
 ; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds [4 x i8], ptr [[INDICES]], i64 [[IV]]
 ; CHECK-NEXT:    [[WIDE_LOAD:%.*]] = load <vscale x 4 x i32>, ptr [[TMP5]], align 4
-; CHECK-NEXT:    [[TMP6:%.*]] = sext <vscale x 4 x i32> [[WIDE_LOAD]] to <vscale x 4 x i64>
+; CHECK-NEXT:    [[TMP9:%.*]] = extractelement <vscale x 4 x i32> [[WIDE_LOAD]], i64 0
+; CHECK-NEXT:    [[TMP6:%.*]] = sext i32 [[TMP9]] to i64
 ; CHECK-NEXT:    [[DOTSPLIT:%.*]] = getelementptr inbounds nuw i8, ptr [[DATA_STRUCT]], i64 8388608
-; CHECK-NEXT:    [[TMP7:%.*]] = getelementptr inbounds [4 x i8], ptr [[DOTSPLIT]], <vscale x 4 x i64> [[TMP6]]
+; CHECK-NEXT:    [[WIDE_GEP:%.*]] = getelementptr inbounds [4 x i8], ptr [[DOTSPLIT]], i64 [[TMP6]]
+; CHECK-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <vscale x 4 x ptr> poison, ptr [[WIDE_GEP]], i64 0
+; CHECK-NEXT:    [[TMP7:%.*]] = shufflevector <vscale x 4 x ptr> [[BROADCAST_SPLATINSERT]], <vscale x 4 x ptr> poison, <vscale x 4 x i32> zeroinitializer
 ; CHECK-NEXT:    call void @llvm.experimental.vector.histogram.add.nxv4p0.i32(<vscale x 4 x ptr> [[TMP7]], i32 1, <vscale x 4 x i1> splat (i1 true))
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw i64 [[IV]], [[TMP4]]
 ; CHECK-NEXT:    [[TMP8:%.*]] = icmp eq i64 [[IV_NEXT]], [[N_VEC]]
