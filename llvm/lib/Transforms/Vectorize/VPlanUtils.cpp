@@ -762,6 +762,11 @@ VPInstruction *vputils::findCanonicalIVIncrement(VPlan &Plan) {
     if (!UF.isMaterialized())
       return Step == &UF;
 
+    // Alias masking: step is number of active lanes of a dependence mask.
+    if (match(Step, m_ZExtOrTruncOrSelf(
+                        m_VPInstruction<VPInstruction::NumActiveLanes>())))
+      return true;
+
     unsigned ConcreteUF = Plan.getConcreteUF();
     // Fixed VF: step is just the concrete UF.
     if (match(Step, m_SpecificInt(ConcreteUF)))

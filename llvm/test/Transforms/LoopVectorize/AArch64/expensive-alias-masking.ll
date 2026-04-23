@@ -1,6 +1,6 @@
-; RUN: opt -S -disable-output -mattr=+sve2 -passes=loop-vectorize -force-partial-aliasing-vectorization -prefer-predicate-over-epilogue=predicate-dont-vectorize %s -pass-remarks=loop-vectorize -pass-remarks-missed=loop-vectorize 2>%t
+; RUN: opt -S -disable-output -mattr=+sve2 -passes=loop-vectorize -force-partial-aliasing-vectorization -tail-folding-policy=must-fold-tail %s -pass-remarks=loop-vectorize -pass-remarks-missed=loop-vectorize 2>%t
 ; RUN: cat %t | FileCheck %s -check-prefix=CHECK-ALIAS-MASKING-REMARKS
-; RUN: opt -S -disable-output -mattr=+sve2 -passes=loop-vectorize -prefer-predicate-over-epilogue=predicate-dont-vectorize %s -pass-remarks=loop-vectorize -pass-remarks-missed=loop-vectorize 2>%t
+; RUN: opt -S -disable-output -mattr=+sve2 -passes=loop-vectorize -tail-folding-policy=must-fold-tail %s -pass-remarks=loop-vectorize -pass-remarks-missed=loop-vectorize 2>%t
 ; RUN: cat %t | FileCheck %s -check-prefix=CHECK-DIFF-CHECKS-REMARKS
 
 target triple = "aarch64-unknown-linux-gnu"
