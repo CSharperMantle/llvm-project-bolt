@@ -50,11 +50,7 @@ define i32 @first_order_recurrence(ptr nocapture readonly %a, ptr nocapture %b, 
 ; CHECK-NEXT:    [[TMP12:%.*]] = xor <4 x i1> [[TMP5]], splat (i1 true)
 ; CHECK-NEXT:    [[FIRST_INACTIVE_LANE:%.*]] = call i64 @llvm.experimental.cttz.elts.i64.v4i1(<4 x i1> [[TMP12]], i1 false)
 ; CHECK-NEXT:    [[LAST_ACTIVE_LANE:%.*]] = sub i64 [[FIRST_INACTIVE_LANE]], 1
-; CHECK-NEXT:    [[TMP13:%.*]] = sub i64 [[LAST_ACTIVE_LANE]], 1
-; CHECK-NEXT:    [[TMP14:%.*]] = extractelement <4 x i32> [[WIDE_MASKED_LOAD]], i64 [[TMP13]]
-; CHECK-NEXT:    [[TMP15:%.*]] = extractelement <4 x i32> [[VECTOR_RECUR]], i64 3
-; CHECK-NEXT:    [[TMP16:%.*]] = icmp eq i64 [[LAST_ACTIVE_LANE]], 0
-; CHECK-NEXT:    [[TMP17:%.*]] = select i1 [[TMP16]], i32 [[TMP15]], i32 [[TMP14]]
+; CHECK-NEXT:    [[TMP13:%.*]] = extractelement <4 x i32> [[TMP8]], i64 [[LAST_ACTIVE_LANE]]
 ; CHECK-NEXT:    br [[FOR_EXIT:label %.*]]
 ; CHECK:       [[SCALAR_PH]]:
 ;

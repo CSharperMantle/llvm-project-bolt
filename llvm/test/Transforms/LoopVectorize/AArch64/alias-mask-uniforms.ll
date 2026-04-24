@@ -12,9 +12,7 @@ define void @vf_dependent_uniform(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n)
 ; CHECK-NEXT:    [[SMAX:%.*]] = call i64 @llvm.smax.i64(i64 [[N]], i64 1)
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
-; CHECK-NEXT:    [[TMP0:%.*]] = inttoptr i64 [[P_IN2]] to ptr
-; CHECK-NEXT:    [[TMP1:%.*]] = inttoptr i64 [[P_OUT1]] to ptr
-; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1(ptr [[TMP0]], ptr [[TMP1]], i64 8)
+; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
 ; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
 ; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
 ; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
@@ -122,9 +120,7 @@ define void @uniform_load(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n) {
 ; CHECK-NEXT:    [[SMAX:%.*]] = call i64 @llvm.smax.i64(i64 [[N]], i64 1)
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
-; CHECK-NEXT:    [[TMP0:%.*]] = inttoptr i64 [[P_IN2]] to ptr
-; CHECK-NEXT:    [[TMP1:%.*]] = inttoptr i64 [[P_OUT1]] to ptr
-; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1(ptr [[TMP0]], ptr [[TMP1]], i64 8)
+; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
 ; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
 ; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
 ; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
@@ -191,9 +187,7 @@ define void @uniform_store(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n) {
 ; CHECK-NEXT:    [[SMAX:%.*]] = call i64 @llvm.smax.i64(i64 [[N]], i64 1)
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
-; CHECK-NEXT:    [[TMP0:%.*]] = inttoptr i64 [[P_IN2]] to ptr
-; CHECK-NEXT:    [[TMP1:%.*]] = inttoptr i64 [[P_OUT1]] to ptr
-; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1(ptr [[TMP0]], ptr [[TMP1]], i64 8)
+; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
 ; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
 ; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
 ; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64

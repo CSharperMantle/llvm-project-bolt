@@ -15,9 +15,7 @@ define void @test(ptr %src, ptr %dst, i32 %n) {
 ; CHECK-NEXT:    [[TMP1:%.*]] = icmp slt i32 [[TMP0]], 0
 ; CHECK-NEXT:    br i1 [[TMP1]], label %[[SCALAR_PH:.*]], label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
-; CHECK-NEXT:    [[TMP2:%.*]] = inttoptr i64 [[SRC2]] to ptr
-; CHECK-NEXT:    [[TMP3:%.*]] = inttoptr i64 [[DST1]] to ptr
-; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1(ptr [[TMP2]], ptr [[TMP3]], i64 4)
+; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[SRC2]], i64 [[DST1]], i64 4)
 ; CHECK-NEXT:    [[TMP5:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
 ; CHECK-NEXT:    [[TMP6:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP5]])
 ; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP6]] to i64

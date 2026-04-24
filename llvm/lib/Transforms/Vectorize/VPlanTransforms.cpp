@@ -5045,7 +5045,6 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
   VPBuilder Builder(AliasCheckVPBB);
   Type *I1Ty = IntegerType::getInt1Ty(Plan.getContext());
   Type *I64Ty = IntegerType::getInt64Ty(Plan.getContext());
-  Type *PtrTy = PointerType::getUnqual(Plan.getContext());
 
   VPValue *IncomingAliasMask = vputils::findIncomingAliasMask(Plan);
   assert(IncomingAliasMask && "Expected an alias mask!");
@@ -5055,17 +5054,11 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
     VPValue *Src = vputils::getOrCreateVPValueForSCEVExpr(Plan, Check.SrcStart);
     VPValue *Sink =
         vputils::getOrCreateVPValueForSCEVExpr(Plan, Check.SinkStart);
-
-    VPValue *SrcPtr =
-        Builder.createScalarCast(Instruction::CastOps::IntToPtr, Src, PtrTy,
-                                 DebugLoc::getCompilerGenerated());
-    VPValue *SinkPtr =
-        Builder.createScalarCast(Instruction::CastOps::IntToPtr, Sink, PtrTy,
-                                 DebugLoc::getCompilerGenerated());
+    Type *AddrType = VPTypeAnalysis(Plan).inferScalarType(Src);
 
     VPWidenIntrinsicRecipe *WARMask = new VPWidenIntrinsicRecipe(
         Intrinsic::loop_dependence_war_mask,
-        {SrcPtr, SinkPtr, Plan.getConstantInt(I64Ty, Check.AccessSize)}, I1Ty);
+        {Src, Sink, Plan.getConstantInt(AddrType, Check.AccessSize)}, I1Ty);
     Builder.insert(WARMask);
 
     if (AliasMask)

@@ -84,41 +84,39 @@ define void @alias_mask(ptr noalias %a, ptr %b, ptr %c, i64 %n) {
 ; FINAL-NEXT:  Successor(s): vector.clamped.vf.check
 ; FINAL-EMPTY:
 ; FINAL-NEXT:  vector.clamped.vf.check:
-; FINAL-NEXT:    EMIT-SCALAR vp<[[VP2:%[0-9]+]]> = inttoptr ir<%b2> to ptr
-; FINAL-NEXT:    EMIT-SCALAR vp<[[VP3:%[0-9]+]]> = inttoptr ir<%c1> to ptr
-; FINAL-NEXT:    WIDEN-INTRINSIC vp<[[VP4:%[0-9]+]]> = call llvm.loop.dependence.war.mask(vp<[[VP2]]>, vp<[[VP3]]>, ir<1>)
-; FINAL-NEXT:    EMIT vp<[[VP5:%[0-9]+]]> = num-active-lanes vp<[[VP4]]>
-; FINAL-NEXT:    EMIT vp<%vf.is.scalar> = icmp ule vp<[[VP5]]>, ir<1>
-; FINAL-NEXT:    EMIT vp<[[VP6:%[0-9]+]]> = sub ir<-1>, ir<%n>
-; FINAL-NEXT:    EMIT vp<%vf.step.overflow> = icmp ult vp<[[VP6]]>, vp<[[VP5]]>
-; FINAL-NEXT:    EMIT vp<[[VP7:%[0-9]+]]> = or vp<%vf.is.scalar>, vp<%vf.step.overflow>
-; FINAL-NEXT:    EMIT branch-on-cond vp<[[VP7]]>
+; FINAL-NEXT:    WIDEN-INTRINSIC vp<[[VP2:%[0-9]+]]> = call llvm.loop.dependence.war.mask(ir<%b2>, ir<%c1>, ir<1>)
+; FINAL-NEXT:    EMIT vp<[[VP3:%[0-9]+]]> = num-active-lanes vp<[[VP2]]>
+; FINAL-NEXT:    EMIT vp<%vf.is.scalar> = icmp ule vp<[[VP3]]>, ir<1>
+; FINAL-NEXT:    EMIT vp<[[VP4:%[0-9]+]]> = sub ir<-1>, ir<%n>
+; FINAL-NEXT:    EMIT vp<%vf.step.overflow> = icmp ult vp<[[VP4]]>, vp<[[VP3]]>
+; FINAL-NEXT:    EMIT vp<[[VP5:%[0-9]+]]> = or vp<%vf.is.scalar>, vp<%vf.step.overflow>
+; FINAL-NEXT:    EMIT branch-on-cond vp<[[VP5]]>
 ; FINAL-NEXT:  Successor(s): ir-bb<scalar.ph>, vector.ph
 ; FINAL-EMPTY:
 ; FINAL-NEXT:  vector.ph:
 ; FINAL-NEXT:    EMIT vp<%trip.count.minus.1> = sub ir<%n>, ir<1>
-; FINAL-NEXT:    EMIT vp<[[VP9:%[0-9]+]]> = sub vp<[[VP5]]>, ir<1>
-; FINAL-NEXT:    EMIT vp<%n.rnd.up> = add ir<%n>, vp<[[VP9]]>
-; FINAL-NEXT:    EMIT vp<%n.mod.vf> = urem vp<%n.rnd.up>, vp<[[VP5]]>
+; FINAL-NEXT:    EMIT vp<[[VP7:%[0-9]+]]> = sub vp<[[VP3]]>, ir<1>
+; FINAL-NEXT:    EMIT vp<%n.rnd.up> = add ir<%n>, vp<[[VP7]]>
+; FINAL-NEXT:    EMIT vp<%n.mod.vf> = urem vp<%n.rnd.up>, vp<[[VP3]]>
 ; FINAL-NEXT:    EMIT vp<%n.vec> = sub vp<%n.rnd.up>, vp<%n.mod.vf>
-; FINAL-NEXT:    EMIT vp<[[VP10:%[0-9]+]]> = broadcast vp<%trip.count.minus.1>
+; FINAL-NEXT:    EMIT vp<[[VP8:%[0-9]+]]> = broadcast vp<%trip.count.minus.1>
 ; FINAL-NEXT:  Successor(s): vector.body
 ; FINAL-EMPTY:
 ; FINAL-NEXT:  vector.body:
 ; FINAL-NEXT:    EMIT-SCALAR vp<%index> = phi [ ir<0>, vector.ph ], [ vp<%index.next>, vector.body ]
-; FINAL-NEXT:    EMIT vp<[[VP11:%[0-9]+]]> = WIDEN-CANONICAL-INDUCTION vp<%index>
-; FINAL-NEXT:    EMIT vp<[[VP12:%[0-9]+]]> = icmp ule vp<[[VP11]]>, vp<[[VP10]]>
-; FINAL-NEXT:    EMIT vp<[[VP13:%[0-9]+]]> = and vp<[[VP12]]>, vp<[[VP4]]>
+; FINAL-NEXT:    EMIT vp<[[VP9:%[0-9]+]]> = WIDEN-CANONICAL-INDUCTION vp<%index>
+; FINAL-NEXT:    EMIT vp<[[VP10:%[0-9]+]]> = icmp ule vp<[[VP9]]>, vp<[[VP8]]>
+; FINAL-NEXT:    EMIT vp<[[VP11:%[0-9]+]]> = and vp<[[VP10]]>, vp<[[VP2]]>
 ; FINAL-NEXT:    CLONE ir<%ptr.a> = getelementptr inbounds ir<%a>, vp<%index>
-; FINAL-NEXT:    WIDEN ir<%ld.a> = load ir<%ptr.a>, vp<[[VP13]]>
+; FINAL-NEXT:    WIDEN ir<%ld.a> = load ir<%ptr.a>, vp<[[VP11]]>
 ; FINAL-NEXT:    CLONE ir<%ptr.b> = getelementptr inbounds ir<%b>, vp<%index>
-; FINAL-NEXT:    WIDEN ir<%ld.b> = load ir<%ptr.b>, vp<[[VP13]]>
+; FINAL-NEXT:    WIDEN ir<%ld.b> = load ir<%ptr.b>, vp<[[VP11]]>
 ; FINAL-NEXT:    WIDEN ir<%add> = add ir<%ld.b>, ir<%ld.a>
 ; FINAL-NEXT:    CLONE ir<%ptr.c> = getelementptr inbounds ir<%c>, vp<%index>
-; FINAL-NEXT:    WIDEN store ir<%ptr.c>, ir<%add>, vp<[[VP13]]>
-; FINAL-NEXT:    EMIT vp<%index.next> = add vp<%index>, vp<[[VP5]]>
-; FINAL-NEXT:    EMIT vp<[[VP14:%[0-9]+]]> = icmp eq vp<%index.next>, vp<%n.vec>
-; FINAL-NEXT:    EMIT branch-on-cond vp<[[VP14]]>
+; FINAL-NEXT:    WIDEN store ir<%ptr.c>, ir<%add>, vp<[[VP11]]>
+; FINAL-NEXT:    EMIT vp<%index.next> = add vp<%index>, vp<[[VP3]]>
+; FINAL-NEXT:    EMIT vp<[[VP12:%[0-9]+]]> = icmp eq vp<%index.next>, vp<%n.vec>
+; FINAL-NEXT:    EMIT branch-on-cond vp<[[VP12]]>
 ; FINAL-NEXT:  Successor(s): middle.block, vector.body
 ; FINAL-EMPTY:
 ; FINAL-NEXT:  middle.block:
