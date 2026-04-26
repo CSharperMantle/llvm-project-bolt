@@ -230,6 +230,7 @@ struct MissingFeatures {
   static bool cleanupDeactivationScope() { return false; }
   static bool cleanupWithPreservedValues() { return false; }
   static bool cleanupsToDeactivate() { return false; }
+  static bool constEmitterAbstractForMemory() { return false; }
   static bool constEmitterAggILE() { return false; }
   static bool constEmitterArrayILE() { return false; }
   static bool constEmitterVectorILE() { return false; }
