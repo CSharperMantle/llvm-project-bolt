@@ -672,7 +672,6 @@ enum ABI {
   ABI_LP64D,
   ABI_LP64E,
   ABI_CHERIOT,
-  ABI_CHERIOT_BAREMETAL,
   ABI_Unknown
 };
 
