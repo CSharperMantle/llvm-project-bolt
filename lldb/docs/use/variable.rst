@@ -1383,6 +1383,110 @@ displayed. The reason the debugger warns you is that enabling an empty category
 might be a typo, and you effectively wanted to enable a similarly-named but
 not-empty category.
 
+Examples
+--------
+
+These are a few examples of summaries and synthetic children providers for
+types you may want to format.
+
+You can find further examples here:
+
+- `LLVM Data Formatters <https://github.com/llvm/llvm-project/blob/main/llvm/utils/lldbDataFormatters.py>`_
+- `Coca (Objective-C) Formatters <https://github.com/llvm/llvm-project/tree/main/lldb/examples/summaries/cocoa>`_
+.. TODO: Add libc++ formatters here
+
+Type Summaries
+^^^^^^^^^^^^^^
+
+- **Strings**: Many string types contain a pair of a data pointer and a size.
+  This shows `llvm::StringRef <https://llvm.org/doxygen/classllvm_1_1StringRef.html>`_
+  which has a definition similar to the following:
+
+  .. code-block:: cpp
+
+      struct StringRef {
+        /// The start of the string, in an external buffer.
+        const char *Data;
+        /// The length of the string.
+        size_t Length;
+      };
+
+  We can use a ``char[N]`` array to create a summary for this string.
+  This will handle escaping of non-printable characters like tabs or newlines for us.
+
+  .. literalinclude:: ../../../llvm/utils/lldbDataFormatters.py
+     :start-after: [SNIP-StringRef-Summary]
+     :end-before: [/SNIP-StringRef-Summary]
+
+- **Containers**: For most containers, displaying the size in the summary is
+  enough. LLDB usually displays the size as ``size=42`` for C++ STL types.
+  If your container has a `Synthetic Children <synthetic-children_>`_ provider,
+  you can use `Summary Strings`_:
+  ::
+     
+     type summary add -s "size=${svar%#}" MyContainer
+     # Of if the container is a template:
+     type summary add -s "size=${svar%#}" -x "^MyContainer<.+>$"
+
+Synthetic Children
+^^^^^^^^^^^^^^^^^^
+
+- **Spans**: This shows a synthetic children provider for
+  `llvm::ArrayRef <https://llvm.org/doxygen/classllvm_1_1ArrayRef.html>`_.
+  This is similar to a ``std::span``. It consists of a data pointer and a size:
+
+  .. code-block:: cpp
+
+      template <typename T>
+      struct ArrayRef {
+        /// The start of the array, in an external buffer.
+        const T *Data;
+        /// The number of elements.
+        size_t Length;
+      };
+   
+  The two methods of interest here are ``get_child_at_index`` and ``update``.
+  We're using ``CreateChildAtOffset`` to create the children when requested.
+  Note that this takes an offset in bytes, so we need to multiply by the size
+  of ``T``.
+
+  .. literalinclude:: ../../../llvm/utils/lldbDataFormatters.py
+     :start-after: [SNIP-ArrayRef-Synth]
+     :end-before: [/SNIP-ArrayRef-Synth]
+
+- **Synthetic Values**: You might have some types that wrap primitive types.
+  For example, you might have a class that provides checked arithmetic to guard
+  against overflow:
+
+  .. code-block:: cpp
+
+      struct CheckedInt {
+        int Value;
+        // Defines operator+, operator-, etc.
+      };
+
+  We can use ``lldb.SBSyntheticValueProvider`` to show the type as if it was
+  the inner ``Value``:
+
+  .. code-block:: python
+
+     class CheckedIntSynthProvider(lldb.SBSyntheticValueProvider):
+
+       valobj: lldb.SBValue
+       value: Optional[lldb.SBValue]
+
+       def __init__(self, valobj: lldb.SBValue, internal_dict):
+           self.valobj = valobj
+           self.value = None
+
+       def update(self):
+           self.value = self.valobj.GetChildAtIndex(0)
+           return False
+
+       def get_value(self):
+           return self.value
+
+
 Finding Formatters 101
 ----------------------
 
