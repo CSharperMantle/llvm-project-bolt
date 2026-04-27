@@ -7490,14 +7490,29 @@ entry:
 define i64 @test_mm512_reduce_max_epi64(<8 x i64> %__W) {
 ; X86-LABEL: test_mm512_reduce_max_epi64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    vextracti64x4 $1, %zmm0, %ymm1
 ; X86-NEXT:    vpmaxsq %zmm1, %zmm0, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpmaxsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpmaxsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    cmpl %esi, %eax
+; X86-NEXT:    movl %edx, %edi
+; X86-NEXT:    sbbl %ecx, %edi
+; X86-NEXT:    cmovll %esi, %eax
+; X86-NEXT:    cmovll %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7520,14 +7535,29 @@ entry:
 define i64 @test_mm512_reduce_max_epu64(<8 x i64> %__W) {
 ; X86-LABEL: test_mm512_reduce_max_epu64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    vextracti64x4 $1, %zmm0, %ymm1
 ; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    cmpl %esi, %eax
+; X86-NEXT:    movl %edx, %edi
+; X86-NEXT:    sbbl %ecx, %edi
+; X86-NEXT:    cmovbl %esi, %eax
+; X86-NEXT:    cmovbl %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7589,14 +7619,29 @@ entry:
 define i64 @test_mm512_reduce_min_epi64(<8 x i64> %__W) {
 ; X86-LABEL: test_mm512_reduce_min_epi64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    vextracti64x4 $1, %zmm0, %ymm1
 ; X86-NEXT:    vpminsq %zmm1, %zmm0, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpminsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpminsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    cmpl %eax, %esi
+; X86-NEXT:    movl %ecx, %edi
+; X86-NEXT:    sbbl %edx, %edi
+; X86-NEXT:    cmovll %esi, %eax
+; X86-NEXT:    cmovll %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7619,14 +7664,29 @@ entry:
 define i64 @test_mm512_reduce_min_epu64(<8 x i64> %__W) {
 ; X86-LABEL: test_mm512_reduce_min_epu64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    vextracti64x4 $1, %zmm0, %ymm1
 ; X86-NEXT:    vpminuq %zmm1, %zmm0, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpminuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpminuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    cmpl %eax, %esi
+; X86-NEXT:    movl %ecx, %edi
+; X86-NEXT:    sbbl %edx, %edi
+; X86-NEXT:    cmovbl %esi, %eax
+; X86-NEXT:    cmovbl %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7688,6 +7748,12 @@ entry:
 define i64 @test_mm512_mask_reduce_max_epi64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-LABEL: test_mm512_mask_reduce_max_epi64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    movzbl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    kmovw %eax, %k1
 ; X86-NEXT:    vpbroadcastq {{.*#+}} zmm1 = [0,2147483648,0,2147483648,0,2147483648,0,2147483648,0,2147483648,0,2147483648,0,2147483648,0,2147483648]
@@ -7696,10 +7762,19 @@ define i64 @test_mm512_mask_reduce_max_epi64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-NEXT:    vpmaxsq %zmm0, %zmm1, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpmaxsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpmaxsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    cmpl %esi, %eax
+; X86-NEXT:    movl %edx, %edi
+; X86-NEXT:    sbbl %ecx, %edi
+; X86-NEXT:    cmovll %esi, %eax
+; X86-NEXT:    cmovll %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7727,6 +7802,12 @@ entry:
 define i64 @test_mm512_mask_reduce_max_epu64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-LABEL: test_mm512_mask_reduce_max_epu64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    movzbl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    kmovw %eax, %k1
 ; X86-NEXT:    vmovdqa64 %zmm0, %zmm0 {%k1} {z}
@@ -7734,10 +7815,19 @@ define i64 @test_mm512_mask_reduce_max_epu64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpmaxuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    cmpl %esi, %eax
+; X86-NEXT:    movl %edx, %edi
+; X86-NEXT:    sbbl %ecx, %edi
+; X86-NEXT:    cmovbl %esi, %eax
+; X86-NEXT:    cmovbl %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7812,6 +7902,12 @@ entry:
 define i64 @test_mm512_mask_reduce_min_epi64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-LABEL: test_mm512_mask_reduce_min_epi64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    movzbl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    kmovw %eax, %k1
 ; X86-NEXT:    vpbroadcastq {{.*#+}} zmm1 = [4294967295,2147483647,4294967295,2147483647,4294967295,2147483647,4294967295,2147483647,4294967295,2147483647,4294967295,2147483647,4294967295,2147483647,4294967295,2147483647]
@@ -7820,10 +7916,19 @@ define i64 @test_mm512_mask_reduce_min_epi64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-NEXT:    vpminsq %zmm0, %zmm1, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpminsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpminsq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    cmpl %eax, %esi
+; X86-NEXT:    movl %ecx, %edi
+; X86-NEXT:    sbbl %edx, %edi
+; X86-NEXT:    cmovll %esi, %eax
+; X86-NEXT:    cmovll %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
@@ -7851,6 +7956,12 @@ entry:
 define i64 @test_mm512_mask_reduce_min_epu64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-LABEL: test_mm512_mask_reduce_min_epu64:
 ; X86:       # %bb.0: # %entry
+; X86-NEXT:    pushl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    pushl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 12
+; X86-NEXT:    .cfi_offset %esi, -12
+; X86-NEXT:    .cfi_offset %edi, -8
 ; X86-NEXT:    movzbl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    kmovw %eax, %k1
 ; X86-NEXT:    vpternlogd {{.*#+}} zmm1 = -1
@@ -7859,10 +7970,19 @@ define i64 @test_mm512_mask_reduce_min_epu64(i8 zeroext %__M, <8 x i64> %__W) {
 ; X86-NEXT:    vpminuq %zmm0, %zmm1, %zmm0
 ; X86-NEXT:    vextracti128 $1, %ymm0, %xmm1
 ; X86-NEXT:    vpminuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vpshufd {{.*#+}} xmm1 = xmm0[2,3,2,3]
-; X86-NEXT:    vpminuq %zmm1, %zmm0, %zmm0
-; X86-NEXT:    vmovd %xmm0, %eax
-; X86-NEXT:    vpextrd $1, %xmm0, %edx
+; X86-NEXT:    vpextrd $3, %xmm0, %edx
+; X86-NEXT:    vpextrd $1, %xmm0, %ecx
+; X86-NEXT:    vpextrd $2, %xmm0, %eax
+; X86-NEXT:    vmovd %xmm0, %esi
+; X86-NEXT:    cmpl %eax, %esi
+; X86-NEXT:    movl %ecx, %edi
+; X86-NEXT:    sbbl %edx, %edi
+; X86-NEXT:    cmovbl %esi, %eax
+; X86-NEXT:    cmovbl %ecx, %edx
+; X86-NEXT:    popl %esi
+; X86-NEXT:    .cfi_def_cfa_offset 8
+; X86-NEXT:    popl %edi
+; X86-NEXT:    .cfi_def_cfa_offset 4
 ; X86-NEXT:    vzeroupper
 ; X86-NEXT:    retl
 ;
