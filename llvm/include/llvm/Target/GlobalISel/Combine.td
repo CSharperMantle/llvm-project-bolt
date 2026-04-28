@@ -2085,6 +2085,39 @@ def AMinusC1PlusC2: GICombineRule<
    [{ return Helper.matchFoldAMinusC1PlusC2(*${root}, ${matchinfo}); }]),
    (apply [{ Helper.applyBuildFn(*${root}, ${matchinfo}); }])>;
 
+// with the manual implementation of the helper it works
+// (sub 0, (max X, (sub 0, X))) --> (min X, (sub 0, X))
+// def SubSmaxSub: GICombineRule<
+//    (defs root:$root, build_fn_matchinfo:$matchinfo),
+//    (match (G_SUB $sub, 0, $A),
+//           (G_SMAX $max, $A, $sub),
+//           (G_SUB $root, 0, $max):$root, 
+//           [{ return Helper.matchFoldSubSmaxSub(*${root}, ${matchinfo}); }]),
+//    (apply [{ Helper.applyBuildFn(*${root}, ${matchinfo}); }])>;
+      
+// otherwise it crashes
+// (sub 0, (max X, (sub 0, X))) --> (min X, (sub 0, X))
+def SubSmaxSub: GICombineRule<
+   (defs root:$root),
+   (match (G_SUB $sub, 0, $A),
+          (G_SMAX $max, $A, $sub),
+          (G_SUB $root, 0, $max),
+          [{ return MRI.hasOneNonDBGUse(${sub}.getReg()) &&
+                    MRI.hasOneNonDBGUse(${max}.getReg()); }]),
+   (apply (G_SUB $sub1, 0, $A), 
+          (G_SMIN $root, $A, $sub1))>;
+              
+// (sub 0, (max X, (sub 0, X))) --> (min X, (sub 0, X))
+def SubUmaxSub: GICombineRule<
+   (defs root:$root),
+   (match (G_SUB $sub, 0, $A),
+          (G_UMAX $max, $A, $sub),
+          (G_SUB $root, 0, $max),
+          [{ return MRI.hasOneNonDBGUse(${sub}.getReg()) &&
+                    MRI.hasOneNonDBGUse(${max}.getReg()); }]),
+   (apply (G_SUB $sub1, 0, $A), 
+          (G_UMIN $root, $A, $sub1))>;
+   
 def integer_reassoc_combines: GICombineGroup<[
   APlusBMinusCMinusB,
   AMinusBMinusCMinusC,
@@ -2104,7 +2137,12 @@ def integer_reassoc_combines: GICombineGroup<[
   C2MinusAPlusC1,
   AMinusC1MinusC2,
   C1Minus2MinusC2,
-  AMinusC1PlusC2
+  AMinusC1PlusC2,
+]>;
+
+def max_min_combines: GICombineGroup<[
+  SubSmaxSub, 
+  SubUmaxSub
 ]>;
 
 // fold (A+(shl (0-B), C)) -> (A-(shl B, C))
@@ -2389,7 +2427,7 @@ def all_combines : GICombineGroup<[integer_reassoc_combines, trivial_combines,
     sext_trunc, zext_trunc, prefer_sign_combines, shuffle_combines,
     combine_use_vector_truncate, merge_combines, overflow_combines,
     truncsat_combines, lshr_of_trunc_of_lshr, ctls_combines, add_shift, sub_one_from_sub,
-    binop_with_neg, sub_minus_one]>;
+    binop_with_neg, sub_minus_one, max_min_combines]>;
 
 // A combine group used to for prelegalizer combiners at -O0. The combines in
 // this group have been selected based on experiments to balance code size and

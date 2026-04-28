@@ -1027,6 +1027,9 @@ public:
   bool matchFoldAMinusC1PlusC2(const MachineInstr &MI,
                                BuildFnTy &MatchInfo) const;
 
+  bool matchFoldSubSmaxSub(const MachineInstr &MI,
+                               BuildFnTy &MatchInfo) const;
+                               
   bool matchExtOfExt(const MachineInstr &FirstMI, const MachineInstr &SecondMI,
                      BuildFnTy &MatchInfo) const;
 
