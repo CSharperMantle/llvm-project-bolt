@@ -108,5 +108,5 @@ ssaf::serializeDeserializeRoundTrip(
 
 namespace clang::ssaf {
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-const volatile int UnsafeBufferUsageJSONFormatAnchorSource = 0;
+volatile int UnsafeBufferUsageJSONFormatAnchorSource = 0;
 } // namespace clang::ssaf

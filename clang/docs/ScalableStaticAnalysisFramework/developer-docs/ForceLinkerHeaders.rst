@@ -33,13 +33,13 @@ constructors unconditionally.
 The solution: anchor symbols
 ****************************
 
-Each registration translation unit defines a ``const volatile int`` **anchor symbol**:
+Each registration translation unit defines a ``volatile int`` **anchor symbol**:
 
 .. code-block:: c++
 
   // In MyExtractor.cpp - next to the registry Add<> object in the ``clang::ssaf`` namespace
   // NOLINTNEXTLINE(misc-use-internal-linkage)
-  const volatile int MyExtractorAnchorSource = 0;
+  volatile int MyExtractorAnchorSource = 0;
 
 For **in-tree** anchors, add a single ``ANCHOR(...)`` entry to
 ``BuiltinAnchorSources.def`` (in alphabetical order):
