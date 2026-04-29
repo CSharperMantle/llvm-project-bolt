@@ -463,6 +463,12 @@ fir::GlobalOp fir::FirOpBuilder::createGlobal(
   }
   auto glob = fir::GlobalOp::create(*this, loc, name, isConst, isTarget, type,
                                     value, linkage, attrs);
+  // Set default alignment for array globals.
+  if (mlir::isa<fir::SequenceType>(type)) {
+    unsigned currentAlign = glob.getAlignment().value_or(0);
+    if (currentAlign < 64)
+      glob.setAlignment(64);
+  }
   restoreInsertionPoint(insertPt);
   if (symbolTable)
     symbolTable->insert(glob);
@@ -480,6 +486,12 @@ fir::GlobalOp fir::FirOpBuilder::createGlobal(
   setInsertionPoint(module.getBody(), module.getBody()->end());
   auto glob = fir::GlobalOp::create(*this, loc, name, isConst, isTarget, type,
                                     mlir::Attribute{}, linkage);
+  // Set default alignment for array globals.
+  if (mlir::isa<fir::SequenceType>(type)) {
+    unsigned currentAlign = glob.getAlignment().value_or(0);
+    if (currentAlign < 64)
+      glob.setAlignment(64);
+  }
   auto &region = glob.getRegion();
   region.push_back(new mlir::Block);
   auto &block = glob.getRegion().back();

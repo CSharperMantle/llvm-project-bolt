@@ -223,6 +223,9 @@ static fir::GlobalOp declareGlobal(Fortran::lower::AbstractConverter &converter,
   fir::GlobalOp global = builder.createGlobal(
       loc, converter.genType(var), globalName, linkage, mlir::Attribute{},
       isConstant(ultimate), var.isTarget(), dataAttr);
+  // BIND(C) globals follow C ABI alignment; remove default alignment.
+  if (sym.attrs().test(Fortran::semantics::Attr::BIND_C))
+    global.removeAlignmentAttr();
   attachAccDeclareAttribute(builder, global, sym);
   return global;
 }
@@ -566,6 +569,9 @@ fir::GlobalOp Fortran::lower::defineGlobal(
             oeDetails->init().value(), dataAttr);
         if (global) {
           global.setVisibility(mlir::SymbolTable::Visibility::Public);
+          // BIND(C) globals follow C ABI alignment; remove default alignment.
+          if (sym.attrs().test(Fortran::semantics::Attr::BIND_C))
+            global.removeAlignmentAttr();
           return global;
         }
       }
@@ -680,6 +686,9 @@ fir::GlobalOp Fortran::lower::defineGlobal(
   // Set public visibility to prevent global definition to be optimized out
   // even if they have no initializer and are unused in this compilation unit.
   global.setVisibility(mlir::SymbolTable::Visibility::Public);
+  // BIND(C) globals follow C ABI alignment; remove default alignment.
+  if (sym.attrs().test(Fortran::semantics::Attr::BIND_C))
+    global.removeAlignmentAttr();
   return global;
 }
 

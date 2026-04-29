@@ -72,7 +72,7 @@ module tinit
 
   ! Test array with default init
   type(t0) :: bt0(100)
-! CHECK-LABEL: @_QMtinitEbt0 : !fir.array<100x!fir.type<_QMtinitTt0{k:i32}>> {
+! CHECK-LABEL: @_QMtinitEbt0 {alignment = 64 : i64} : !fir.array<100x!fir.type<_QMtinitTt0{k:i32}>> {
   ! CHECK: %[[VAL_3:.*]] = arith.constant 66 : i32
   ! CHECK: %[[VAL_4:.*]] = fir.undefined !fir.type<_QMtinitTt0{k:i32}>
   ! CHECK: %[[VAL_5:.*]] = fir.insert_value %[[VAL_4]], %[[VAL_3]], ["k", !fir.type<_QMtinitTt0{k:i32}>] : (!fir.type<_QMtinitTt0{k:i32}>, i32) -> !fir.type<_QMtinitTt0{k:i32}>
@@ -164,7 +164,7 @@ subroutine eqv()
   type(tseq), save :: somet
   integer :: i(2)
   equivalence (somet, i)
-! CHECK-LABEL: fir.global internal @_QFeqvEi : !fir.array<2xi32> {
+! CHECK-LABEL: fir.global internal @_QFeqvEi {alignment = 64 : i64} : !fir.array<2xi32> {
   ! CHECK-DAG: %[[VAL_50:.*]] = arith.constant 2 : i32
   ! CHECK-DAG: %[[VAL_51:.*]] = arith.constant 3 : i32
   ! CHECK: %[[VAL_52:.*]] = fir.undefined !fir.array<2xi32>
@@ -178,7 +178,7 @@ subroutine eqv_explicit_init()
   type(tseq), save :: somet
   integer :: i(2) = [4, 5]
   equivalence (somet, i)
-! CHECK-LABEL: fir.global internal @_QFeqv_explicit_initEi : !fir.array<2xi32> {
+! CHECK-LABEL: fir.global internal @_QFeqv_explicit_initEi {alignment = 64 : i64} : !fir.array<2xi32> {
   ! CHECK-DAG: %[[VAL_57:.*]] = arith.constant 4 : i32
   ! CHECK-DAG: %[[VAL_58:.*]] = arith.constant 5 : i32
   ! CHECK: %[[VAL_59:.*]] = fir.undefined !fir.array<2xi32>
@@ -191,7 +191,7 @@ subroutine eqv_same_default_init()
   use tinit
   type(tseq), save :: somet1(2), somet2
   equivalence (somet1(1), somet2)
-! CHECK-LABEL: fir.global internal @_QFeqv_same_default_initEsomet1 : !fir.array<2xi64> {
+! CHECK-LABEL: fir.global internal @_QFeqv_same_default_initEsomet1 {alignment = 64 : i64} : !fir.array<2xi64> {
   ! CHECK-LE: %[[VAL_62:.*]] = arith.constant 12884901890 : i64
   ! CHECK-BE: %[[VAL_62:.*]] = arith.constant 8589934595 : i64
   ! CHECK: %[[VAL_63:.*]] = fir.undefined !fir.array<2xi64>
@@ -212,7 +212,7 @@ subroutine eqv_full_overlaps_with_explicit_init()
   equivalence (i, link(1))
   equivalence (somet, link(2))
   equivalence (j, link(3))
-! CHECK-LABEL: fir.global internal @_QFeqv_full_overlaps_with_explicit_initEi : !fir.array<4xi32> {
+! CHECK-LABEL: fir.global internal @_QFeqv_full_overlaps_with_explicit_initEi {alignment = 64 : i64} : !fir.array<4xi32> {
   ! CHECK-DAG: %[[VAL_73:.*]] = arith.constant 5 : i32
   ! CHECK-DAG: %[[VAL_74:.*]] = arith.constant 6 : i32
   ! CHECK-DAG: %[[VAL_75:.*]] = arith.constant 7 : i32
@@ -241,7 +241,7 @@ subroutine eqv_partial_overlaps_with_explicit_init()
   equivalence (i, link(1))
   equivalence (somet, link(2))
   equivalence (j, link(4))
-! CHECK-LABEL: fir.global internal @_QFeqv_partial_overlaps_with_explicit_initEi : !fir.array<4xi32>
+! CHECK-LABEL: fir.global internal @_QFeqv_partial_overlaps_with_explicit_initEi {alignment = 64 : i64} : !fir.array<4xi32>
    ! CHECK-DAG: %[[VAL_82:.*]] = arith.constant 5 : i32
    ! CHECK-DAG: %[[VAL_83:.*]] = arith.constant 6 : i32
    ! CHECK-DAG: %[[VAL_84:.*]] = arith.constant 3 : i32
