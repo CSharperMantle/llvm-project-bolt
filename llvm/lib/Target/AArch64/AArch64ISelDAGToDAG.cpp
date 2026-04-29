@@ -15,6 +15,7 @@
 #include "MCTargetDesc/AArch64AddressingModes.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/IR/Function.h" // To access function attributes.
 #include "llvm/IR/GlobalValue.h"
@@ -3514,6 +3515,258 @@ static bool isShiftedMask(uint64_t Mask, EVT VT) {
   return isShiftedMask_64(Mask);
 }
 
+struct PackedBitfieldTerm {
+  SDValue Src;
+  unsigned LSB;
+  unsigned Width;
+};
+
+static bool isPackedBitfieldFixedStackLoad(SDValue Op) {
+  auto *Ld = dyn_cast<LoadSDNode>(Op);
+  return Ld && Op.getResNo() == 0 &&
+         Ld->getBasePtr().getOpcode() == ISD::FrameIndex &&
+         Ld->getExtensionType() != ISD::SEXTLOAD;
+}
+
+static bool isPackedBitfieldGPRArgument(SelectionDAG *CurDAG, SDValue Op) {
+  if (Op.getOpcode() != ISD::CopyFromReg || Op.getResNo() != 0 ||
+      Op.getOperand(0).getOpcode() != ISD::EntryToken)
+    return false;
+
+  EVT VT = Op.getValueType();
+  if (VT != MVT::i32 && VT != MVT::i64)
+    return false;
+
+  auto *RegNode = dyn_cast<RegisterSDNode>(Op.getOperand(1));
+  if (!RegNode)
+    return false;
+
+  Register VReg = RegNode->getReg();
+  if (!VReg.isVirtual())
+    return false;
+
+  MCRegister PhysReg =
+      CurDAG->getMachineFunction().getRegInfo().getLiveInPhysReg(VReg);
+  return (AArch64::W0 <= PhysReg && PhysReg <= AArch64::W7) ||
+         (AArch64::X0 <= PhysReg && PhysReg <= AArch64::X7);
+}
+
+static bool isPackedBitfieldSource(SelectionDAG *CurDAG, SDValue Src) {
+  if (isPackedBitfieldGPRArgument(CurDAG, Src) ||
+      isPackedBitfieldFixedStackLoad(Src))
+    return true;
+
+  switch (Src.getOpcode()) {
+  case ISD::ANY_EXTEND:
+  case ISD::ZERO_EXTEND:
+    return isPackedBitfieldSource(CurDAG, Src.getOperand(0));
+  default:
+    break;
+  }
+
+  if (Src.isMachineOpcode() &&
+      Src.getMachineOpcode() == TargetOpcode::INSERT_SUBREG)
+    return isPackedBitfieldSource(CurDAG, Src.getOperand(1));
+
+  return false;
+}
+
+static bool getPackedLowBitfieldTerm(SelectionDAG *CurDAG, SDValue Op,
+                                     PackedBitfieldTerm &Term) {
+  EVT VT = Op.getValueType();
+  if (VT != MVT::i32 && VT != MVT::i64)
+    return false;
+
+  unsigned BitWidth = VT.getSizeInBits();
+  uint64_t MaskImm;
+  if (isOpcWithIntImmediate(Op.getNode(), ISD::AND, MaskImm) &&
+      isMask_64(MaskImm)) {
+    unsigned Width = llvm::countr_one(MaskImm);
+    if (Width == 0 || Width >= BitWidth)
+      return false;
+    Term = {Op.getOperand(0), 0, Width};
+    return true;
+  }
+
+  if (Op.getOpcode() == ISD::ZERO_EXTEND) {
+    KnownBits Known = CurDAG->computeKnownBits(Op);
+    APInt NonZero = ~Known.Zero;
+    if (!NonZero.isMask())
+      return false;
+
+    SDValue Src = Op.getOperand(0);
+    unsigned Width = NonZero.countr_one();
+    if (Width == 0 || Width >= BitWidth)
+      return false;
+    if (Src.getValueType() != VT) {
+      if (VT == MVT::i64 && Src.getValueType() == MVT::i32)
+        Src = Widen(CurDAG, Src);
+      else
+        Src = CurDAG->getNode(ISD::ANY_EXTEND, SDLoc(Op), VT, Src);
+    }
+    Term = {Src, 0, Width};
+    return true;
+  }
+
+  auto *Ld = dyn_cast<LoadSDNode>(Op);
+  if (isPackedBitfieldFixedStackLoad(Op)) {
+    unsigned Width = Ld->getMemoryVT().getScalarSizeInBits();
+    if (Width != 0 && Width < BitWidth) {
+      Term = {Op, 0, Width};
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static bool isLowMaskAnd(SDValue Op, unsigned Width, SDValue &Base) {
+  uint64_t MaskImm;
+  if (!isOpcWithIntImmediate(Op.getNode(), ISD::AND, MaskImm) ||
+      !isMask_64(MaskImm))
+    return false;
+
+  if (static_cast<unsigned>(llvm::countr_one(MaskImm)) < Width)
+    return false;
+
+  Base = Op.getOperand(0);
+  return true;
+}
+
+static SDValue widenPackedSource(SelectionDAG *CurDAG, SDValue Src, EVT VT,
+                                 SDLoc DL) {
+  if (Src.getValueType() == VT)
+    return Src;
+  if (VT == MVT::i64 && Src.getValueType() == MVT::i32)
+    return Widen(CurDAG, Src);
+  return CurDAG->getNode(ISD::ANY_EXTEND, DL, VT, Src);
+}
+
+static SDValue stripPackedSourceMask(SelectionDAG *CurDAG, SDValue Src,
+                                     unsigned Width, EVT VT, SDLoc DL) {
+  SDValue Base;
+  if (isLowMaskAnd(Src, Width, Base))
+    return widenPackedSource(CurDAG, Base, VT, DL);
+
+  if ((Src.getOpcode() == ISD::ANY_EXTEND ||
+       Src.getOpcode() == ISD::ZERO_EXTEND) &&
+      isLowMaskAnd(Src.getOperand(0), Width, Base))
+    return widenPackedSource(CurDAG, Base, VT, DL);
+
+  return widenPackedSource(CurDAG, Src, VT, DL);
+}
+
+static bool getPackedBitfieldTerm(SelectionDAG *CurDAG, SDValue Op,
+                                  PackedBitfieldTerm &Term) {
+  if (getPackedLowBitfieldTerm(CurDAG, Op, Term))
+    return isPackedBitfieldSource(CurDAG, Term.Src);
+
+  if (Op.getOpcode() == ISD::ZERO_EXTEND && Op.getValueType() == MVT::i64 &&
+      Op.getOperand(0).getValueType() == MVT::i32) {
+    SDValue Src;
+    int DstLSB, Width;
+    if (isBitfieldPositioningOp(CurDAG, Op.getOperand(0),
+                                /*BiggerPattern=*/true, Src, DstLSB, Width)) {
+      if (DstLSB < 0 || Width <= 0)
+        return false;
+      Src = stripPackedSourceMask(CurDAG, Src, Width, MVT::i64, SDLoc(Op));
+      if (!isPackedBitfieldSource(CurDAG, Src))
+        return false;
+      Term = {Src, static_cast<unsigned>(DstLSB), static_cast<unsigned>(Width)};
+      return true;
+    }
+  }
+
+  SDValue Src;
+  int DstLSB, Width;
+  if (!isBitfieldPositioningOp(CurDAG, Op, /*BiggerPattern=*/true, Src, DstLSB,
+                               Width))
+    return false;
+
+  if (DstLSB < 0 || Width <= 0)
+    return false;
+
+  EVT VT = Op.getValueType();
+  Src = stripPackedSourceMask(CurDAG, Src, Width, VT, SDLoc(Op));
+  if (!isPackedBitfieldSource(CurDAG, Src))
+    return false;
+
+  Term = {Src, static_cast<unsigned>(DstLSB), static_cast<unsigned>(Width)};
+  return true;
+}
+
+static bool
+collectPackedBitfieldTerms(SelectionDAG *CurDAG, SDValue Op,
+                           SmallVectorImpl<PackedBitfieldTerm> &Terms,
+                           bool IsRoot = false) {
+  if (Op.getOpcode() == ISD::OR) {
+    if (!IsRoot && !Op.hasOneUse())
+      return false;
+    return collectPackedBitfieldTerms(CurDAG, Op.getOperand(0), Terms) &&
+           collectPackedBitfieldTerms(CurDAG, Op.getOperand(1), Terms);
+  }
+
+  if (!Op.hasOneUse())
+    return false;
+
+  PackedBitfieldTerm Term;
+  if (!getPackedBitfieldTerm(CurDAG, Op, Term))
+    return false;
+
+  Terms.push_back(Term);
+  return true;
+}
+
+static bool tryPackedBitfieldInsertOp(SDNode *N, SelectionDAG *CurDAG) {
+  assert(N->getOpcode() == ISD::OR && "Expect a OR operation");
+
+  EVT VT = N->getValueType(0);
+  if (VT != MVT::i32 && VT != MVT::i64)
+    return false;
+
+  SmallVector<PackedBitfieldTerm, 8> Terms;
+  if (!collectPackedBitfieldTerms(CurDAG, SDValue(N, 0), Terms,
+                                  /*IsRoot=*/true))
+    return false;
+  if (Terms.size() < 2)
+    return false;
+
+  llvm::sort(Terms,
+             [](const PackedBitfieldTerm &LHS, const PackedBitfieldTerm &RHS) {
+               return LHS.LSB < RHS.LSB;
+             });
+
+  unsigned BitWidth = VT.getSizeInBits();
+  unsigned Offset = 0;
+  for (const PackedBitfieldTerm &Term : Terms) {
+    if (Term.LSB != Offset || Term.Width == 0 ||
+        Term.LSB + Term.Width > BitWidth)
+      return false;
+    Offset += Term.Width;
+  }
+  if (Offset != BitWidth)
+    return false;
+
+  SDLoc DL(N);
+  SDValue Result = Terms.front().Src;
+  unsigned Opc = (VT == MVT::i32) ? AArch64::BFMWri : AArch64::BFMXri;
+
+  for (unsigned I = 1, E = Terms.size(); I != E; ++I) {
+    const PackedBitfieldTerm &Term = Terms[I];
+    unsigned ImmR = (BitWidth - Term.LSB) % BitWidth;
+    unsigned ImmS = Term.Width - 1;
+    SDValue Ops[] = {Result, Term.Src, CurDAG->getTargetConstant(ImmR, DL, VT),
+                     CurDAG->getTargetConstant(ImmS, DL, VT)};
+    if (I == E - 1) {
+      CurDAG->SelectNodeTo(N, Opc, VT, Ops);
+      return true;
+    }
+    Result = SDValue(CurDAG->getMachineNode(Opc, DL, VT, Ops), 0);
+  }
+
+  llvm_unreachable("expected at least one inserted term");
+}
+
 // Generate a BFI/BFXIL from 'or (and X, MaskImm), OrImm' iff the value being
 // inserted only sets known zero bits.
 static bool tryBitfieldInsertOpFromOrAndImm(SDNode *N, SelectionDAG *CurDAG) {
@@ -3965,6 +4218,9 @@ bool AArch64DAGToDAGISel::tryBitfieldInsertOp(SDNode *N) {
     CurDAG->SelectNodeTo(N, TargetOpcode::IMPLICIT_DEF, N->getValueType(0));
     return true;
   }
+
+  if (OptLevel != CodeGenOptLevel::None && tryPackedBitfieldInsertOp(N, CurDAG))
+    return true;
 
   if (tryBitfieldInsertOpFromOr(N, NUsefulBits, CurDAG))
     return true;
