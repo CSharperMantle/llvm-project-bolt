@@ -3263,9 +3263,24 @@ static void scalarizeInstruction(const Instruction *Instr,
   for (const auto &I : enumerate(RepRecipe->operands())) {
     auto InputLane = Lane;
     VPValue *Operand = I.value();
+
     if (vputils::isSingleScalar(Operand))
       InputLane = VPLane::getFirstLane();
-    Cloned->setOperand(I.index(), State.get(Operand, InputLane));
+
+    auto *EVI = dyn_cast<ExtractValueInst>(Instr);
+    if (EVI && I.index() > 0) {
+      // tryToWiden() stores ExtractValueInst->getIndices() as the second
+      // operand.
+
+      // Invariants from tryToWiden()
+      assert(I.index() == 1);
+      assert(EVI->getNumIndices() == 1 && "Expected one extractvalue index");
+
+      Value *NewOp = State.get(Operand, InputLane);
+      assert(cast<ConstantInt>(NewOp)->getZExtValue() == EVI->getIndices()[0]);
+    } else {
+      Cloned->setOperand(I.index(), State.get(Operand, InputLane));
+    }
   }
 
   // Place the cloned scalar in the new loop.
