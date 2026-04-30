@@ -1393,10 +1393,11 @@ You can find further examples here:
 
 - `LLVM Data Formatters <https://github.com/llvm/llvm-project/blob/main/llvm/utils/lldbDataFormatters.py>`_
 - `Coca (Objective-C) Formatters <https://github.com/llvm/llvm-project/tree/main/lldb/examples/summaries/cocoa>`_
+
 .. TODO: Add libc++ formatters here
 
 Type Summaries
-^^^^^^^^^^^^^^
+++++++++++++++
 
 - **Strings**: Many libraries have a user-defined string type that is
   implemented with a data pointer and a size. For example,
@@ -1432,7 +1433,7 @@ Type Summaries
      type summary add -s "size=${svar%#}" -x "^MyContainer<.+>$"
 
 Synthetic Children
-^^^^^^^^^^^^^^^^^^
+++++++++++++++++++
 
 - **Spans**: This shows a synthetic children provider for
   `llvm::ArrayRef <https://llvm.org/doxygen/classllvm_1_1ArrayRef.html>`_.
