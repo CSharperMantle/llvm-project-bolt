@@ -1398,9 +1398,10 @@ You can find further examples here:
 Type Summaries
 ^^^^^^^^^^^^^^
 
-- **Strings**: Many string types contain a pair of a data pointer and a size.
-  This shows `llvm::StringRef <https://llvm.org/doxygen/classllvm_1_1StringRef.html>`_
-  which has a definition similar to the following:
+- **Strings**: Many libraries have a user-defined string type that is
+  implemented with a data pointer and a size. For example,
+  `llvm::StringRef <https://llvm.org/doxygen/classllvm_1_1StringRef.html>`_ is
+  implemented like:"
 
   .. code-block:: cpp
 
@@ -1412,16 +1413,18 @@ Type Summaries
       };
 
   We can use a ``char[N]`` array to create a summary for this string.
-  This will handle escaping of non-printable characters like tabs or newlines for us.
+  This technique handles escaping of non-printable characters like tabs or
+  newlines.
 
   .. literalinclude:: ../../../llvm/utils/lldbDataFormatters.py
      :start-after: [SNIP-StringRef-Summary]
      :end-before: [/SNIP-StringRef-Summary]
 
-- **Containers**: For most containers, displaying the size in the summary is
-  enough. LLDB usually displays the size as ``size=42`` for C++ STL types.
-  If your container has a `Synthetic Children <synthetic-children_>`_ provider,
-  you can use `Summary Strings`_:
+- **Containers**: For most containers, displaying the number of elements in the
+  summary is sufficient. LLDB usually displays the number as ``size=42`` for
+  C++ STL types. If your container has a
+  `synthetic children <synthetic-children_>`_ provider, you can use 
+  `Summary Strings`_:
   ::
      
      type summary add -s "size=${svar%#}" MyContainer
