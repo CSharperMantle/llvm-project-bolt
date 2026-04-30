@@ -3263,7 +3263,6 @@ static void scalarizeInstruction(const Instruction *Instr,
   for (const auto &I : enumerate(RepRecipe->operands())) {
     auto InputLane = Lane;
     VPValue *Operand = I.value();
-
     if (vputils::isSingleScalar(Operand))
       InputLane = VPLane::getFirstLane();
 
