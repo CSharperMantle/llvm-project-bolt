@@ -1402,7 +1402,7 @@ Type Summaries
 - **Strings**: Many libraries have a user-defined string type that is
   implemented with a data pointer and a size. For example,
   `llvm::StringRef <https://llvm.org/doxygen/classllvm_1_1StringRef.html>`_ is
-  implemented like:"
+  implemented like:
 
   .. code-block:: cpp
 
