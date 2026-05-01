@@ -13281,7 +13281,7 @@ struct AANoAliasAddrSpaceImpl : public AANoAliasAddrSpace {
 
   ChangeStatus updateImpl(Attributor &A) override {
     unsigned FlatAS = A.getInfoCache().getFlatAddressSpace().value();
-    uint32_t OldAssumed = getAssumed();
+    bool OldAssumed = getAssumed();
 
     auto CheckAddressSpace = [&](Value &Obj) {
       if (isa<PoisonValue>(&Obj))
