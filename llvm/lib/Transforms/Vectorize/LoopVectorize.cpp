@@ -1918,17 +1918,23 @@ static bool isIndvarOverflowCheckKnownFalse(
   // We know the runtime overflow check is known false iff the (max) trip-count
   // is known and (max) trip-count + (VF * UF) does not overflow in the type of
   // the vector loop induction variable.
-  if (unsigned TC = Cost->PSE.getSmallConstantMaxTripCount()) {
-    uint64_t MaxVF = VF.getKnownMinValue();
+  if (std::optional<ElementCount> TC = getSmallBestKnownTC(
+          Cost->PSE, Cost->TheLoop,
+          /*CanUseConstantMax=*/true,
+          /*CanExcludeZeroTrips=*/Cost->isEpilogueAllowed())) {
+    unsigned MaxVF = VF.getKnownMinValue();
+    unsigned MaxTC = TC->getKnownMinValue();
     if (VF.isScalable()) {
       std::optional<unsigned> MaxVScale =
           getMaxVScale(*Cost->TheFunction, Cost->TTI);
       if (!MaxVScale)
         return false;
       MaxVF *= *MaxVScale;
+      if (TC->isScalable())
+        MaxTC *= *MaxVScale;
     }
 
-    return (MaxUIntTripCount - TC).ugt(MaxVF * MaxUF);
+    return (MaxUIntTripCount - MaxTC).ugt(MaxVF * MaxUF);
   }
 
   return false;
