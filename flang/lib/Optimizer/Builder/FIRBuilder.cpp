@@ -448,7 +448,7 @@ void fir::FirOpBuilder::genStackRestore(mlir::Location loc,
 fir::GlobalOp fir::FirOpBuilder::createGlobal(
     mlir::Location loc, mlir::Type type, llvm::StringRef name,
     mlir::StringAttr linkage, mlir::Attribute value, bool isConst,
-    bool isTarget, cuf::DataAttributeAttr dataAttr) {
+    bool isTarget, cuf::DataAttributeAttr dataAttr, bool setDefaultAlignment) {
   if (auto global = getNamedGlobal(name))
     return global;
   auto module = getModule();
@@ -464,11 +464,8 @@ fir::GlobalOp fir::FirOpBuilder::createGlobal(
   auto glob = fir::GlobalOp::create(*this, loc, name, isConst, isTarget, type,
                                     value, linkage, attrs);
   // Set default alignment for array globals.
-  if (mlir::isa<fir::SequenceType>(type)) {
-    unsigned currentAlign = glob.getAlignment().value_or(0);
-    if (currentAlign < 64)
-      glob.setAlignment(64);
-  }
+  if (setDefaultAlignment && mlir::isa<fir::SequenceType>(type))
+    glob.setAlignment(fir::defaultArrayGlobalAlignment);
   restoreInsertionPoint(insertPt);
   if (symbolTable)
     symbolTable->insert(glob);
@@ -478,7 +475,8 @@ fir::GlobalOp fir::FirOpBuilder::createGlobal(
 fir::GlobalOp fir::FirOpBuilder::createGlobal(
     mlir::Location loc, mlir::Type type, llvm::StringRef name, bool isConst,
     bool isTarget, std::function<void(FirOpBuilder &)> bodyBuilder,
-    mlir::StringAttr linkage, cuf::DataAttributeAttr dataAttr) {
+    mlir::StringAttr linkage, cuf::DataAttributeAttr dataAttr,
+    bool setDefaultAlignment) {
   if (auto global = getNamedGlobal(name))
     return global;
   auto module = getModule();
@@ -487,11 +485,8 @@ fir::GlobalOp fir::FirOpBuilder::createGlobal(
   auto glob = fir::GlobalOp::create(*this, loc, name, isConst, isTarget, type,
                                     mlir::Attribute{}, linkage);
   // Set default alignment for array globals.
-  if (mlir::isa<fir::SequenceType>(type)) {
-    unsigned currentAlign = glob.getAlignment().value_or(0);
-    if (currentAlign < 64)
-      glob.setAlignment(64);
-  }
+  if (setDefaultAlignment && mlir::isa<fir::SequenceType>(type))
+    glob.setAlignment(fir::defaultArrayGlobalAlignment);
   auto &region = glob.getRegion();
   region.push_back(new mlir::Block);
   auto &block = glob.getRegion().back();
