@@ -23,6 +23,121 @@ bool test_add_overflow_uint_uint_uint(unsigned x, unsigned y, unsigned *res) {
 // OGCG: define{{.*}} i1 @_Z32test_add_overflow_uint_uint_uintjjPj(i32{{.*}}, i32{{.*}}, ptr{{.*}})
 // OGCG:   call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %{{.+}}, i32 %{{.+}})
 
+bool test_add_overflow_bool_bool_uint(bool x, bool y, unsigned *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_bool_bool_uint{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast bool_to_int %[[#X]] : !cir.bool -> !u32i
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast bool_to_int %[[#Y]] : !cir.bool -> !u32i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !u32i -> !u32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+bool test_uadd_overflow_bool_bool_uint(bool x, bool y, unsigned *res) {
+  return __builtin_uadd_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_uadd_overflow_bool_bool_uint{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast bool_to_int %[[#X]] : !cir.bool -> !u32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast bool_to_int %[[#Y]] : !cir.bool -> !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !u32i -> !u32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_uadd_overflow_bool_bool_uint{{.*}}
+// LLVM:   %[[#XZ:]] = zext i1 %{{.*}} to i32
+// LLVM:   %[[#YZ:]] = zext i1 %{{.*}} to i32
+// LLVM:   call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %[[#XZ]], i32 %[[#YZ]])
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_uadd_overflow_bool_bool_uint{{.*}}
+// OGCG-DAG:   zext i1 %{{.*}} to i32
+// OGCG-DAG:   zext i1 %{{.*}} to i32
+// OGCG:       call { i32, i1 } @llvm.uadd.with.overflow.i32
+
+bool test_add_overflow_int_int_bool(int x, int y, bool *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_int_int_bool{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.bool>>, !cir.ptr<!cir.bool>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#X]], %[[#Y]] : !s32i -> !cir.int<u, 1>
+// CIR-NEXT:   %[[BOOL_RES:.+]] = cir.cast int_to_bool %[[RES]] : !cir.int<u, 1> -> !cir.bool
+// CIR-NEXT:   cir.store{{.*}} %[[BOOL_RES]], %[[#RES_PTR]] : !cir.bool, !cir.ptr<!cir.bool>
+//      CIR: }
+
+bool test_add_overflow_bool_bool_bool(bool x, bool y, bool *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_bool_bool_bool{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.bool>, !cir.bool
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.bool>>, !cir.ptr<!cir.bool>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast bool_to_int %[[#X]] : !cir.bool -> !cir.int<u, 1>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast bool_to_int %[[#Y]] : !cir.bool -> !cir.int<u, 1>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<u, 1> -> !cir.int<u, 1>
+// CIR-NEXT:   %[[BOOL_RES:.+]] = cir.cast int_to_bool %[[RES]] : !cir.int<u, 1> -> !cir.bool
+// CIR-NEXT:   cir.store{{.*}} %[[BOOL_RES]], %[[#RES_PTR]] : !cir.bool, !cir.ptr<!cir.bool>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_add_overflow_bool_bool_bool
+// LLVM:   call { i1, i1 } @llvm.uadd.with.overflow.i1
+
+// OGCG: define{{.*}} i1 @{{.*}}test_add_overflow_bool_bool_bool
+// OGCG:   call { i1, i1 } @llvm.uadd.with.overflow.i1
+
+bool test_add_overflow_schar_uchar_ushort(signed char x, unsigned char y,
+                                          unsigned short *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_schar_uchar_ushort{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s8i>, !s8i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u8i>, !u8i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u16i>>, !cir.ptr<!u16i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !s8i -> !cir.int<s, 17>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u8i -> !cir.int<s, 17>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 17> -> !u16i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u16i, !cir.ptr<!u16i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_add_overflow_schar_uchar_ushort
+// LLVM:   call { i17, i1 } @llvm.sadd.with.overflow.i17
+
+// OGCG: define{{.*}} i1 @{{.*}}test_add_overflow_schar_uchar_ushort
+// OGCG:   call { i17, i1 } @llvm.sadd.with.overflow.i17
+
+enum UShortEnum : unsigned short { UShortEnum_A = 1 };
+enum SCharEnum : signed char { SCharEnum_A = -1 };
+
+bool test_add_overflow_enum_enum_enum(UShortEnum x, SCharEnum y,
+                                      UShortEnum *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_enum_enum_enum{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u16i>, !u16i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s8i>, !s8i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u16i>>, !cir.ptr<!u16i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !u16i -> !cir.int<s, 17>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !s8i -> !cir.int<s, 17>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 17> -> !u16i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u16i, !cir.ptr<!u16i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_add_overflow_enum_enum_enum
+// LLVM:   call { i17, i1 } @llvm.sadd.with.overflow.i17
+
+// OGCG: define{{.*}} i1 @{{.*}}test_add_overflow_enum_enum_enum
+// OGCG:   call { i17, i1 } @llvm.sadd.with.overflow.i17
 bool test_add_overflow_int_int_int(int x, int y, int *res) {
   return __builtin_add_overflow(x, y, res);
 }
@@ -47,6 +162,59 @@ bool test_add_overflow_xint31_xint31_xint31(_BitInt(31) x, _BitInt(31) y, _BitIn
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 31, bitint>, !cir.ptr<!cir.int<s, 31, bitint>>
 //      CIR: }
 
+bool test_add_overflow_xint127_xint127_xint127(_BitInt(127) x, _BitInt(127) y, _BitInt(127) *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z41test_add_overflow_xint127_xint127_xint127DB127_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<s, 127, bitint>>>, !cir.ptr<!cir.int<s, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !cir.int<s, 127> -> !cir.int<s, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 127, bitint>, !cir.ptr<!cir.int<s, 127, bitint>>
+//      CIR: }
+
+bool test_add_overflow_uxint128_uxint128_uxint128(unsigned _BitInt(128) x, unsigned _BitInt(128) y, unsigned _BitInt(128) *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z44test_add_overflow_uxint128_uxint128_uxint128DU128_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u128i_bitint>>, !cir.ptr<!u128i_bitint>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !u128i -> !u128i_bitint
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u128i_bitint, !cir.ptr<!u128i_bitint>
+//      CIR: }
+
+#if __BITINT_MAXWIDTH__ > 128
+bool test_add_overflow_uxint129_uxint129_uxint129(unsigned _BitInt(129) x,
+                                                   unsigned _BitInt(129) y,
+                                                   unsigned _BitInt(129) *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+// LLVM-LABEL: define{{.*}} i1 @{{.*}}test_add_overflow_uxint129_uxint129_uxint129{{.*}}
+// LLVM: call { i129, i1 } @llvm.uadd.with.overflow.i129
+#endif
+
+bool test_add_overflow_xint127_uxint127_uxint127(_BitInt(127) x, unsigned _BitInt(127) y, unsigned _BitInt(127) *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z43test_add_overflow_xint127_uxint127_uxint127DB127_DU127_PS0_
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<u, 127, bitint>>, !cir.int<u, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<u, 127, bitint>>>, !cir.ptr<!cir.int<u, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !cir.int<s, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !cir.int<u, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !s128i -> !cir.int<u, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<u, 127, bitint>, !cir.ptr<!cir.int<u, 127, bitint>>
+//      CIR: }
+
 bool test_sub_overflow_uint_uint_uint(unsigned x, unsigned y, unsigned *res) {
   return __builtin_sub_overflow(x, y, res);
 }
@@ -57,6 +225,19 @@ bool test_sub_overflow_uint_uint_uint(unsigned x, unsigned y, unsigned *res) {
 // CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
 // CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#LHS]], %[[#RHS]] : !u32i -> !u32i
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+bool test_sub_overflow_uint_uint_bool(unsigned x, unsigned y, bool *res) {
+  return __builtin_sub_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_sub_overflow_uint_uint_bool{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.bool>>, !cir.ptr<!cir.bool>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#X]], %[[#Y]] : !u32i -> !cir.int<u, 1>
+// CIR-NEXT:   %[[BOOL_RES:.+]] = cir.cast int_to_bool %[[RES]] : !cir.int<u, 1> -> !cir.bool
+// CIR-NEXT:   cir.store{{.*}} %[[BOOL_RES]], %[[#RES_PTR]] : !cir.bool, !cir.ptr<!cir.bool>
 //      CIR: }
 
 bool test_sub_overflow_int_int_int(int x, int y, int *res) {
@@ -83,6 +264,48 @@ bool test_sub_overflow_xint31_xint31_xint31(_BitInt(31) x, _BitInt(31) y, _BitIn
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 31, bitint>, !cir.ptr<!cir.int<s, 31, bitint>>
 //      CIR: }
 
+bool test_sub_overflow_xint127_xint127_xint127(_BitInt(127) x, _BitInt(127) y, _BitInt(127) *res) {
+  return __builtin_sub_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z41test_sub_overflow_xint127_xint127_xint127DB127_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<s, 127, bitint>>>, !cir.ptr<!cir.int<s, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !cir.int<s, 127> -> !cir.int<s, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 127, bitint>, !cir.ptr<!cir.int<s, 127, bitint>>
+//      CIR: }
+
+bool test_sub_overflow_uxint128_uxint128_uxint128(unsigned _BitInt(128) x, unsigned _BitInt(128) y, unsigned _BitInt(128) *res) {
+  return __builtin_sub_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z44test_sub_overflow_uxint128_uxint128_uxint128DU128_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u128i_bitint>>, !cir.ptr<!u128i_bitint>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !u128i -> !u128i_bitint
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u128i_bitint, !cir.ptr<!u128i_bitint>
+//      CIR: }
+
+bool test_sub_overflow_xint127_uxint127_uxint127(_BitInt(127) x, unsigned _BitInt(127) y, unsigned _BitInt(127) *res) {
+  return __builtin_sub_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z43test_sub_overflow_xint127_uxint127_uxint127DB127_DU127_PS0_
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<u, 127, bitint>>, !cir.int<u, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<u, 127, bitint>>>, !cir.ptr<!cir.int<u, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !cir.int<s, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !cir.int<u, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#PROM_X]], %[[#PROM_Y]] : !s128i -> !cir.int<u, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<u, 127, bitint>, !cir.ptr<!cir.int<u, 127, bitint>>
+//      CIR: }
+
 bool test_mul_overflow_uint_uint_uint(unsigned x, unsigned y, unsigned *res) {
   return __builtin_mul_overflow(x, y, res);
 }
@@ -93,6 +316,65 @@ bool test_mul_overflow_uint_uint_uint(unsigned x, unsigned y, unsigned *res) {
 // CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
 // CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#LHS]], %[[#RHS]] : !u32i -> !u32i
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+bool test_mul_overflow_uint_uint_int(unsigned x, unsigned y, int *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_mul_overflow_uint_uint_int{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!s32i>>, !cir.ptr<!s32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !s32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !s32i, !cir.ptr<!s32i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_mul_overflow_uint_uint_int{{.*}}
+// LLVM:   %[[#X:]] = zext i32 %{{.*}} to i33
+// LLVM:   %[[#Y:]] = zext i32 %{{.*}} to i33
+// LLVM:   %[[#CALL:]] = call { i33, i1 } @llvm.smul.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// LLVM:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// LLVM:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// LLVM:   %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// LLVM:   %[[#TRUNC_EXT:]] = sext i32 %[[#TRUNC]] to i33
+// LLVM:   %[[#TRUNC_OV:]] = icmp ne i33 %[[#TRUNC_EXT]], %[[#RES]]
+// LLVM:   or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_mul_overflow_uint_uint_int{{.*}}
+// OGCG:       %[[#CALL:]] = call { i32, i1 } @llvm.umul.with.overflow.i32(i32 %{{.*}}, i32 %{{.*}})
+// OGCG:       %[[#OV:]] = extractvalue { i32, i1 } %[[#CALL]], 1
+// OGCG:       %[[#RES:]] = extractvalue { i32, i1 } %[[#CALL]], 0
+// OGCG:       %[[#OV2:]] = icmp ugt i32 %[[#RES]], 2147483647
+// OGCG:       or i1 %[[#OV]], %[[#OV2]]
+
+bool test_mul_overflow_int_uint_int(int x, unsigned y, int *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_mul_overflow_int_uint_int{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!s32i>>, !cir.ptr<!s32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !s32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !s32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !s32i, !cir.ptr<!s32i>
+//      CIR: }
+
+bool test_mul_overflow_uint_uint_bool(unsigned x, unsigned y, bool *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_mul_overflow_uint_uint_bool{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.bool>>, !cir.ptr<!cir.bool>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#X]], %[[#Y]] : !u32i -> !cir.int<u, 1>
+// CIR-NEXT:   %[[BOOL_RES:.+]] = cir.cast int_to_bool %[[RES]] : !cir.int<u, 1> -> !cir.bool
+// CIR-NEXT:   cir.store{{.*}} %[[BOOL_RES]], %[[#RES_PTR]] : !cir.bool, !cir.ptr<!cir.bool>
 //      CIR: }
 
 bool test_mul_overflow_int_int_int(int x, int y, int *res) {
@@ -119,6 +401,48 @@ bool test_mul_overflow_xint31_xint31_xint31(_BitInt(31) x, _BitInt(31) y, _BitIn
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 31, bitint>, !cir.ptr<!cir.int<s, 31, bitint>>
 //      CIR: }
 
+bool test_mul_overflow_xint127_xint127_xint127(_BitInt(127) x, _BitInt(127) y, _BitInt(127) *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z41test_mul_overflow_xint127_xint127_xint127DB127_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<s, 127, bitint>>>, !cir.ptr<!cir.int<s, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !cir.int<s, 127, bitint> -> !cir.int<s, 127>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !cir.int<s, 127> -> !cir.int<s, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<s, 127, bitint>, !cir.ptr<!cir.int<s, 127, bitint>>
+//      CIR: }
+
+bool test_mul_overflow_uxint128_uxint128_uxint128(unsigned _BitInt(128) x, unsigned _BitInt(128) y, unsigned _BitInt(128) *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z44test_mul_overflow_uxint128_uxint128_uxint128DU128_S_PS_
+//      CIR:   %[[#LHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RHS:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u128i_bitint>, !u128i_bitint
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u128i_bitint>>, !cir.ptr<!u128i_bitint>
+// CIR-NEXT:   %[[#PROM_LHS:]] = cir.cast integral %[[#LHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[#PROM_RHS:]] = cir.cast integral %[[#RHS]] : !u128i_bitint -> !u128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_LHS]], %[[#PROM_RHS]] : !u128i -> !u128i_bitint
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u128i_bitint, !cir.ptr<!u128i_bitint>
+//      CIR: }
+
+bool test_mul_overflow_xint127_uxint127_uxint127(_BitInt(127) x, unsigned _BitInt(127) y, unsigned _BitInt(127) *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @_Z43test_mul_overflow_xint127_uxint127_uxint127DB127_DU127_PS0_
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<s, 127, bitint>>, !cir.int<s, 127, bitint>
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.int<u, 127, bitint>>, !cir.int<u, 127, bitint>
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!cir.int<u, 127, bitint>>>, !cir.ptr<!cir.int<u, 127, bitint>>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !cir.int<s, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !cir.int<u, 127, bitint> -> !s128i
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_X]], %[[#PROM_Y]] : !s128i -> !cir.int<u, 127, bitint>
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !cir.int<u, 127, bitint>, !cir.ptr<!cir.int<u, 127, bitint>>
+//      CIR: }
+
 bool test_mul_overflow_ulong_ulong_long(unsigned long x, unsigned long y, unsigned long *res) {
   return __builtin_mul_overflow(x, y, res);
 }
@@ -130,6 +454,38 @@ bool test_mul_overflow_ulong_ulong_long(unsigned long x, unsigned long y, unsign
 // CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#LHS]], %[[#RHS]] : !u64i -> !u64i
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u64i, !cir.ptr<!u64i>
 //      CIR: }
+
+bool test_mul_overflow_ulong_ulong_long_signed(unsigned long x, unsigned long y, long *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_mul_overflow_ulong_ulong_long_signed{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u64i>, !u64i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u64i>, !u64i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!s64i>>, !cir.ptr<!s64i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !u64i -> !cir.int<s, 65>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u64i -> !cir.int<s, 65>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 65> -> !s64i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !s64i, !cir.ptr<!s64i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_mul_overflow_ulong_ulong_long_signed{{.*}}
+// LLVM:   %[[#X:]] = zext i64 %{{.*}} to i65
+// LLVM:   %[[#Y:]] = zext i64 %{{.*}} to i65
+// LLVM:   %[[#CALL:]] = call { i65, i1 } @llvm.smul.with.overflow.i65(i65 %[[#X]], i65 %[[#Y]])
+// LLVM:   %[[#RES:]] = extractvalue { i65, i1 } %[[#CALL]], 0
+// LLVM:   %[[#OV:]] = extractvalue { i65, i1 } %[[#CALL]], 1
+// LLVM:   %[[#TRUNC:]] = trunc i65 %[[#RES]] to i64
+// LLVM:   %[[#TRUNC_EXT:]] = sext i64 %[[#TRUNC]] to i65
+// LLVM:   %[[#TRUNC_OV:]] = icmp ne i65 %[[#TRUNC_EXT]], %[[#RES]]
+// LLVM:   or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_mul_overflow_ulong_ulong_long_signed{{.*}}
+// OGCG:       %[[#CALL:]] = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %{{.*}}, i64 %{{.*}})
+// OGCG:       %[[#OV:]] = extractvalue { i64, i1 } %[[#CALL]], 1
+// OGCG:       %[[#RES:]] = extractvalue { i64, i1 } %[[#CALL]], 0
+// OGCG:       %[[#OV2:]] = icmp ugt i64 %[[#RES]], 9223372036854775807
+// OGCG:       or i1 %[[#OV]], %[[#OV2]]
 
 bool test_add_overflow_uint_int_int(unsigned x, int y, int *res) {
   return __builtin_add_overflow(x, y, res);
@@ -144,6 +500,116 @@ bool test_add_overflow_uint_int_int(unsigned x, int y, int *res) {
 // CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !s32i
 // CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !s32i, !cir.ptr<!s32i>
 //      CIR: }
+
+bool test_add_overflow_int_uint_uint(int x, unsigned y, unsigned *res) {
+  return __builtin_add_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_add_overflow_int_uint_uint{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !s32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.add.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !u32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_add_overflow_int_uint_uint{{.*}}
+// LLVM:   %[[#X:]] = sext i32 %{{.*}} to i33
+// LLVM:   %[[#Y:]] = zext i32 %{{.*}} to i33
+// LLVM:   %[[#CALL:]] = call { i33, i1 } @llvm.sadd.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// LLVM:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// LLVM:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// LLVM:   %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// LLVM:   %[[#TRUNC_EXT:]] = zext i32 %[[#TRUNC]] to i33
+// LLVM:   %[[#TRUNC_OV:]] = icmp ne i33 %[[#TRUNC_EXT]], %[[#RES]]
+// LLVM:   or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_add_overflow_int_uint_uint{{.*}}
+// OGCG:       %[[#X:]] = sext i32 %{{.*}} to i33
+// OGCG:       %[[#Y:]] = zext i32 %{{.*}} to i33
+// OGCG:       %[[#CALL:]] = call { i33, i1 } @llvm.sadd.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// OGCG-DAG:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// OGCG-DAG:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// OGCG:       %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// OGCG:       %[[#TRUNC_EXT:]] = zext i32 %[[#TRUNC]] to i33
+// OGCG:       %[[#TRUNC_OV:]] = icmp ne i33 %[[#RES]], %[[#TRUNC_EXT]]
+// OGCG:       or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+bool test_sub_overflow_int_uint_uint(int x, unsigned y, unsigned *res) {
+  return __builtin_sub_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_sub_overflow_int_uint_uint{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !s32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.sub.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !u32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_sub_overflow_int_uint_uint{{.*}}
+// LLVM:   %[[#X:]] = sext i32 %{{.*}} to i33
+// LLVM:   %[[#Y:]] = zext i32 %{{.*}} to i33
+// LLVM:   %[[#CALL:]] = call { i33, i1 } @llvm.ssub.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// LLVM:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// LLVM:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// LLVM:   %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// LLVM:   %[[#TRUNC_EXT:]] = zext i32 %[[#TRUNC]] to i33
+// LLVM:   %[[#TRUNC_OV:]] = icmp ne i33 %[[#TRUNC_EXT]], %[[#RES]]
+// LLVM:   or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_sub_overflow_int_uint_uint{{.*}}
+// OGCG:       %[[#X:]] = sext i32 %{{.*}} to i33
+// OGCG:       %[[#Y:]] = zext i32 %{{.*}} to i33
+// OGCG:       %[[#CALL:]] = call { i33, i1 } @llvm.ssub.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// OGCG-DAG:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// OGCG-DAG:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// OGCG:       %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// OGCG:       %[[#TRUNC_EXT:]] = zext i32 %[[#TRUNC]] to i33
+// OGCG:       %[[#TRUNC_OV:]] = icmp ne i33 %[[#RES]], %[[#TRUNC_EXT]]
+// OGCG:       or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+bool test_mul_overflow_int_uint_uint(int x, unsigned y, unsigned *res) {
+  return __builtin_mul_overflow(x, y, res);
+}
+
+//      CIR: cir.func {{.*}} @{{.*}}test_mul_overflow_int_uint_uint{{.*}}
+//      CIR:   %[[#X:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!s32i>, !s32i
+// CIR-NEXT:   %[[#Y:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!u32i>, !u32i
+// CIR-NEXT:   %[[#RES_PTR:]] = cir.load{{.*}} %{{.+}} : !cir.ptr<!cir.ptr<!u32i>>, !cir.ptr<!u32i>
+// CIR-NEXT:   %[[#PROM_X:]] = cir.cast integral %[[#X]] : !s32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[#PROM_Y:]] = cir.cast integral %[[#Y]] : !u32i -> !cir.int<s, 33>
+// CIR-NEXT:   %[[RES:.+]], %{{.+}} = cir.mul.overflow %[[#PROM_X]], %[[#PROM_Y]] : !cir.int<s, 33> -> !u32i
+// CIR-NEXT:   cir.store{{.*}} %[[RES]], %[[#RES_PTR]] : !u32i, !cir.ptr<!u32i>
+//      CIR: }
+
+// LLVM: define{{.*}} i1 @{{.*}}test_mul_overflow_int_uint_uint{{.*}}
+// LLVM:   %[[#X:]] = sext i32 %{{.*}} to i33
+// LLVM:   %[[#Y:]] = zext i32 %{{.*}} to i33
+// LLVM:   %[[#CALL:]] = call { i33, i1 } @llvm.smul.with.overflow.i33(i33 %[[#X]], i33 %[[#Y]])
+// LLVM:   %[[#RES:]] = extractvalue { i33, i1 } %[[#CALL]], 0
+// LLVM:   %[[#OV:]] = extractvalue { i33, i1 } %[[#CALL]], 1
+// LLVM:   %[[#TRUNC:]] = trunc i33 %[[#RES]] to i32
+// LLVM:   %[[#TRUNC_EXT:]] = zext i32 %[[#TRUNC]] to i33
+// LLVM:   %[[#TRUNC_OV:]] = icmp ne i33 %[[#TRUNC_EXT]], %[[#RES]]
+// LLVM:   or i1 %[[#OV]], %[[#TRUNC_OV]]
+
+// OGCG-LABEL: define{{.*}} i1 @{{.*}}test_mul_overflow_int_uint_uint{{.*}}
+// OGCG:       %[[#NEG:]] = icmp slt i32 %{{.*}}, 0
+// OGCG:       %[[#NEG_VAL:]] = sub i32 0, %{{.*}}
+// OGCG:       %[[#ABS:]] = select i1 %[[#NEG]], i32 %[[#NEG_VAL]], i32 %{{.*}}
+// OGCG:       %[[#CALL:]] = call { i32, i1 } @llvm.umul.with.overflow.i32(i32 %[[#ABS]], i32 %{{.*}})
+// OGCG:       %[[#OV:]] = extractvalue { i32, i1 } %[[#CALL]], 1
+// OGCG:       %[[#RES:]] = extractvalue { i32, i1 } %[[#CALL]], 0
+// OGCG:       %[[#NZ:]] = icmp ne i32 %[[#RES]], 0
+// OGCG:       %[[#UNDER:]] = and i1 %[[#NEG]], %[[#NZ]]
+// OGCG:       %[[#OV2:]] = or i1 %[[#OV]], %[[#UNDER]]
+// OGCG:       %[[#NEG_RES:]] = sub i32 0, %[[#RES]]
+// OGCG:       %[[#RES2:]] = select i1 %[[#NEG]], i32 %[[#NEG_RES]], i32 %[[#RES]]
 
 bool test_add_overflow_volatile(int x, int y, volatile int *res) {
   return __builtin_add_overflow(x, y, res);

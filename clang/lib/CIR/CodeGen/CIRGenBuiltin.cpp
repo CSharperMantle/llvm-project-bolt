@@ -272,9 +272,9 @@ static WidthAndSignedness
 getIntegerWidthAndSignedness(const clang::ASTContext &astContext,
                              const clang::QualType type) {
   assert(type->isIntegerType() && "Given type is not an integer.");
-  unsigned width = type->isBooleanType()  ? 1
-                   : type->isBitIntType() ? astContext.getIntWidth(type)
-                                          : astContext.getTypeInfo(type).Width;
+  // Use ASTContext::getIntWidth for consistency with OGCG and to avoid
+  // future target-specific width divergences (e.g. padding bits).
+  unsigned width = astContext.getIntWidth(type);
   bool isSigned = type->isSignedIntegerType();
   return {width, isSigned};
 }
@@ -2129,17 +2129,29 @@ RValue CIRGenFunction::emitBuiltinExpr(const GlobalDecl &gd, unsigned builtinID,
 
     auto encompassingCIRTy = cir::IntType::get(
         &getMLIRContext(), encompassingInfo.width, encompassingInfo.isSigned);
-    auto resultCIRTy = mlir::cast<cir::IntType>(cgm.convertType(resultQTy));
+    auto resultCIRType = cgm.convertType(resultQTy);
+    bool resultIsBool = mlir::isa<cir::BoolType>(resultCIRType);
+    auto resultCIRTy = resultIsBool ? cir::IntType::get(&getMLIRContext(), 1,
+                                                        /*isSigned=*/false)
+                                    : mlir::cast<cir::IntType>(resultCIRType);
 
     mlir::Value x = emitScalarExpr(leftArg);
     mlir::Value y = emitScalarExpr(rightArg);
     Address resultPtr = emitPointerWithAlignment(resultArg);
 
     // Extend each operand to the encompassing type, if necessary.
-    if (x.getType() != encompassingCIRTy)
-      x = builder.createCast(cir::CastKind::integral, x, encompassingCIRTy);
-    if (y.getType() != encompassingCIRTy)
-      y = builder.createCast(cir::CastKind::integral, y, encompassingCIRTy);
+    if (x.getType() != encompassingCIRTy) {
+      auto kind = mlir::isa<cir::BoolType>(x.getType())
+                      ? cir::CastKind::bool_to_int
+                      : cir::CastKind::integral;
+      x = builder.createCast(kind, x, encompassingCIRTy);
+    }
+    if (y.getType() != encompassingCIRTy) {
+      auto kind = mlir::isa<cir::BoolType>(y.getType())
+                      ? cir::CastKind::bool_to_int
+                      : cir::CastKind::integral;
+      y = builder.createCast(kind, y, encompassingCIRTy);
+    }
 
     // Perform the operation on the extended values.
     mlir::Location loc = getLoc(e->getSourceRange());
@@ -2173,7 +2185,11 @@ RValue CIRGenFunction::emitBuiltinExpr(const GlobalDecl &gd, unsigned builtinID,
     // Finally, store the result using the pointer.
     bool isVolatile =
         resultArg->getType()->getPointeeType().isVolatileQualified();
-    builder.createStore(loc, result, resultPtr, isVolatile);
+    mlir::Value storeVal = result;
+    if (resultIsBool)
+      storeVal = builder.createCast(loc, cir::CastKind::int_to_bool, storeVal,
+                                    cir::BoolType::get(&getMLIRContext()));
+    builder.createStore(loc, storeVal, resultPtr, isVolatile);
 
     return RValue::get(overflow);
   }
