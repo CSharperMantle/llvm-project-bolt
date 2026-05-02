@@ -43,6 +43,8 @@ private:
   /// `annotate-tablejump` option.
   SmallVector<std::pair<MachineInstr *, int>, 4> JumpInfos;
 
+  bool HasDynamicAllocation = false;
+
 public:
   LoongArchMachineFunctionInfo(const Function &F,
                                const TargetSubtargetInfo *STI) {}
@@ -82,6 +84,9 @@ public:
   unsigned getJumpInfoSize() { return JumpInfos.size(); }
   MachineInstr *getJumpInfoJrMI(unsigned Idx) { return JumpInfos[Idx].first; }
   int getJumpInfoJTIIndex(unsigned Idx) { return JumpInfos[Idx].second; }
+
+  bool hasDynamicAllocation() const { return HasDynamicAllocation; }
+  void setDynamicAllocation() { HasDynamicAllocation = true; }
 };
 
 } // end namespace llvm
