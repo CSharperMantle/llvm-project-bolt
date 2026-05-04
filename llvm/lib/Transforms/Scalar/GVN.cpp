@@ -34,6 +34,7 @@
 #include "llvm/Analysis/InstructionPrecedenceTracking.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/Loads.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/MemorySSA.h"
@@ -3537,8 +3538,12 @@ bool GVNPass::transformMinFindingSelectPattern(
 ///   ...
 ///   ...
 ///   br i1 ..., label %loop, ...
+///
+/// Any compare predicate is accepted, and %val.current.min may appear on
+/// either side of the compare. The transform memoizes one operand of the
+/// compare in a loop-carried PHI, which is sound regardless of whether the
+/// pattern computes a min, a max, or an equality check.
 bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
-  Value *OffsetVal = nullptr;
   BasicBlock *BB = Select->getParent();
 
   // If the block is not in a loop, bail out.
@@ -3559,82 +3564,77 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
     return false;
   }
 
-  // Check if this is less-than comparison.
-  CmpInst::Predicate Pred = Comparison->getPredicate();
-  if (Pred != CmpInst::ICMP_SLT && Pred != CmpInst::ICMP_ULT &&
-      Pred != CmpInst::FCMP_OLT && Pred != CmpInst::FCMP_ULT) {
-    LLVM_DEBUG(
-        dbgs() << "GVN (minindx): Not a less-than comparison, predicate: "
-               << Pred << "\n");
-    return false;
-  }
+  // The predicate itself is irrelevant: the rewrite memoizes one operand of
+  // the compare across iterations, and that is sound for any predicate. A
+  // min/max/eq/ne comparison all benefit equally.
 
-  // Check that both operands are loads.
-  Value *LHS = Comparison->getOperand(0);
-  Value *RHS = Comparison->getOperand(1);
-  if (!isa<LoadInst>(LHS) || !isa<LoadInst>(RHS)) {
+  // Check that both operands are loads of the same type.
+  Value *Op0 = Comparison->getOperand(0);
+  Value *Op1 = Comparison->getOperand(1);
+  if (!isa<LoadInst>(Op0) || !isa<LoadInst>(Op1)) {
     LLVM_DEBUG(dbgs() << "GVN (minindx): Not both operands are loads.\n");
     return false;
   }
-
-  // Check if the type of both loads are the same.
-  if (LHS->getType() != RHS->getType()) {
+  if (Op0->getType() != Op1->getType()) {
     LLVM_DEBUG(
         dbgs() << "GVN (minindx): Not both loads are of the same type.\n");
     return false;
   }
-  Type *LoadType = LHS->getType();
-  Value *InnerGEP;
-  const APInt *OffsetAPInt;
-  if (!match(RHS, m_Load(m_PtrAdd(m_Value(InnerGEP), m_APInt(OffsetAPInt))))) {
-    LLVM_DEBUG(dbgs() << "GVN (minindx): Not a required load pattern.\n");
-    return false;
-  }
-  auto *TypedGEP = dyn_cast<GetElementPtrInst>(InnerGEP);
-  if (!TypedGEP) {
-    LLVM_DEBUG(dbgs() << "GVN (minindx): Not a typed GEP.\n");
-    return false;
-  }
-  Type *ElemTy = TypedGEP->getSourceElementType();
-  // Check if ElemTy is same as LoadType.
-  if (ElemTy != LoadType) {
-    LLVM_DEBUG(dbgs() << "GVN (minindx): Not a required element type.\n");
-    return false;
-  }
-  OffsetVal =
-      ConstantInt::get(Type::getInt64Ty(RHS->getContext()), *OffsetAPInt);
+  Type *LoadType = Op0->getType();
 
-  // Check if the second operand of InnerGEP is a sext instruction.
-  auto *SEInst = dyn_cast<SExtInst>(TypedGEP->getOperand(1));
-  if (!SEInst) {
-    LLVM_DEBUG(dbgs() << "GVN (minindx): Not a sext instruction.\n");
-    return false;
+  // Try to match the hoistable load shape on a single operand. On success,
+  // populate the captured GEP / offset / index-phi so the caller can build
+  // the hoisted preheader sequence.
+  GetElementPtrInst *TypedGEP = nullptr;
+  Value *OffsetVal = nullptr;
+  PHINode *IndexValPhi = nullptr;
+  auto MatchHoistableLoad = [&](Value *LoadOp) -> bool {
+    Value *InnerGEP;
+    const APInt *OffsetAPInt;
+    if (!match(LoadOp,
+               m_Load(m_PtrAdd(m_Value(InnerGEP), m_APInt(OffsetAPInt)))))
+      return false;
+    auto *GEP = dyn_cast<GetElementPtrInst>(InnerGEP);
+    if (!GEP || GEP->getSourceElementType() != LoadType)
+      return false;
+    auto *SEInst = dyn_cast<SExtInst>(GEP->getOperand(1));
+    if (!SEInst)
+      return false;
+    if (!SEInst->getType()->isIntegerTy(64) ||
+        !SEInst->getOperand(0)->getType()->isIntegerTy(32))
+      return false;
+    auto *Phi = dyn_cast<PHINode>(SEInst->getOperand(0));
+    if (!Phi)
+      return false;
+    TypedGEP = GEP;
+    OffsetVal = ConstantInt::get(SEInst->getType(), *OffsetAPInt);
+    IndexValPhi = Phi;
+    return true;
+  };
+
+  // The transform helper assumes the matched (hoistable) load is the second
+  // operand of Comparison. Try Op1 first to preserve the original IR shape;
+  // otherwise, try Op0 and swap the compare so the matched load lands at
+  // operand(1). swapOperands also flips the predicate to its swapped form,
+  // which keeps semantics intact.
+  if (!MatchHoistableLoad(Op1)) {
+    if (!MatchHoistableLoad(Op0)) {
+      LLVM_DEBUG(dbgs() << "GVN (minindx): No operand matches hoistable load "
+                           "pattern.\n");
+      return false;
+    }
+    Comparison->swapOperands();
   }
 
-  // Check if the "to" and "from" type of the sext instruction are i64 and i32
-  // respectively.
-  if (SEInst->getType() != Type::getInt64Ty(SEInst->getContext()) ||
-      SEInst->getOperand(0)->getType() !=
-          Type::getInt32Ty(SEInst->getContext())) {
-    LLVM_DEBUG(dbgs() << "GVN (minindx): Not matching the required type for "
-                         "sext instruction.\n");
-    return false;
-  }
-
-  Value *IndexVal = SEInst->getOperand(0);
-  // Check if the IndexVal is a PHI node.
-  PHINode *IndexValPhi = dyn_cast<PHINode>(IndexVal);
-  if (!IndexValPhi) {
-    LLVM_DEBUG(dbgs() << "GVN: IndexVal is not a PHI node\n");
-    return false;
-  }
+  Value *LHS = Comparison->getOperand(0);
+  Value *LoadVal = Comparison->getOperand(1);
 
   LLVM_DEBUG(dbgs() << "GVN: Found minimum finding pattern in Block: "
                     << Select->getParent()->getName() << ".\n");
 
   return transformMinFindingSelectPattern(
-      L, cast<LoadInst>(LHS)->getType(), Preheader, BB, LHS, RHS, Comparison,
-      Select, TypedGEP->getPointerOperand(), IndexValPhi, OffsetVal);
+      L, LoadType, Preheader, BB, LHS, LoadVal, Comparison, Select,
+      TypedGEP->getPointerOperand(), IndexValPhi, OffsetVal);
 }
 
 class llvm::gvn::GVNLegacyPass : public FunctionPass {

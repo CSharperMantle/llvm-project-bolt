@@ -76,12 +76,12 @@ define void @test_gvn_min_pattern_i32(ptr %arr, i32 %initial_min_idx) {
 ; CHECK-NEXT:    [[LOOP_COUNTER:%.*]] = phi i64 [ 0, %[[ENTRY]] ], [ [[LOOP_COUNTER_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[MIN_IDX:%.*]] = phi i32 [ [[INITIAL_MIN_IDX]], %[[ENTRY]] ], [ [[MIN_IDX_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[INDVARS_IV_NEXT_I]] = add nsw i64 [[INDVARS_IV_I]], -1
-; CHECK-NEXT:    [[PTR_FLOAT_IV:%.*]] = getelementptr i32, ptr [[ARR]], i64 [[INDVARS_IV_I]]
-; CHECK-NEXT:    [[PTR_FIRST_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_IV]], i64 -8
+; CHECK-NEXT:    [[PTR_I32_IV:%.*]] = getelementptr i32, ptr [[ARR]], i64 [[INDVARS_IV_I]]
+; CHECK-NEXT:    [[PTR_FIRST_LOAD:%.*]] = getelementptr i8, ptr [[PTR_I32_IV]], i64 -8
 ; CHECK-NEXT:    [[VAL_FIRST:%.*]] = load i32, ptr [[PTR_FIRST_LOAD]], align 4
 ; CHECK-NEXT:    [[MIN_IDX_EXT:%.*]] = sext i32 [[MIN_IDX]] to i64
-; CHECK-NEXT:    [[PTR_FLOAT_MIN:%.*]] = getelementptr i32, ptr [[ARR]], i64 [[MIN_IDX_EXT]]
-; CHECK-NEXT:    [[PTR_SECOND_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_MIN]], i64 -4
+; CHECK-NEXT:    [[PTR_I32_MIN:%.*]] = getelementptr i32, ptr [[ARR]], i64 [[MIN_IDX_EXT]]
+; CHECK-NEXT:    [[PTR_SECOND_LOAD:%.*]] = getelementptr i8, ptr [[PTR_I32_MIN]], i64 -4
 ; CHECK-NEXT:    [[CMP:%.*]] = icmp slt i32 [[VAL_FIRST]], [[KNOWN_MIN]]
 ; CHECK-NEXT:    [[NEXT_IDX_TRUNC:%.*]] = trunc nsw i64 [[INDVARS_IV_NEXT_I]] to i32
 ; CHECK-NEXT:    [[MIN_IDX_NEXT]] = select i1 [[CMP]], i32 [[NEXT_IDX_TRUNC]], i32 [[MIN_IDX]]
@@ -280,7 +280,9 @@ exit_block:
   ret void
 }
 
-; Negative test: Wrong comparison predicate (>= instead of <).
+; Negative test: GVN's redundancy elimination collapses %load2 to %load1
+; before the recognizer sees the select, so the compare ends up with a
+; single load on both sides and the recognizer rightly bails.
 define void @test_wrong_predicate(ptr %arr, i32 %n) {
 ; CHECK-LABEL: define void @test_wrong_predicate(
 ; CHECK-SAME: ptr [[ARR:%.*]], i32 [[N:%.*]]) {
@@ -481,15 +483,15 @@ define void @test_index_is_constant(ptr %arr, i32 %n) {
 ; CHECK-LABEL: define void @test_index_is_constant(
 ; CHECK-SAME: ptr [[ARR:%.*]], i32 [[N:%.*]]) {
 ; CHECK-NEXT:  [[ENTRY:.*]]:
-; CHECK-NEXT:    [[GEP2:%.*]] = getelementptr float, ptr [[ARR]], i64 5
-; CHECK-NEXT:    [[LOAD2:%.*]] = load float, ptr [[GEP2]], align 4
+; CHECK-NEXT:    [[GEP2_PHI_TRANS_INSERT:%.*]] = getelementptr float, ptr [[ARR]], i64 5
+; CHECK-NEXT:    [[LOAD2_PRE:%.*]] = load float, ptr [[GEP2_PHI_TRANS_INSERT]], align 4
 ; CHECK-NEXT:    br label %[[LOOP:.*]]
 ; CHECK:       [[LOOP]]:
 ; CHECK-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
 ; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr float, ptr [[ARR]], i32 [[I]]
 ; CHECK-NEXT:    [[LOAD1:%.*]] = load float, ptr [[GEP1]], align 4
-; CHECK-NEXT:    [[CMP:%.*]] = fcmp olt float [[LOAD1]], [[LOAD2]]
-; CHECK-NEXT:    [[SEL:%.*]] = select i1 [[CMP]], float [[LOAD1]], float [[LOAD2]]
+; CHECK-NEXT:    [[CMP:%.*]] = fcmp olt float [[LOAD1]], [[LOAD2_PRE]]
+; CHECK-NEXT:    [[SEL:%.*]] = select i1 [[CMP]], float [[LOAD1]], float [[LOAD2_PRE]]
 ; CHECK-NEXT:    [[I_NEXT]] = add i32 [[I]], 1
 ; CHECK-NEXT:    [[EXIT:%.*]] = icmp slt i32 [[I_NEXT]], [[N]]
 ; CHECK-NEXT:    br i1 [[EXIT]], label %[[LOOP]], label %[[EXIT_BLOCK:.*]]
@@ -720,5 +722,125 @@ loop:
   br i1 %exit, label %loop, label %exit_block
 
 exit_block:
+  ret void
+}
+
+; Positive test: non-LT predicate on the compare. The matched (hoistable)
+; load is on the RHS, so no operand swap is needed. Exercises that the
+; recognizer no longer rejects on predicate alone.
+define void @test_gvn_pattern_gt_predicate(ptr %0, i32 %initial_min_idx) {
+; CHECK-LABEL: define void @test_gvn_pattern_gt_predicate(
+; CHECK-SAME: ptr [[TMP0:%.*]], i32 [[INITIAL_MIN_IDX:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*]]:
+; CHECK-NEXT:    [[HOIST_SEXT:%.*]] = sext i32 [[INITIAL_MIN_IDX]] to i64
+; CHECK-NEXT:    [[HOIST_GEP1:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[HOIST_SEXT]]
+; CHECK-NEXT:    [[HOIST_GEP2:%.*]] = getelementptr i8, ptr [[HOIST_GEP1]], i64 -4
+; CHECK-NEXT:    [[HOISTED_LOAD:%.*]] = load float, ptr [[HOIST_GEP2]], align 4
+; CHECK-NEXT:    br label %[[LOOP:.*]]
+; CHECK:       [[LOOP]]:
+; CHECK-NEXT:    [[KNOWN_MIN:%.*]] = phi float [ [[HOISTED_LOAD]], %[[ENTRY]] ], [ [[CURRENT_MIN:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[INDVARS_IV_I:%.*]] = phi i64 [ 1, %[[ENTRY]] ], [ [[INDVARS_IV_NEXT_I:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[LOOP_COUNTER:%.*]] = phi i64 [ 0, %[[ENTRY]] ], [ [[LOOP_COUNTER_NEXT:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[MIN_IDX:%.*]] = phi i32 [ [[INITIAL_MIN_IDX]], %[[ENTRY]] ], [ [[MIN_IDX_NEXT:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[INDVARS_IV_NEXT_I]] = add nsw i64 [[INDVARS_IV_I]], -1
+; CHECK-NEXT:    [[PTR_FLOAT_IV:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[INDVARS_IV_I]]
+; CHECK-NEXT:    [[PTR_FIRST_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_IV]], i64 -8
+; CHECK-NEXT:    [[VAL_FIRST:%.*]] = load float, ptr [[PTR_FIRST_LOAD]], align 4
+; CHECK-NEXT:    [[MIN_IDX_EXT:%.*]] = sext i32 [[MIN_IDX]] to i64
+; CHECK-NEXT:    [[PTR_FLOAT_MIN:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[MIN_IDX_EXT]]
+; CHECK-NEXT:    [[PTR_SECOND_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_MIN]], i64 -4
+; CHECK-NEXT:    [[CMP:%.*]] = fcmp contract ogt float [[VAL_FIRST]], [[KNOWN_MIN]]
+; CHECK-NEXT:    [[NEXT_IDX_TRUNC:%.*]] = trunc nsw i64 [[INDVARS_IV_NEXT_I]] to i32
+; CHECK-NEXT:    [[MIN_IDX_NEXT]] = select i1 [[CMP]], i32 [[NEXT_IDX_TRUNC]], i32 [[MIN_IDX]]
+; CHECK-NEXT:    [[LOOP_COUNTER_NEXT]] = add nsw i64 [[LOOP_COUNTER]], -1
+; CHECK-NEXT:    [[LOOP_CONTINUE:%.*]] = icmp samesign ugt i64 [[LOOP_COUNTER]], 1
+; CHECK-NEXT:    [[CURRENT_MIN]] = select i1 [[CMP]], float [[VAL_FIRST]], float [[KNOWN_MIN]]
+; CHECK-NEXT:    br i1 [[LOOP_CONTINUE]], label %[[LOOP]], label %[[EXIT:.*]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %indvars.iv.i = phi i64 [ 1, %entry ], [ %indvars.iv.next.i, %loop ]
+  %loop.counter = phi i64 [ 0, %entry ], [ %loop.counter.next, %loop ]
+  %min.idx = phi i32 [ %initial_min_idx, %entry ], [ %min.idx.next, %loop ]
+  %indvars.iv.next.i = add nsw i64 %indvars.iv.i, -1
+  %ptr.float.iv = getelementptr float, ptr %0, i64 %indvars.iv.i
+  %ptr.first.load = getelementptr i8, ptr %ptr.float.iv, i64 -8
+  %val.first = load float, ptr %ptr.first.load, align 4
+  %min.idx.ext = sext i32 %min.idx to i64
+  %ptr.float.min = getelementptr float, ptr %0, i64 %min.idx.ext
+  %ptr.second.load = getelementptr i8, ptr %ptr.float.min, i64 -4
+  %val.current.min = load float, ptr %ptr.second.load, align 4
+  %cmp = fcmp contract ogt float %val.first, %val.current.min
+  %next.idx.trunc = trunc nsw i64 %indvars.iv.next.i to i32
+  %min.idx.next = select i1 %cmp, i32 %next.idx.trunc, i32 %min.idx
+  %loop.counter.next = add nsw i64 %loop.counter, -1
+  %loop.continue = icmp samesign ugt i64 %loop.counter, 1
+  br i1 %loop.continue, label %loop, label %exit
+
+exit:
+  ret void
+}
+
+; Positive test: matched (hoistable) load is the LHS of the compare. The
+; recognizer must swap the compare's operands so the existing transform
+; (which expects the matched load at operand(1)) keeps working.
+define void @test_gvn_pattern_matched_load_on_lhs(ptr %0, i32 %initial_min_idx) {
+; CHECK-LABEL: define void @test_gvn_pattern_matched_load_on_lhs(
+; CHECK-SAME: ptr [[TMP0:%.*]], i32 [[INITIAL_MIN_IDX:%.*]]) {
+; CHECK-NEXT:  [[ENTRY:.*]]:
+; CHECK-NEXT:    [[HOIST_SEXT:%.*]] = sext i32 [[INITIAL_MIN_IDX]] to i64
+; CHECK-NEXT:    [[HOIST_GEP1:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[HOIST_SEXT]]
+; CHECK-NEXT:    [[HOIST_GEP2:%.*]] = getelementptr i8, ptr [[HOIST_GEP1]], i64 -4
+; CHECK-NEXT:    [[HOISTED_LOAD:%.*]] = load float, ptr [[HOIST_GEP2]], align 4
+; CHECK-NEXT:    br label %[[LOOP:.*]]
+; CHECK:       [[LOOP]]:
+; CHECK-NEXT:    [[KNOWN_MIN:%.*]] = phi float [ [[HOISTED_LOAD]], %[[ENTRY]] ], [ [[CURRENT_MIN:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[INDVARS_IV_I:%.*]] = phi i64 [ 1, %[[ENTRY]] ], [ [[INDVARS_IV_NEXT_I:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[LOOP_COUNTER:%.*]] = phi i64 [ 0, %[[ENTRY]] ], [ [[LOOP_COUNTER_NEXT:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[MIN_IDX:%.*]] = phi i32 [ [[INITIAL_MIN_IDX]], %[[ENTRY]] ], [ [[MIN_IDX_NEXT:%.*]], %[[LOOP]] ]
+; CHECK-NEXT:    [[INDVARS_IV_NEXT_I]] = add nsw i64 [[INDVARS_IV_I]], -1
+; CHECK-NEXT:    [[PTR_FLOAT_IV:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[INDVARS_IV_I]]
+; CHECK-NEXT:    [[PTR_FIRST_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_IV]], i64 -8
+; CHECK-NEXT:    [[VAL_FIRST:%.*]] = load float, ptr [[PTR_FIRST_LOAD]], align 4
+; CHECK-NEXT:    [[MIN_IDX_EXT:%.*]] = sext i32 [[MIN_IDX]] to i64
+; CHECK-NEXT:    [[PTR_FLOAT_MIN:%.*]] = getelementptr float, ptr [[TMP0]], i64 [[MIN_IDX_EXT]]
+; CHECK-NEXT:    [[PTR_SECOND_LOAD:%.*]] = getelementptr i8, ptr [[PTR_FLOAT_MIN]], i64 -4
+; CHECK-NEXT:    [[CMP:%.*]] = fcmp contract olt float [[VAL_FIRST]], [[KNOWN_MIN]]
+; CHECK-NEXT:    [[NEXT_IDX_TRUNC:%.*]] = trunc nsw i64 [[INDVARS_IV_NEXT_I]] to i32
+; CHECK-NEXT:    [[MIN_IDX_NEXT]] = select i1 [[CMP]], i32 [[MIN_IDX]], i32 [[NEXT_IDX_TRUNC]]
+; CHECK-NEXT:    [[LOOP_COUNTER_NEXT]] = add nsw i64 [[LOOP_COUNTER]], -1
+; CHECK-NEXT:    [[LOOP_CONTINUE:%.*]] = icmp samesign ugt i64 [[LOOP_COUNTER]], 1
+; CHECK-NEXT:    [[CURRENT_MIN]] = select i1 [[CMP]], float [[VAL_FIRST]], float [[KNOWN_MIN]]
+; CHECK-NEXT:    br i1 [[LOOP_CONTINUE]], label %[[LOOP]], label %[[EXIT:.*]]
+; CHECK:       [[EXIT]]:
+; CHECK-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %indvars.iv.i = phi i64 [ 1, %entry ], [ %indvars.iv.next.i, %loop ]
+  %loop.counter = phi i64 [ 0, %entry ], [ %loop.counter.next, %loop ]
+  %min.idx = phi i32 [ %initial_min_idx, %entry ], [ %min.idx.next, %loop ]
+  %indvars.iv.next.i = add nsw i64 %indvars.iv.i, -1
+  %ptr.float.iv = getelementptr float, ptr %0, i64 %indvars.iv.i
+  %ptr.first.load = getelementptr i8, ptr %ptr.float.iv, i64 -8
+  %val.first = load float, ptr %ptr.first.load, align 4
+  %min.idx.ext = sext i32 %min.idx to i64
+  %ptr.float.min = getelementptr float, ptr %0, i64 %min.idx.ext
+  %ptr.second.load = getelementptr i8, ptr %ptr.float.min, i64 -4
+  %val.current.min = load float, ptr %ptr.second.load, align 4
+  %cmp = fcmp contract ogt float %val.current.min, %val.first
+  %next.idx.trunc = trunc nsw i64 %indvars.iv.next.i to i32
+  %min.idx.next = select i1 %cmp, i32 %min.idx, i32 %next.idx.trunc
+  %loop.counter.next = add nsw i64 %loop.counter, -1
+  %loop.continue = icmp samesign ugt i64 %loop.counter, 1
+  br i1 %loop.continue, label %loop, label %exit
+
+exit:
   ret void
 }
