@@ -11,6 +11,10 @@
 
 // allow-unregisterd-dialect is set to allow for the string constant types.
 
+// Parsing external resources does not work on big-endian platforms currently
+// XFAIL: target={{(s390x|sparc.*)-.*}}
+// XFAIL: target={{.*}}-aix{{.*}}
+
 module {
 
 //===----------------------------------------------------------------------===//

@@ -33,11 +33,11 @@ TEST(VerifierTest, Branch_i1) {
   BasicBlock *Exit = BasicBlock::Create(C, "exit", F);
   ReturnInst::Create(C, Exit);
 
-  // To avoid triggering an assertion in BranchInst::Create, we first create
+  // To avoid triggering an assertion in CondBrInst::Create, we first create
   // a branch with an 'i1' condition ...
 
   Constant *False = ConstantInt::getFalse(C);
-  BranchInst *BI = BranchInst::Create(Exit, Exit, False, Entry);
+  CondBrInst *BI = CondBrInst::Create(False, Exit, Exit, Entry);
 
   // ... then use setOperand to redirect it to a value of different type.
 
@@ -259,8 +259,9 @@ TEST(VerifierTest, DetectInvalidDebugInfo) {
                                Function::ExternalLinkage, "f", M);
     IRBuilder<> Builder(BasicBlock::Create(C, "", F));
     Builder.CreateUnreachable();
+    auto *SPType = DIB.createSubroutineType(DIB.getOrCreateTypeArray({}));
     F->setSubprogram(DIB.createFunction(
-        CU, "f", "f", DIB.createFile("broken.c", "/"), 1, nullptr, 1,
+        CU, "f", "f", DIB.createFile("broken.c", "/"), 1, SPType, 1,
         DINode::FlagZero,
         DISubprogram::SPFlagLocalToUnit | DISubprogram::SPFlagDefinition));
     DIB.finalize();
@@ -318,9 +319,9 @@ TEST(VerifierTest, SwitchInst) {
 
   BasicBlock *Exit = BasicBlock::Create(C, "exit", F);
 
-  BranchInst::Create(Exit, Default);
-  BranchInst::Create(Exit, OnTwo);
-  BranchInst::Create(Exit, OnOne);
+  UncondBrInst::Create(Exit, Default);
+  UncondBrInst::Create(Exit, OnTwo);
+  UncondBrInst::Create(Exit, OnOne);
   ReturnInst::Create(C, Exit);
 
   Value *Cond = F->getArg(0);

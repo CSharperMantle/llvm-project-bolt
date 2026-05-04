@@ -74,9 +74,13 @@ Instruction::~Instruction() {
   if (isUsedByMetadata())
     ValueAsMetadata::handleRAUW(this, PoisonValue::get(getType()));
 
-  // Explicitly remove DIAssignID metadata to clear up ID -> Instruction(s)
-  // mapping in LLVMContext.
-  setMetadata(LLVMContext::MD_DIAssignID, nullptr);
+  // Remove associated metadata from context.
+  if (hasMetadata()) {
+    // Explicitly remove DIAssignID metadata to clear up ID -> Instruction(s)
+    // mapping in LLVMContext.
+    updateDIAssignIDMapping(nullptr);
+    clearMetadata();
+  }
 }
 
 const Module *Instruction::getModule() const {
@@ -529,25 +533,35 @@ void Instruction::dropPoisonGeneratingMetadata() {
     eraseMetadata(ID);
 }
 
-bool Instruction::hasPoisonGeneratingReturnAttributes() const {
+bool Instruction::hasPoisonGeneratingAttributes() const {
   if (const auto *CB = dyn_cast<CallBase>(this)) {
-    AttributeSet RetAttrs = CB->getAttributes().getRetAttrs();
-    return RetAttrs.hasAttribute(Attribute::Range) ||
-           RetAttrs.hasAttribute(Attribute::Alignment) ||
-           RetAttrs.hasAttribute(Attribute::NonNull);
+    auto HasPoisonGeneratingAttributes = [](AttributeSet Attrs) {
+      return Attrs.hasAttribute(Attribute::Range) ||
+             Attrs.hasAttribute(Attribute::Alignment) ||
+             Attrs.hasAttribute(Attribute::NonNull) ||
+             Attrs.hasAttribute(Attribute::NoFPClass);
+    };
+    if (HasPoisonGeneratingAttributes(CB->getRetAttributes()))
+      return true;
+    for (unsigned ArgNo = 0; ArgNo < CB->arg_size(); ArgNo++)
+      if (HasPoisonGeneratingAttributes(CB->getParamAttributes(ArgNo)))
+        return true;
   }
   return false;
 }
 
-void Instruction::dropPoisonGeneratingReturnAttributes() {
+void Instruction::dropPoisonGeneratingAttributes() {
   if (auto *CB = dyn_cast<CallBase>(this)) {
     AttributeMask AM;
     AM.addAttribute(Attribute::Range);
     AM.addAttribute(Attribute::Alignment);
     AM.addAttribute(Attribute::NonNull);
+    AM.addAttribute(Attribute::NoFPClass);
     CB->removeRetAttrs(AM);
+    for (unsigned ArgNo = 0; ArgNo < CB->arg_size(); ArgNo++)
+      CB->removeParamAttrs(ArgNo, AM);
   }
-  assert(!hasPoisonGeneratingReturnAttributes() && "must be kept in sync");
+  assert(!hasPoisonGeneratingAttributes() && "must be kept in sync");
 }
 
 void Instruction::dropUBImplyingAttrsAndUnknownMetadata(
@@ -1250,9 +1264,9 @@ bool Instruction::isSafeToRemove() const {
 }
 
 bool Instruction::willReturn() const {
-  // Volatile store isn't guaranteed to return; see LangRef.
-  if (auto *SI = dyn_cast<StoreInst>(this))
-    return !SI->isVolatile();
+  // Volatile operations are not guaranteed to return.
+  if (isVolatile())
+    return false;
 
   if (const auto *CB = dyn_cast<CallBase>(this))
     return CB->hasFnAttr(Attribute::WillReturn);
@@ -1352,11 +1366,24 @@ void Instruction::setSuccessor(unsigned idx, BasicBlock *B) {
   llvm_unreachable("not a terminator");
 }
 
+iterator_range<Instruction::const_succ_iterator>
+Instruction::successors() const {
+  switch (getOpcode()) {
+#define HANDLE_TERM_INST(N, OPC, CLASS)                                        \
+  case Instruction::OPC:                                                       \
+    return static_cast<const CLASS *>(this)->successors();
+#include "llvm/IR/Instruction.def"
+  default:
+    break;
+  }
+  llvm_unreachable("not a terminator");
+}
+
 void Instruction::replaceSuccessorWith(BasicBlock *OldBB, BasicBlock *NewBB) {
-  for (unsigned Idx = 0, NumSuccessors = Instruction::getNumSuccessors();
-       Idx != NumSuccessors; ++Idx)
-    if (getSuccessor(Idx) == OldBB)
-      setSuccessor(Idx, NewBB);
+  auto Succs = successors();
+  for (auto I = Succs.begin(), E = Succs.end(); I != E; ++I)
+    if (*I == OldBB)
+      I.getUse()->set(NewBB);
 }
 
 Instruction *Instruction::cloneImpl() const {
