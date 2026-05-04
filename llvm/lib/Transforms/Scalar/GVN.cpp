@@ -72,6 +72,7 @@
 #include "llvm/Transforms/Utils/AssumeBundleBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Transforms/Utils/VNCoercion.h"
 #include <algorithm>
@@ -3343,24 +3344,6 @@ void GVNPass::assignValNumForDeadCode() {
 }
 
 /// Return true if the load can be hoisted to the loop preheader (no clobber
-/// in the loop) using MemorySSA's clobbering access.
-static bool canHoistLoadWithMSSA(Loop *L, Instruction *LoadInst,
-                                 MemorySSA *MSSA) {
-  MemoryAccess *MA = MSSA->getMemoryAccess(LoadInst);
-  assert(MA && "MemoryAccess expected when MemorySSA is available");
-  MemoryAccess *Clobber =
-      MSSA->getSkipSelfWalker()->getClobberingMemoryAccess(MA);
-  assert(Clobber && "getClobberingMemoryAccess should never return null");
-  if (MSSA->isLiveOnEntryDef(Clobber))
-    return true;
-  if (!L->contains(Clobber->getBlock()))
-    return true;
-  LLVM_DEBUG(dbgs() << "GVN: Cannot hoist - clobbered in loop by " << *Clobber
-                    << "\n");
-  return false;
-}
-
-/// Return true if the load can be hoisted to the loop preheader (no clobber
 /// in the loop) using MemoryDependenceResults.
 static bool canHoistLoadWithMD(Loop *L, LoadInst *Load,
                                MemoryDependenceResults *MD) {
@@ -3448,13 +3431,17 @@ bool GVNPass::transformMinFindingSelectPattern(
   Value *LoadVal = Comparison->getOperand(1);
 
   // Check if any instruction in the loop clobbers this location. Require MSSA
-  // or MD to perform the transformation.
+  // or MD to perform the transformation. With MSSA we delegate to the common
+  // utility canHoistLoad(); with MD we use a local dependency walk.
   bool CanHoist = false;
-  if (MSSAU)
-    CanHoist = canHoistLoadWithMSSA(L, dyn_cast<Instruction>(LoadVal),
-                                    MSSAU->getMemorySSA());
-  else if (MD)
+  if (MSSAU) {
+    SinkAndHoistLICMFlags Flags(/*IsSink=*/false, *L, *MSSAU->getMemorySSA());
+    CanHoist =
+        canHoistLoad(*cast<LoadInst>(LoadVal), VN.getAliasAnalysis(), DT, L,
+                     *MSSAU, /*TargetExecutesOncePerLoop=*/true, Flags, ORE);
+  } else if (MD) {
     CanHoist = canHoistLoadWithMD(L, cast<LoadInst>(LoadVal), MD);
+  }
 
   if (!CanHoist) {
     LLVM_DEBUG(dbgs() << "GVN: Cannot hoist - may be clobbered by some "
