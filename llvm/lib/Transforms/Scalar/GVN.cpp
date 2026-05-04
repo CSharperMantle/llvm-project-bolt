@@ -3433,13 +3433,19 @@ static bool canHoistLoadWithMD(Loop *L, LoadInst *Load,
 ///    ...
 ///    br i1 %cond, label %loop, label %exit
 bool GVNPass::transformMinFindingSelectPattern(
-    Loop *L, Type *LoadType, BasicBlock *Preheader, BasicBlock *BB, Value *LHS,
-    Value *LoadVal, CmpInst *Comparison, SelectInst *Select, Value *BasePtr,
+    Loop *L, Type *LoadType, BasicBlock *Preheader, BasicBlock *BB,
+    CmpInst *Comparison, SelectInst *Select, Value *BasePtr,
     PHINode *IndexValPhi, Value *OffsetVal) {
 
   assert(BasePtr && "BasePtr is null");
   assert(OffsetVal && "OffsetVal is null");
   assert(IndexValPhi && "IndexValPhi is null");
+
+  // The recognizer canonicalizes the matched (hoistable) load to operand(1)
+  // of the compare. Capture both operands now, before we mutate the compare
+  // below.
+  Value *LHS = Comparison->getOperand(0);
+  Value *LoadVal = Comparison->getOperand(1);
 
   // Check if any instruction in the loop clobbers this location. Require MSSA
   // or MD to perform the transformation.
@@ -3626,14 +3632,11 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
     Comparison->swapOperands();
   }
 
-  Value *LHS = Comparison->getOperand(0);
-  Value *LoadVal = Comparison->getOperand(1);
-
   LLVM_DEBUG(dbgs() << "GVN: Found minimum finding pattern in Block: "
                     << Select->getParent()->getName() << ".\n");
 
   return transformMinFindingSelectPattern(
-      L, LoadType, Preheader, BB, LHS, LoadVal, Comparison, Select,
+      L, LoadType, Preheader, BB, Comparison, Select,
       TypedGEP->getPointerOperand(), IndexValPhi, OffsetVal);
 }
 

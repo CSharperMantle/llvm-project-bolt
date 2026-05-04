@@ -411,7 +411,6 @@ private:
   bool recognizeMinFindingSelectPattern(SelectInst *Select);
   bool transformMinFindingSelectPattern(Loop *L, Type *LoadType,
                                         BasicBlock *Preheader, BasicBlock *BB,
-                                        Value *LHS, Value *RHS,
                                         CmpInst *Comparison, SelectInst *Select,
                                         Value *BasePtr, PHINode *IndexValPhi,
                                         Value *OffsetVal);
