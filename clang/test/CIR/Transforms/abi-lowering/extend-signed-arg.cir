@@ -1,0 +1,40 @@
+// Extend with sign_extend = true on a narrow signed integer arg.  The pass
+// keeps the narrow type in the signature (matching Classic Clang's LLVM IR
+// convention) and attaches llvm.signext to the corresponding arg_attrs.
+//
+// The test target's narrow-int Extend rule fires only on MLIR builtin
+// IntegerType, not cir::IntType, so this test uses the injection driver.
+// RUN: cir-opt %s -cir-call-conv-lowering="classification-attr=test_classify" \
+// RUN:   | FileCheck %s
+
+!s8i = !cir.int<s, 8>
+
+#extend_signed_arg = {
+  return = { kind = "direct" },
+  args   = [ { kind = "extend",
+               coerced_type = !cir.int<s, 32>,
+               sign_extend = true } ]
+}
+
+module attributes {
+  dlti.dl_spec = #dlti.dl_spec<
+    #dlti.dl_entry<i8, dense<8>: vector<2xi64>>,
+    #dlti.dl_entry<i32, dense<32>: vector<2xi64>>>
+} {
+
+  cir.func @takes_s8(%arg0: !s8i)
+      attributes { test_classify = #extend_signed_arg } {
+    cir.return
+  }
+
+  // CHECK: cir.func{{.*}} @takes_s8(%arg0: !s8i {llvm.signext})
+
+  cir.func @caller(%arg0: !s8i)
+      attributes { test_classify = #extend_signed_arg } {
+    cir.call @takes_s8(%arg0) : (!s8i) -> ()
+    cir.return
+  }
+
+  // CHECK: cir.call @takes_s8(%arg0) : (!s8i {llvm.signext}) -> ()
+
+}
