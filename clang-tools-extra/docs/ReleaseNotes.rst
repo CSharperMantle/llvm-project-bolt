@@ -420,6 +420,13 @@ Changes in existing checks
 - Improved :doc:`modernize-redundant-void-arg
   <clang-tidy/checks/modernize/redundant-void-arg>` check to work in C23.
 
+- Improved :doc:`modernize-use-default-member-init
+  <clang-tidy/checks/modernize/use-default-member-init>` check by fixing a
+  false positive when a constructor initializer refers to a declaration that
+  would not be visible from the inserted default member initializer. The
+  `IgnoreNonVisibleReferences` option can be set to `false` to warn without
+  emitting fix-its for these cases.
+
 - Improved :doc:`modernize-use-equals-delete
   <clang-tidy/checks/modernize/use-equals-delete>` check by only warning on
   private deleted functions, if they do not have a public overload or are a
