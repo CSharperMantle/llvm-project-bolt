@@ -346,6 +346,22 @@ static mlir::Value emitCommonNeonSISDBuiltinExpr(
     return emitNeonCall(cgf.cgm, cgf.getBuilder(),
                         {cgf.convertType(expr->getArg(0)->getType())}, ops,
                         llvmIntrName, cgf.convertType(expr->getType()), loc);
+  case NEON::BI__builtin_neon_vsrid_n_s64:
+  case NEON::BI__builtin_neon_vsrid_n_u64: {
+    CIRGenBuilderTy &B = cgf.getBuilder();
+    mlir::Type scalarTy = cgf.convertType(expr->getType());
+    auto v1Ty = cir::VectorType::get(scalarTy, /*size=*/1);
+    mlir::Value a = B.createBitcast(ops[0], v1Ty);
+    mlir::Value b = B.createBitcast(ops[1], v1Ty);
+    llvm::SmallVector<mlir::Value, 4> vsriArgs{
+        a, b, B.createIntCast(ops[2], B.getUInt32Ty())};
+    mlir::Value r =
+        emitNeonCall(cgf.cgm, B,
+                     /*argTypes=*/{v1Ty, v1Ty, B.getUInt32Ty()}, vsriArgs,
+                     /*intrinsicName=*/"aarch64.neon.vsri",
+                     /*funcResTy=*/v1Ty, loc);
+    return B.createBitcast(r, scalarTy);
+  }
   }
 
   return nullptr;
@@ -2801,7 +2817,12 @@ CIRGenFunction::emitAArch64BuiltinExpr(unsigned builtinID, const CallExpr *expr,
     return result;
   }
   case NEON::BI__builtin_neon_vsri_n_v:
-  case NEON::BI__builtin_neon_vsriq_n_v:
+  case NEON::BI__builtin_neon_vsriq_n_v: {
+    llvm::SmallVector<mlir::Value, 4> vsriArgs = {
+        ops[0], ops[1], builder.createIntCast(ops[2], builder.getUInt32Ty())};
+    return emitNeonCall(cgm, builder, {ty, ty, builder.getUInt32Ty()}, vsriArgs,
+                        "aarch64.neon.vsri", ty, loc);
+  }
   case NEON::BI__builtin_neon_vsli_n_v:
   case NEON::BI__builtin_neon_vsliq_n_v:
   case NEON::BI__builtin_neon_vsra_n_v:
