@@ -119,7 +119,7 @@ void CallConvLoweringPass::runOnOperation() {
   }
 
   DataLayout dl(module);
-  CIRABIRewriteContext rewriteCtx(module);
+  CIRABIRewriteContext rewriteCtx(module, dl);
 
   // Phase 1: classify every cir.func.  No IR mutation happens here, so
   // running this as a single up-front walk lets later phases consult any
