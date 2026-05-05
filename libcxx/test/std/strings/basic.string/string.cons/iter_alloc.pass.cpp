@@ -36,7 +36,7 @@ TEST_CONSTEXPR_CXX20 void test(It first, It last) {
     ++it;
     ++i;
   }
-  assert(s2.get_allocator() == Alloc());
+  ASSERT_CONTAINER_ALLOCATOR_EQUALS_DEFAULT(S, s2);
   assert(s2.capacity() >= s2.size());
   LIBCPP_ASSERT(is_string_asan_correct(s2));
 }

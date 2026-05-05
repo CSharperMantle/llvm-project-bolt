@@ -20,6 +20,18 @@
 
 #include "test_macros.h"
 
+// unless explicitly specified as false
+template <class T>
+struct are_default_allocators_always_equal {
+  enum { value = 1 };
+};
+
+#define ASSERT_CONTAINER_ALLOCATOR_EQUALS_DEFAULT(C, c)                                                                \
+  do {                                                                                                                 \
+    if (are_default_allocators_always_equal<typename C::allocator_type>::value)                                        \
+      assert(c.get_allocator() == typename C::allocator_type());                                                       \
+  } while (0)
+
 template <class Alloc>
 TEST_CONSTEXPR_CXX20 inline typename std::allocator_traits<Alloc>::size_type alloc_max_size(Alloc const& a) {
   typedef std::allocator_traits<Alloc> AT;

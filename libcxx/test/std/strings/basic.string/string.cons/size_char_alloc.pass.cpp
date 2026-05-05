@@ -29,7 +29,7 @@ TEST_CONSTEXPR_CXX20 void test(unsigned n, charT c) {
   assert(s2.size() == n);
   for (unsigned i = 0; i < n; ++i)
     assert(s2[i] == c);
-  assert(s2.get_allocator() == Alloc());
+  ASSERT_CONTAINER_ALLOCATOR_EQUALS_DEFAULT(S, s2);
   assert(s2.capacity() >= s2.size());
   LIBCPP_ASSERT(is_string_asan_correct(s2));
 }
@@ -56,7 +56,7 @@ TEST_CONSTEXPR_CXX20 void test(Tp n, Tp c) {
   assert(s2.size() == static_cast<std::size_t>(n));
   for (int i = 0; i < n; ++i)
     assert(s2[i] == c);
-  assert(s2.get_allocator() == Alloc());
+  ASSERT_CONTAINER_ALLOCATOR_EQUALS_DEFAULT(S, s2);
   assert(s2.capacity() >= s2.size());
 }
 
