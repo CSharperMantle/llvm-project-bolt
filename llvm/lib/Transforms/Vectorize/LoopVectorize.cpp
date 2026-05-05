@@ -6840,6 +6840,8 @@ void LoopVectorizationPlanner::buildVPlans(ElementCount MinVF,
       RUN_VPLAN_PASS(VPlanTransforms::optimizeEVLMasks, *Plan);
     }
 
+    // Update VF again in case SubRange further clamped.
+    VF = SubRange.End;
     for (ElementCount VF : drop_begin(SubRange))
       Plan->addVF(VF);
 
