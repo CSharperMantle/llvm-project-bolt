@@ -5,7 +5,7 @@
 
 define void @loop_invariant(i32 %N) {
 ; CHECK-DA: Performing Loop Fusion on function loop_invariant
-; CHECK-DA: Safe to fuse due to a loop-invariant non-anti dependency
+; CHECK-DA: Safe to fuse due to a loop-invariant output dependency
 ; CHECK-SCEV: Performing Loop Fusion on function loop_invariant
 ; CHECK-SCEV: Fusion done
 ;
