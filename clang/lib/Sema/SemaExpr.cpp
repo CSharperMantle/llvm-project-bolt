@@ -19068,6 +19068,14 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
         }
       }
     });
+  } else if (NeedDefinition && getLangOpts().IncrementalExtensions) {
+    const FunctionDecl *Def = nullptr;
+    if (Func->getBody(Def) &&
+        Def->getTemplateSpecializationKind() == TSK_ImplicitInstantiation &&
+        !Def->isInvalidDecl()) {
+      Consumer.HandleTopLevelDecl(
+          DeclGroupRef(const_cast<FunctionDecl*>(Def)));
+    }
   }
 
   // If a constructor was defined in the context of a default parameter
