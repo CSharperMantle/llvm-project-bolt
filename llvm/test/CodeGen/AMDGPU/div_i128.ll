@@ -1415,29 +1415,23 @@ define i128 @v_sdiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v15, v7
 ; GFX9-G-O0-NEXT:    s_mov_b64 s[4:5], 0
 ; GFX9-G-O0-NEXT:    s_mov_b64 s[8:9], 0x7f
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr0_vgpr1 killed $vgpr3_vgpr4 killed $exec
 ; GFX9-G-O0-NEXT:    s_waitcnt vmcnt(0)
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v5
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v1, v6
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr2 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v7, v1
 ; GFX9-G-O0-NEXT:    s_mov_b32 s6, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s6
 ; GFX9-G-O0-NEXT:    v_ashrrev_i32_e64 v11, v2, v7
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr2 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s6, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s6
 ; GFX9-G-O0-NEXT:    v_ashrrev_i32_e64 v9, v0, v1
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr0_vgpr1 killed $vgpr12_vgpr13 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v14
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v1, v15
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr2 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v7, v1
 ; GFX9-G-O0-NEXT:    s_mov_b32 s6, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s6
 ; GFX9-G-O0-NEXT:    v_ashrrev_i32_e64 v10, v2, v7
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr2 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s6, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s6
@@ -1712,7 +1706,6 @@ define i128 @v_sdiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[9:10], v0, v[2:3]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s4
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[0:1], v0, v[4:5]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr4 killed $vgpr2 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr3 killed $vgpr3 killed $vgpr2_vgpr3 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s4, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s4
@@ -1820,7 +1813,6 @@ define i128 @v_sdiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[2:3], v2, v[0:1]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v4, s8
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[4:5], v4, v[14:15]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr7 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s9, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s9
@@ -1828,10 +1820,8 @@ define i128 @v_sdiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v4
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr5 killed $vgpr5 killed $vgpr4_vgpr5 killed $exec
 ; GFX9-G-O0-NEXT:    v_or_b32_e64 v7, v0, v1
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr0_vgpr1 killed $vgpr22_vgpr23 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v24
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v1, v25
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr4 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s9, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s9
@@ -1847,7 +1837,6 @@ define i128 @v_sdiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[25:26], v0, v[2:3]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s8
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[0:1], v0, v[14:15]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr14 killed $vgpr2 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr3 killed $vgpr3 killed $vgpr2_vgpr3 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s8, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s8
@@ -3771,7 +3760,6 @@ define i128 @v_udiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[9:10], v0, v[2:3]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s4
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[0:1], v0, v[4:5]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr4 killed $vgpr2 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr3 killed $vgpr3 killed $vgpr2_vgpr3 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s4, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s4
@@ -3879,7 +3867,6 @@ define i128 @v_udiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[2:3], v2, v[0:1]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v4, s8
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[4:5], v4, v[20:21]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr7 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s9, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s9
@@ -3887,10 +3874,8 @@ define i128 @v_udiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v4
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr5 killed $vgpr5 killed $vgpr4_vgpr5 killed $exec
 ; GFX9-G-O0-NEXT:    v_or_b32_e64 v7, v0, v1
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr0_vgpr1 killed $vgpr12_vgpr13 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v14
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v1, v15
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr4 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s9, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s9
@@ -3906,7 +3891,6 @@ define i128 @v_udiv_i128_vv(i128 %lhs, i128 %rhs) {
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[22:23], v0, v[2:3]
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s8
 ; GFX9-G-O0-NEXT:    v_lshlrev_b64 v[0:1], v0, v[12:13]
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr12 killed $vgpr2 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr3 killed $vgpr3 killed $vgpr2_vgpr3 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s8, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v2, s8
@@ -4423,10 +4407,8 @@ define i128 @v_sdiv_i128_v_pow2k(i128 %lhs) {
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v9, v1
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v10, v2
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v11, v3
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr0_vgpr1 killed $vgpr8_vgpr9 killed $exec
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, v10
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v1, v11
-; GFX9-G-O0-NEXT:    ; kill: def $vgpr2 killed $vgpr0 killed $exec
 ; GFX9-G-O0-NEXT:    ; kill: def $vgpr1 killed $vgpr1 killed $vgpr0_vgpr1 killed $exec
 ; GFX9-G-O0-NEXT:    s_mov_b32 s4, 31
 ; GFX9-G-O0-NEXT:    v_mov_b32_e32 v0, s4
