@@ -12521,6 +12521,28 @@ static void diagnoseTautologicalComparison(Sema &S, SourceLocation Loc,
     AlwaysEqual, // std::strong_ordering::equal from operator<=>
   };
 
+  // C++1a [array.comp]:
+  //   Equality and relational comparisons ([expr.eq], [expr.rel]) between two
+  //   operands of array type.
+  // C++2a [depr.array.comp]:
+  //   Equality and relational comparisons ([expr.eq], [expr.rel]) between two
+  //   operands of array type are deprecated.
+  if (S.getLangOpts().CPlusPlus && LHSStripped->getType()->isArrayType() &&
+      RHSStripped->getType()->isArrayType()) {
+    auto IsDeprArrayComparionIgnored =
+        S.getDiagnostics().isIgnored(diag::warn_depr_array_comparison, Loc);
+    auto DiagID = S.getLangOpts().CPlusPlus26
+                      ? diag::warn_array_comparison_cxx26
+                  : !S.getLangOpts().CPlusPlus20 || IsDeprArrayComparionIgnored
+                      ? diag::warn_array_comparison
+                      : diag::warn_depr_array_comparison;
+    S.Diag(Loc, DiagID) << LHS->getSourceRange() << RHS->getSourceRange()
+                        << LHSStripped->getType() << RHSStripped->getType();
+    // Carry on to produce the tautological comparison warning, if this
+    // expression is potentially-evaluated, we can resolve the array to a
+    // non-weak declaration, and so on.
+  }
+
   if (!LHS->getBeginLoc().isMacroID() && !RHS->getBeginLoc().isMacroID()) {
     if (Expr::isSameComparisonOperand(LHS, RHS)) {
       unsigned Result;
@@ -12837,31 +12859,6 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
     QualType Ty = E.get()->getType();
     return Ty->isPointerType() || Ty->isMemberPointerType();
   };
-
-  // C++1a [array.comp]:
-  //   Equality and relational comparisons ([expr.eq], [expr.rel]) between two
-  //   operands of array type.
-  // C++2a [depr.array.comp]:
-  //   Equality and relational comparisons ([expr.eq], [expr.rel]) between two
-  //   operands of array type are deprecated.
-  Expr *LHSStripped = LHS.get()->IgnoreParenImpCasts();
-  Expr *RHSStripped = RHS.get()->IgnoreParenImpCasts();
-  if (getLangOpts().CPlusPlus && LHSStripped->getType()->isArrayType() &&
-      RHSStripped->getType()->isArrayType()) {
-
-    auto IsDeprArrayComparionIgnored =
-        getDiagnostics().isIgnored(diag::warn_depr_array_comparison, Loc);
-    auto DiagID = getLangOpts().CPlusPlus26 ? diag::warn_array_comparison_cxx26
-                  : !getLangOpts().CPlusPlus20 || IsDeprArrayComparionIgnored
-                      ? diag::warn_array_comparison
-                      : diag::warn_depr_array_comparison;
-    Diag(Loc, DiagID) << LHS.get()->getSourceRange()
-                      << RHS.get()->getSourceRange() << LHSStripped->getType()
-                      << RHSStripped->getType();
-    if (getLangOpts().CPlusPlus26) {
-      return QualType();
-    }
-  }
 
   // C++2a [expr.spaceship]p6: If at least one of the operands is of pointer
   // type, array-to-pointer, ..., conversions are performed on both operands to
@@ -17332,7 +17329,6 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
             PromoteType = QualType();
         }
       }
-    }
     if (TInfo->getType()->isSpecificBuiltinType(BuiltinType::Float))
       PromoteType = Context.DoubleTy;
     if (!PromoteType.isNull())
