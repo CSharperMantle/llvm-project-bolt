@@ -1245,8 +1245,11 @@ public:
 
     // Note: FixedOrderRecurrences are not supported yet as we cannot handle
     // the required `splice.right` with the alias-mask.
+    // TODO: Reductions are not supported as values outside the "ClampedVF" are
+    // not masked out for the final horizontal reductions.
     if (!ForcePartialAliasingVectorization ||
-        !Legal->getFixedOrderRecurrences().empty())
+        !Legal->getFixedOrderRecurrences().empty() ||
+        !Legal->getReductionVars().empty())
       return;
 
     const RuntimePointerChecking *Checks = Legal->getRuntimePointerChecking();

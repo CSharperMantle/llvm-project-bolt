@@ -5044,8 +5044,8 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
                                       ArrayRef<PointerDiffInfo> DiffChecks) {
   VPBuilder Builder(AliasCheckVPBB);
   Type *I1Ty = IntegerType::getInt1Ty(Plan.getContext());
-  Type *I64Ty = IntegerType::getInt64Ty(Plan.getContext());
 
+  VPTypeAnalysis TypeInfo(Plan);
   VPValue *IncomingAliasMask = vputils::findIncomingAliasMask(Plan);
   assert(IncomingAliasMask && "Expected an alias mask!");
 
@@ -5054,7 +5054,7 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
     VPValue *Src = vputils::getOrCreateVPValueForSCEVExpr(Plan, Check.SrcStart);
     VPValue *Sink =
         vputils::getOrCreateVPValueForSCEVExpr(Plan, Check.SinkStart);
-    Type *AddrType = VPTypeAnalysis(Plan).inferScalarType(Src);
+    Type *AddrType = TypeInfo.inferScalarType(Src);
 
     VPWidenIntrinsicRecipe *WARMask = new VPWidenIntrinsicRecipe(
         Intrinsic::loop_dependence_war_mask,
@@ -5071,7 +5071,8 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
   VPValue *NumActive =
       Builder.createNaryOp(VPInstruction::NumActiveLanes, {AliasMask});
   VPValue *ClampedVF = Builder.createScalarZExtOrTrunc(
-      NumActive, IVTy, I64Ty, DebugLoc::getCompilerGenerated());
+      NumActive, IVTy, TypeInfo.inferScalarType(NumActive),
+      DebugLoc::getCompilerGenerated());
 
   IncomingAliasMask->replaceAllUsesWith(AliasMask);
 
