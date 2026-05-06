@@ -5108,7 +5108,7 @@ void VPlanTransforms::materializeAliasMaskCheckBlock(
       ICmpInst::ICMP_ULT, DistanceToMax, ClampedVF, DL, "vf.step.overflow");
 
   VPValue *Cond = Builder.createOr(IsScalar, TripCountCheck, DL);
-  attachCheckBlock(Plan, Cond, ClampedVFCheck, HasBranchWeights);
+  attachVPCheckBlock(Plan, Cond, ClampedVFCheck, HasBranchWeights);
 
   // Materialize the trip count early as this will add a use of (VFxUF) that
   // needs to be replaced with the ClampedVF.

@@ -1439,9 +1439,9 @@ static void addBypassBranch(VPlan &Plan, VPBasicBlock *CheckBlockVPBB,
   }
 }
 
-void VPlanTransforms::attachCheckBlock(VPlan &Plan, VPValue *Cond,
-                                       VPBasicBlock *CheckBlock,
-                                       bool AddBranchWeights) {
+void VPlanTransforms::attachVPCheckBlock(VPlan &Plan, VPValue *Cond,
+                                         VPBasicBlock *CheckBlock,
+                                         bool AddBranchWeights) {
   insertCheckBlockBeforeVectorLoop(Plan, CheckBlock);
   addBypassBranch(Plan, CheckBlock, Cond, AddBranchWeights);
 }
@@ -1451,7 +1451,7 @@ void VPlanTransforms::attachCheckBlock(VPlan &Plan, Value *Cond,
                                        bool AddBranchWeights) {
   VPValue *CondVPV = Plan.getOrAddLiveIn(Cond);
   VPBasicBlock *CheckBlockVPBB = Plan.createVPIRBasicBlock(CheckBlock);
-  attachCheckBlock(Plan, CondVPV, CheckBlockVPBB, AddBranchWeights);
+  attachVPCheckBlock(Plan, CondVPV, CheckBlockVPBB, AddBranchWeights);
 }
 
 /// Return an insert point in \p EntryVPBB after existing VPIRPhi,
