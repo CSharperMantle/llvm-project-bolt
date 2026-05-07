@@ -279,13 +279,30 @@ struct MulOpConversion : public ConvertOpToLLVMPattern<complex::MulOp> {
     Value lhsRe = arg.lhs.real();
     Value lhsIm = arg.lhs.imag();
 
-    Value real = LLVM::FSubOp::create(
-        rewriter, loc, LLVM::FMulOp::create(rewriter, loc, rhsRe, lhsRe, fmf),
-        LLVM::FMulOp::create(rewriter, loc, rhsIm, lhsIm, fmf), fmf);
+    Value real;
+    Value imag;
+    if (arith::bitEnumContainsAll(complexFMFAttr.getValue(),
+                                  arith::FastMathFlags::contract)) {
+      Value lhsImagTimesRhsImag =
+          LLVM::FMulOp::create(rewriter, loc, lhsIm, rhsIm, fmf);
+      Value negLhsImagTimesRhsImag =
+          LLVM::FNegOp::create(rewriter, loc, lhsImagTimesRhsImag, fmf);
+      real = LLVM::FMAOp::create(rewriter, loc, lhsRe, rhsRe,
+                                 negLhsImagTimesRhsImag, fmf);
 
-    Value imag = LLVM::FAddOp::create(
-        rewriter, loc, LLVM::FMulOp::create(rewriter, loc, lhsIm, rhsRe, fmf),
-        LLVM::FMulOp::create(rewriter, loc, lhsRe, rhsIm, fmf), fmf);
+      Value lhsImagTimesRhsReal =
+          LLVM::FMulOp::create(rewriter, loc, lhsIm, rhsRe, fmf);
+      imag = LLVM::FMAOp::create(rewriter, loc, lhsRe, rhsIm,
+                                 lhsImagTimesRhsReal, fmf);
+    } else {
+      real = LLVM::FSubOp::create(
+          rewriter, loc, LLVM::FMulOp::create(rewriter, loc, rhsRe, lhsRe, fmf),
+          LLVM::FMulOp::create(rewriter, loc, rhsIm, lhsIm, fmf), fmf);
+
+      imag = LLVM::FAddOp::create(
+          rewriter, loc, LLVM::FMulOp::create(rewriter, loc, lhsIm, rhsRe, fmf),
+          LLVM::FMulOp::create(rewriter, loc, lhsRe, rhsIm, fmf), fmf);
+    }
 
     result.setReal(rewriter, loc, real);
     result.setImaginary(rewriter, loc, imag);
