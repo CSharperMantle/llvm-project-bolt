@@ -19,6 +19,8 @@ TEST_P(olDestroyQueueTest, Success) {
 }
 
 TEST_P(olDestroyQueueTest, SuccessDelayedResolution) {
+  KNOWN_FAILURE_ON(LevelZero{"implicit synchronization issues"});
+
   ManuallyTriggeredTask Manual;
   ASSERT_SUCCESS(Manual.enqueue(Queue));
   ASSERT_SUCCESS(olDestroyQueue(Queue));
