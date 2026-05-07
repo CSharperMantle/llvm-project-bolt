@@ -275,7 +275,8 @@ struct AsanThreadLocalMallocStorage {
   AsanThreadLocalMallocStorage() {}
 };
 
-void *asan_memalign(uptr alignment, uptr size, BufferedStackTrace *stack);
+void* asan_memalign(uptr alignment, uptr size, BufferedStackTrace* stack,
+                    bool may_return_null);
 void asan_free(void *ptr, BufferedStackTrace *stack);
 void asan_free_sized(void* ptr, uptr size, BufferedStackTrace* stack);
 void asan_free_aligned_sized(void* ptr, uptr alignment, uptr size,

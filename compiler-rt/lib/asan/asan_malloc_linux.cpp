@@ -138,12 +138,12 @@ INTERCEPTOR(void*, reallocarray, void *ptr, uptr nmemb, uptr size) {
 #if SANITIZER_INTERCEPT_MEMALIGN
 INTERCEPTOR(void*, memalign, uptr boundary, uptr size) {
   GET_STACK_TRACE_MALLOC;
-  return asan_memalign(boundary, size, &stack);
+  return asan_memalign(boundary, size, &stack, AllocatorMayReturnNull());
 }
 
 INTERCEPTOR(void*, __libc_memalign, uptr boundary, uptr size) {
   GET_STACK_TRACE_MALLOC;
-  return asan_memalign(boundary, size, &stack);
+  return asan_memalign(boundary, size, &stack, AllocatorMayReturnNull());
 }
 #endif // SANITIZER_INTERCEPT_MEMALIGN
 

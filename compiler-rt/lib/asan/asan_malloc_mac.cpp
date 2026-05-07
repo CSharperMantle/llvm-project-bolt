@@ -31,7 +31,7 @@ using namespace __asan;
 #  define COMMON_MALLOC_FORCE_UNLOCK() asan_mz_force_unlock()
 #  define COMMON_MALLOC_MEMALIGN(alignment, size) \
     GET_STACK_TRACE_MALLOC;                       \
-    void *p = asan_memalign(alignment, size, &stack)
+    void* p = asan_memalign(alignment, size, &stack, AllocatorMayReturnNull())
 #  define COMMON_MALLOC_MALLOC(size) \
     GET_STACK_TRACE_MALLOC;          \
     void *p = asan_malloc(size, &stack)
@@ -44,9 +44,11 @@ using namespace __asan;
 #  define COMMON_MALLOC_POSIX_MEMALIGN(memptr, alignment, size) \
     GET_STACK_TRACE_MALLOC;                                     \
     int res = asan_posix_memalign(memptr, alignment, size, &stack);
-#  define COMMON_MALLOC_VALLOC(size) \
-    GET_STACK_TRACE_MALLOC;          \
-    void *p = asan_memalign(GetPageSizeCached(), size, &stack);
+#  define COMMON_MALLOC_VALLOC(size)                           \
+    GET_STACK_TRACE_MALLOC;                                    \
+    void* p = asan_memalign(GetPageSizeCached(), size, &stack, \
+                            AllocatorMayReturnNull());
+
 #  define COMMON_MALLOC_FREE(ptr) \
     GET_STACK_TRACE_FREE;         \
     asan_free(ptr, &stack);
