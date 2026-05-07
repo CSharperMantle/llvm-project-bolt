@@ -3539,6 +3539,11 @@ bool GVNPass::transformMinFindingSelectPattern(
 bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
   BasicBlock *BB = Select->getParent();
 
+  // Phase 1: Do trivial checks: loop / select / compare structural checks.
+  // Confirm BB is in a loop with a preheader, the select's condition is a
+  // compare, and both compare operands are loads of the same scalar type.
+  // On success: L, Preheader, Comparison, LoadType are populated.
+
   // If the block is not in a loop, bail out.
   Loop *L = LI->getLoopFor(BB);
   if (!L)
@@ -3557,11 +3562,9 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
     return false;
   }
 
-  // The predicate itself is irrelevant: the rewrite memoizes one operand of
-  // the compare across iterations, and that is sound for any predicate. A
-  // min/max/eq/ne comparison all benefit equally.
-
-  // Check that both operands are loads of the same type.
+  // Both compare operands must be loads of the same type. The predicate
+  // itself is irrelevant: the rewrite memoizes one operand of the compare
+  // across iterations, and that is sound for any predicate.
   Value *Op0 = Comparison->getOperand(0);
   Value *Op1 = Comparison->getOperand(1);
   if (!isa<LoadInst>(Op0) || !isa<LoadInst>(Op1)) {
@@ -3575,11 +3578,14 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
   }
   Type *LoadType = Op0->getType();
 
-  // Try to match the hoistable load shape on a single operand. On success,
-  // populate the captured GEP / offset / index-phi so the caller can build
-  // the hoisted preheader sequence.
+  // Phase 2: Match the hoistable (RHS) load and canonicalize the compare.
+  // The rewrite needs one of the loads to be a typed GEP indexed by a
+  // sext'd phi (the recurrence of the candidate min-index). Try Op1 first
+  // to preserve the IR shape; if only Op0 matches, swapOperands() flips
+  // the predicate and moves the matched load to operand(1).
+  // On success: TypedGEP, RHSOffsetAP, IndexValPhi, Base are populated.
   GetElementPtrInst *TypedGEP = nullptr;
-  Value *OffsetVal = nullptr;
+  APInt RHSOffsetAP;
   PHINode *IndexValPhi = nullptr;
   auto MatchHoistableLoad = [&](Value *LoadOp) -> bool {
     Value *InnerGEP;
@@ -3600,16 +3606,11 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
     if (!Phi)
       return false;
     TypedGEP = GEP;
-    OffsetVal = ConstantInt::get(SEInst->getType(), *OffsetAPInt);
+    RHSOffsetAP = *OffsetAPInt;
     IndexValPhi = Phi;
     return true;
   };
 
-  // The transform helper assumes the matched (hoistable) load is the second
-  // operand of Comparison. Try Op1 first to preserve the original IR shape;
-  // otherwise, try Op0 and swap the compare so the matched load lands at
-  // operand(1). swapOperands also flips the predicate to its swapped form,
-  // which keeps semantics intact.
   if (!MatchHoistableLoad(Op1)) {
     if (!MatchHoistableLoad(Op0)) {
       LLVM_DEBUG(dbgs() << "GVN (minindx): No operand matches hoistable load "
@@ -3618,13 +3619,89 @@ bool GVNPass::recognizeMinFindingSelectPattern(SelectInst *Select) {
     }
     Comparison->swapOperands();
   }
+  Value *Base = TypedGEP->getPointerOperand();
+
+  // Phase 3: Match the LHS load shape.
+  // Extract %inner and an optional byte offset C1 from the LHS load, then
+  // verify %inner is a typed `getelementptr T, Base, IV` sharing the same
+  // base pointer as the RHS load and using a single index.
+  // On success: LHSGEP, LHSIV, C1AP are populated.
+  Value *LHS = Comparison->getOperand(0);
+  Value *LHSInnerGEP;
+  const APInt *C1AP = nullptr;
+  // Accept either of these two shapes for the LHS load:
+  //   1) load T, ptr (getelementptr i8, %inner, C1)   -- byte offset C1 present
+  //   2) load T, ptr %inner                           -- no byte offset, C1 = 0
+  // %inner is the typed `getelementptr T, base, IV` checked just below.
+  if (!match(LHS, m_Load(m_PtrAdd(m_Value(LHSInnerGEP), m_APInt(C1AP)))) &&
+      !match(LHS, m_Load(m_Value(LHSInnerGEP)))) {
+    LLVM_DEBUG(dbgs() << "GVN (minindx): LHS load shape unsupported.\n");
+    return false;
+  }
+  // %inner (captured above) must be a typed `getelementptr T, base, IV`:
+  //   - element type T matches the load type,
+  //   - base pointer is the same array as the hoistable load,
+  //   - exactly one index (IV).
+  auto *LHSGEP = dyn_cast<GetElementPtrInst>(LHSInnerGEP);
+  if (!LHSGEP || LHSGEP->getSourceElementType() != LoadType ||
+      LHSGEP->getPointerOperand() != Base || LHSGEP->getNumIndices() != 1) {
+    LLVM_DEBUG(dbgs() << "GVN (minindx): LHS GEP shape unsupported.\n");
+    return false;
+  }
+  Value *LHSIV = LHSGEP->getOperand(1);
+
+  // Phase 4: Match the new-index arm of the Select.
+  // One of the Select operands must be trunc(add LHSIV, KStep) with a
+  // constant KStep -- this is the IV update produced when the compare
+  // selects the new minimum index.
+  // On success: KStepAP is populated.
+  const APInt *KStepAP = nullptr;
+  auto MatchNewIdx = [&](Value *SelOp) {
+    Value *IVNext;
+    return match(SelOp, m_Trunc(m_Value(IVNext))) &&
+           match(IVNext, m_Add(m_Specific(LHSIV), m_APInt(KStepAP)));
+  };
+  if (!MatchNewIdx(Select->getTrueValue()) &&
+      !MatchNewIdx(Select->getFalseValue())) {
+    LLVM_DEBUG(dbgs() << "GVN (minindx): select has no trunc-add operand.\n");
+    return false;
+  }
+
+  // Phase 5: Algebraic soundness gate.
+  // The rewrite is sound only when, on the cmp-true arm, the next
+  // iteration's hoistable load reads from the same address this
+  // iteration's LHS load read. Otherwise propagating the LHS value as
+  // known_min would change the value seen next iteration.
+  //
+  // Both load addresses look like `Base + sizeof(T) * <iv> + <byte off>`.
+  // With C1 / C2 the byte offsets on the LHS / hoistable GEPs and KStep
+  // the addend in `iv.next = add iv, KStep`, the address-equality reduces
+  // to:
+  //     C1 - C2 == sizeof(T) * KStep.
+  // Evaluate that in pointer-index width.
+  const DataLayout &DL = Select->getDataLayout();
+  unsigned PtrBits = DL.getIndexTypeSizeInBits(Base->getType());
+  APInt C1 = C1AP ? C1AP->sextOrTrunc(PtrBits) : APInt::getZero(PtrBits);
+  APInt C2 = RHSOffsetAP.sextOrTrunc(PtrBits);
+  APInt KStep = KStepAP->sextOrTrunc(PtrBits);
+  APInt ElemBytes(PtrBits, DL.getTypeAllocSize(LoadType).getFixedValue());
+  APInt LHSDelta = C1 - C2, Stride = ElemBytes * KStep;
+  if (LHSDelta != Stride) {
+    LLVM_DEBUG(dbgs() << "GVN (minindx): offset/step relationship violated. "
+                      << "C1=" << C1 << " C2=" << C2 << " KStep=" << KStep
+                      << " sizeof(T)=" << ElemBytes
+                      << "; require C1 - C2 == sizeof(T) * KStep, got "
+                      << LHSDelta << " != " << Stride << ".\n");
+    return false;
+  }
 
   LLVM_DEBUG(dbgs() << "GVN: Found minimum finding pattern in Block: "
                     << Select->getParent()->getName() << ".\n");
 
-  return transformMinFindingSelectPattern(
-      L, LoadType, Preheader, BB, Comparison, Select,
-      TypedGEP->getPointerOperand(), IndexValPhi, OffsetVal);
+  Value *OffsetVal = ConstantInt::get(Select->getContext(), RHSOffsetAP);
+  return transformMinFindingSelectPattern(L, LoadType, Preheader, BB,
+                                          Comparison, Select, Base, IndexValPhi,
+                                          OffsetVal);
 }
 
 class llvm::gvn::GVNLegacyPass : public FunctionPass {
