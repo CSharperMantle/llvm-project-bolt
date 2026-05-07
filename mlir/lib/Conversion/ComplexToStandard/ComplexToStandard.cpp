@@ -556,27 +556,26 @@ struct MulOpConversion : public OpConversionPattern<complex::MulOp> {
           arith::MulFOp::create(b, lhsImag, rhsImag, fmfValue);
       Value negLhsImagTimesRhsImag =
           arith::NegFOp::create(b, lhsImagTimesRhsImag, fmfValue);
-      real = math::FmaOp::create(b, lhsReal, rhsReal,
-                                 negLhsImagTimesRhsImag, fmfValue);
+      real = math::FmaOp::create(b, lhsReal, rhsReal, negLhsImagTimesRhsImag,
+                                 fmfValue);
 
       Value lhsImagTimesRhsReal =
           arith::MulFOp::create(b, lhsImag, rhsReal, fmfValue);
-      imag =
-          math::FmaOp::create(b, lhsReal, rhsImag, lhsImagTimesRhsReal,
-                              fmfValue);
+      imag = math::FmaOp::create(b, lhsReal, rhsImag, lhsImagTimesRhsReal,
+                                 fmfValue);
     } else {
       Value lhsRealTimesRhsReal =
           arith::MulFOp::create(b, lhsReal, rhsReal, fmfValue);
       Value lhsImagTimesRhsImag =
           arith::MulFOp::create(b, lhsImag, rhsImag, fmfValue);
-      real = arith::SubFOp::create(b, lhsRealTimesRhsReal,
-                                   lhsImagTimesRhsImag, fmfValue);
+      real = arith::SubFOp::create(b, lhsRealTimesRhsReal, lhsImagTimesRhsImag,
+                                   fmfValue);
       Value lhsImagTimesRhsReal =
           arith::MulFOp::create(b, lhsImag, rhsReal, fmfValue);
       Value lhsRealTimesRhsImag =
           arith::MulFOp::create(b, lhsReal, rhsImag, fmfValue);
-      imag = arith::AddFOp::create(b, lhsImagTimesRhsReal,
-                                   lhsRealTimesRhsImag, fmfValue);
+      imag = arith::AddFOp::create(b, lhsImagTimesRhsReal, lhsRealTimesRhsImag,
+                                   fmfValue);
     }
     rewriter.replaceOpWithNewOp<complex::CreateOp>(op, type, real, imag);
     return success();
