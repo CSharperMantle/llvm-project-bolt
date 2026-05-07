@@ -1557,6 +1557,7 @@ KMP_STG_X_DEBUG(c)
 KMP_STG_X_DEBUG(d)
 KMP_STG_X_DEBUG(e)
 KMP_STG_X_DEBUG(f)
+KMP_STG_X_DEBUG(g)
 
 #undef KMP_STG_X_DEBUG
 
@@ -1581,6 +1582,9 @@ static void __kmp_stg_parse_debug(char const *name, char const *value,
   }
   if (kmp_f_debug < debug) {
     kmp_f_debug = debug;
+  }
+  if (kmp_g_debug < debug) {
+    kmp_g_debug = debug;
   }
 } // __kmp_stg_parse_debug
 
@@ -5567,6 +5571,8 @@ static kmp_setting_t __kmp_stg_table[] = {
     {"KMP_E_DEBUG", __kmp_stg_parse_e_debug, __kmp_stg_print_e_debug, NULL, 0,
      0},
     {"KMP_F_DEBUG", __kmp_stg_parse_f_debug, __kmp_stg_print_f_debug, NULL, 0,
+     0},
+    {"KMP_G_DEBUG", __kmp_stg_parse_g_debug, __kmp_stg_print_g_debug, NULL, 0,
      0},
     {"KMP_DEBUG", __kmp_stg_parse_debug, NULL, /* no print */ NULL, 0, 0},
     {"KMP_DEBUG_BUF", __kmp_stg_parse_debug_buf, __kmp_stg_print_debug_buf,
