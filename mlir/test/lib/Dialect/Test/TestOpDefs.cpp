@@ -1546,6 +1546,30 @@ bool TestLoopTypesCompatOp::areTypesCompatible(Type lhs, Type rhs) {
   return lhs == rhs || (isa<IntegerType>(lhs) && isa<IntegerType>(rhs));
 }
 
+void TestRegionTypeChangerOp::getSuccessorRegions(
+    RegionBranchPoint point, SmallVectorImpl<RegionSuccessor> &regions) {
+  if (point.isParent())
+    regions.emplace_back(&getBody());
+  else
+    regions.push_back(RegionSuccessor::parent());
+}
+
+OperandRange
+TestRegionTypeChangerOp::getEntrySuccessorOperands(RegionSuccessor) {
+  return getEntries();
+}
+
+ValueRange
+TestRegionTypeChangerOp::getSuccessorInputs(RegionSuccessor successor) {
+  if (successor.isParent())
+    return getResults();
+  return getBody().getArguments();
+}
+
+bool TestRegionTypeChangerOp::areTypesCompatible(Type lhs, Type rhs) {
+  return true;
+}
+
 //===----------------------------------------------------------------------===//
 // TestVersionedOpA
 //===----------------------------------------------------------------------===//
@@ -1794,6 +1818,19 @@ convertTensorToBuffer(mlir::Operation *op,
                                                      dummyMemrefOp.getResult());
 
   return mlir::success();
+}
+
+mlir::FailureOr<mlir::bufferization::BufferLikeType>
+test::TestDummyTensorOp::getBufferType(
+    mlir::Value value, const mlir::bufferization::BufferizationOptions &,
+    const mlir::bufferization::BufferizationState &,
+    llvm::SmallVector<::mlir::Value> &) {
+  const auto type = dyn_cast<test::TestTensorType>(value.getType());
+  if (type == nullptr)
+    return failure();
+
+  return cast<mlir::bufferization::BufferLikeType>(test::TestMemrefType::get(
+      getContext(), type.getShape(), type.getElementType(), nullptr));
 }
 
 ::mlir::LogicalResult test::TestCreateTensorOp::bufferize(

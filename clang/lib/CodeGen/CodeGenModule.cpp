@@ -247,6 +247,7 @@ createTargetCodeGenInfo(CodeGenModule &CGM) {
 
   case llvm::Triple::tce:
   case llvm::Triple::tcele:
+  case llvm::Triple::tcele64:
     return createTCETargetCodeGenInfo(CGM);
 
   case llvm::Triple::x86: {
@@ -3027,6 +3028,19 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
       F->addTypeMetadata(0, Id);
     }
   }
+
+  // Attach "sycl-module-id" to sycl_external function definitions to mark
+  // them as entry points for per-translation-unit device-code splitting.
+  if (getLangOpts().SYCLIsDevice) {
+    if (const auto *FD = dyn_cast<FunctionDecl>(D))
+      if (FD->hasAttr<SYCLExternalAttr>())
+        addSYCLModuleIdAttr(F);
+  }
+}
+
+void CodeGenModule::addSYCLModuleIdAttr(llvm::Function *Fn) {
+  assert(getLangOpts().SYCLIsDevice);
+  Fn->addFnAttr("sycl-module-id", getModule().getModuleIdentifier());
 }
 
 void CodeGenModule::SetCommonAttributes(GlobalDecl GD, llvm::GlobalValue *GV) {
@@ -5988,6 +6002,10 @@ void CodeGenModule::EmitExternalDeclaration(const DeclaratorDecl *D) {
     return;
 
   llvm::Constant *Addr = GetAddrOfGlobal(GD)->stripPointerCasts();
+  if (auto *GA = dyn_cast<llvm::GlobalAlias>(Addr)) {
+    DI->EmitGlobalAlias(GA, GD);
+    return;
+  }
   if (const auto *VD = dyn_cast<VarDecl>(D)) {
     DI->EmitExternalVariable(
         cast<llvm::GlobalVariable>(Addr->stripPointerCasts()), VD);
@@ -7784,6 +7802,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     break;
 
   case Decl::StaticAssert:
+  case Decl::ExplicitInstantiation:
     // Nothing to do.
     break;
 
@@ -7916,7 +7935,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
         EmitTopLevelDecl(D);
 
       // Visit the submodules of this module.
-      for (auto *Submodule : Mod->submodules()) {
+      for (Module *Submodule : Mod->submodules()) {
         // Skip explicit children; they need to be explicitly imported to emit
         // the initializers.
         if (Submodule->IsExplicit)
