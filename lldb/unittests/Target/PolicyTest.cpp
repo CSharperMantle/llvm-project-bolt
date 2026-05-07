@@ -126,7 +126,8 @@ TEST(PolicyTest, DumpPublicState) {
   EXPECT_EQ(s.GetString(),
             "policy: view=public, capabilities={"
             "eval_expr=true run_all=true try_all=true "
-            "bp_actions=true frame_providers=true frame_recognizers=true}");
+            "bp_actions=true frame_providers=true frame_recognizers=true "
+            "holds_run_lock=false}");
 }
 
 TEST(PolicyTest, DumpPrivateState) {
@@ -135,7 +136,8 @@ TEST(PolicyTest, DumpPrivateState) {
   EXPECT_EQ(s.GetString(),
             "policy: view=private, capabilities={"
             "eval_expr=true run_all=true try_all=true "
-            "bp_actions=true frame_providers=false frame_recognizers=false}");
+            "bp_actions=true frame_providers=false frame_recognizers=false "
+            "holds_run_lock=false}");
 }
 
 TEST(PolicyTest, DumpStack) {

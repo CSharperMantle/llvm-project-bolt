@@ -49,6 +49,7 @@ struct Policy {
     bool can_run_breakpoint_actions = true;
     bool can_load_frame_providers = true;
     bool can_run_frame_recognizers = true;
+    bool holds_run_lock = false;
   };
 
   View view = View::Public;

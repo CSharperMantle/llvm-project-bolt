@@ -33,6 +33,7 @@ void Policy::Dump(Stream &s) const {
   s << " bp_actions=" << capabilities.can_run_breakpoint_actions;
   s << " frame_providers=" << capabilities.can_load_frame_providers;
   s << " frame_recognizers=" << capabilities.can_run_frame_recognizers;
+  s << " holds_run_lock=" << capabilities.holds_run_lock;
   s << '}';
 }
 
