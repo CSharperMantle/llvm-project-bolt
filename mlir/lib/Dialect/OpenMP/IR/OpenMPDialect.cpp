@@ -77,6 +77,13 @@ struct LLVMPointerPointerLikeModel
                                             LLVM::LLVMPointerType> {
   Type getElementType(Type pointer) const { return Type(); }
 };
+
+struct IntegerTypeIntLikeModel
+    : public IntLikeType::ExternalModel<IntegerTypeIntLikeModel, IntegerType> {
+  unsigned getWidth(Type type) const {
+    return llvm::cast<IntegerType>(type).getWidth();
+  }
+};
 } // namespace
 
 /// Generate a name of a canonical loop nest of the format
@@ -324,6 +331,7 @@ void OpenMPDialect::initialize() {
   MemRefType::attachInterface<MemRefPointerLikeModel>(*getContext());
   LLVM::LLVMPointerType::attachInterface<LLVMPointerPointerLikeModel>(
       *getContext());
+  IntegerType::attachInterface<IntegerTypeIntLikeModel>(*getContext());
 
   // Attach default offload module interface to module op to access
   // offload functionality through

@@ -28,8 +28,9 @@ class OpenMP_Type<string name, string typeMnemonic> :
   let mnemonic = typeMnemonic;
 }
 
-// Type which can be constraint accepting standard integers and indices.
-def IntLikeType : AnyTypeOf<[AnyInteger, Index]>;
+def OpenMP_IntLikeType
+    : TypeAlias<OpenMP_IntLikeTypeInterface, "OpenMP-compatible integer type">;
+def IntLikeType : AnyTypeOf<[AnyInteger, Index, OpenMP_IntLikeType]>;
 
 def OpenMP_PointerLikeType : TypeAlias<OpenMP_PointerLikeTypeInterface,
 	"OpenMP-compatible variable type">;

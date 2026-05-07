@@ -24,6 +24,14 @@ struct OpenMPPointerLikeModel
     return mlir::cast<cir::PointerType>(pointer).getPointee();
   }
 };
+
+struct OpenMPIntLikeModel
+    : public mlir::omp::IntLikeType::ExternalModel<OpenMPIntLikeModel,
+                                                   cir::IntType> {
+  unsigned getWidth(mlir::Type type) const {
+    return mlir::cast<cir::IntType>(type).getWidth();
+  }
+};
 } // namespace
 
 namespace cir::omp {
@@ -33,6 +41,7 @@ void registerOpenMPExtensions(mlir::DialectRegistry &registry) {
     cir::FuncOp::attachInterface<
         mlir::omp::DeclareTargetDefaultModel<cir::FuncOp>>(*ctx);
     cir::PointerType::attachInterface<OpenMPPointerLikeModel>(*ctx);
+    cir::IntType::attachInterface<OpenMPIntLikeModel>(*ctx);
   });
 }
 
