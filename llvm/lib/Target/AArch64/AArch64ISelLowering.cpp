@@ -11984,11 +11984,10 @@ static SDValue performOrXorChainCombine(SDNode *N, SelectionDAG &DAG) {
   // sub A0, A1; ccmp B0, B1, 0, eq; cmp inv(Cond) flag
   unsigned NumXors = 0;
   bool SawXor = false;
-  bool RequireLegalCmpImmediates =
-      any_of(N->users(), [](SDNode *User) {
-        return User->getOpcode() == ISD::BRCOND ||
-               User->getOpcode() == AArch64ISD::BRCOND;
-      });
+  bool RequireLegalCmpImmediates = any_of(N->users(), [](SDNode *User) {
+    return User->getOpcode() == ISD::BRCOND ||
+           User->getOpcode() == AArch64ISD::BRCOND;
+  });
   if ((Cond == ISD::SETEQ || Cond == ISD::SETNE) && isNullConstant(RHS) &&
       LHS->getOpcode() == ISD::OR && LHS->hasOneUse() &&
       isOrXorChain(LHS, DAG, NumXors, SawXor, RequireLegalCmpImmediates,
@@ -27684,9 +27683,8 @@ static SDValue performSETCCCARRYCombine(SDNode *N, SelectionDAG &DAG) {
     return DAG.getNode(ISD::AND, DL, VT, HiEq, LoCmp);
   }
 
-  SDValue HiNe = DAG.getSetCC(DL, VT, HiRHS,
-                              DAG.getConstant(0, DL, HiRHS.getValueType()),
-                              ISD::SETNE);
+  SDValue HiNe = DAG.getSetCC(
+      DL, VT, HiRHS, DAG.getConstant(0, DL, HiRHS.getValueType()), ISD::SETNE);
   return DAG.getNode(ISD::OR, DL, VT, HiNe, LoCmp);
 }
 
