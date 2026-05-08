@@ -3971,7 +3971,7 @@ HexagonTargetLowering::EmitKCFICheck(MachineBasicBlock &MBB,
 
   switch (MBBI->getOpcode()) {
   case Hexagon::J2_callr:
-  case Hexagon::PS_call_nr:
+  case Hexagon::PS_callr_nr:
   case Hexagon::PS_tailcall_r:
     break;
   default:
