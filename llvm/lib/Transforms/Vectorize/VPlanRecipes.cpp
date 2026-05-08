@@ -948,7 +948,7 @@ Value *VPInstruction::generate(VPTransformState &State) {
   }
 }
 
-InstructionCost VPRecipeWithIRFlags::getCostForRecipeWithOpcodeAndTypes(
+InstructionCost VPInstruction::getCostForRecipeWithOpcodeAndTypes(
     unsigned Opcode, Type *ValTy, Instruction *I, ElementCount VF,
     VPCostContext &Ctx) {
   switch (Opcode) {
@@ -993,8 +993,7 @@ InstructionCost VPRecipeWithIRFlags::getCostForRecipeWithOpcodeAndTypes(
                                    Ctx.CostKind, OpInfo, I);
   }
   case Instruction::Sub: {
-    if (!VF.isScalar())
-      ValTy = toVectorTy(ValTy, VF);
+    ValTy = toVectorTy(ValTy, VF);
     return Ctx.TTI.getArithmeticInstrCost(Opcode, ValTy, Ctx.CostKind);
   }
   default:

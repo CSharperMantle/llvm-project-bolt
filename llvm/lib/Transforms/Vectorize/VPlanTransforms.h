@@ -541,7 +541,7 @@ struct VPlanTransforms {
   /// Convert the scatter to extract-last-active-lane + scalar store if
   /// profitable.
   static void narrowScatters(VPlan &Plan, VPCostContext &Ctx, VFRange &Range,
-                             const bool &FoldTailWithEVL);
+                             bool FoldTailWithEVL);
 };
 
 } // namespace llvm
