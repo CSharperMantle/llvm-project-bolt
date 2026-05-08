@@ -110,6 +110,8 @@ BPFTargetLowering::BPFTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::ATOMIC_STORE, VT, Custom);
   }
 
+  setOperationAction(ISD::ATOMIC_FENCE, MVT::Other, Custom);
+
   for (auto VT : { MVT::i32, MVT::i64 }) {
     if (VT == MVT::i32 && !STI.getHasAlu32())
       continue;
@@ -372,6 +374,8 @@ SDValue BPFTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::ATOMIC_LOAD:
   case ISD::ATOMIC_STORE:
     return LowerATOMIC_LOAD_STORE(Op, DAG);
+  case ISD::ATOMIC_FENCE:
+    return LowerATOMIC_FENCE(Op, DAG);
   case ISD::TRAP:
     return LowerTRAP(Op, DAG);
   }
@@ -797,6 +801,47 @@ SDValue BPFTargetLowering::LowerATOMIC_LOAD_STORE(SDValue Op,
          "atomic load/store is not supported");
 
   return Op;
+}
+
+/// Emit an atomic operation on a stack location which does not change
+/// any memory value, but does provide a hardware memory barrier when the
+/// kernel JIT translates the BPF atomic to a host locked instruction (e.g.
+/// `lock xadd` on x86). Returns the new Chain result.
+static SDValue emitLockedStackOp(SelectionDAG &DAG, SDValue Chain,
+                                 const SDLoc &DL) {
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  int FI = MFI.CreateStackObject(8, Align(8), false);
+  SDValue Slot = DAG.getFrameIndex(FI, MVT::i64);
+  SDValue Zero = DAG.getConstant(0, DL, MVT::i64);
+
+  MachineMemOperand *MMO = MF.getMachineMemOperand(
+      MachinePointerInfo::getFixedStack(MF, FI),
+      MachineMemOperand::MOLoad | MachineMemOperand::MOStore |
+          MachineMemOperand::MOVolatile,
+      8, Align(8), AAMDNodes(), nullptr, SyncScope::System,
+      AtomicOrdering::Monotonic);
+  return DAG
+      .getAtomic(ISD::ATOMIC_LOAD_ADD, DL, MVT::i64, Chain, Slot, Zero, MMO)
+      .getValue(1);
+}
+
+SDValue BPFTargetLowering::LowerATOMIC_FENCE(SDValue Op,
+                                             SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  AtomicOrdering FenceOrdering =
+      static_cast<AtomicOrdering>(Op.getConstantOperandVal(1));
+  SyncScope::ID FenceSSID =
+      static_cast<SyncScope::ID>(Op.getConstantOperandVal(2));
+
+  // The only fence that needs an instruction is a sequentially-consistent
+  // cross-thread fence.
+  if (FenceOrdering == AtomicOrdering::SequentiallyConsistent &&
+      FenceSSID == SyncScope::System)
+    return emitLockedStackOp(DAG, Op.getOperand(0), DL);
+
+  // MEMBARRIER is a compiler barrier; it codegens to a no-op.
+  return DAG.getNode(ISD::MEMBARRIER, DL, MVT::Other, Op.getOperand(0));
 }
 
 static Function *createBPFUnreachable(Module *M) {
