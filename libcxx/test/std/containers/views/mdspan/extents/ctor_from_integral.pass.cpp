@@ -38,6 +38,12 @@
 #include "CtorTestCombinations.h"
 #include "test_macros.h"
 
+struct RValueInt {
+  int val;
+  constexpr RValueInt(int v) : val(v) {}
+  constexpr operator int() && noexcept { return val; }
+};
+
 struct IntegralCtorTest {
   template <class E, class AllExtents, class Extents, size_t... Indices>
   static constexpr void test_construction(AllExtents all_ext, Extents ext, std::index_sequence<Indices...>) {
@@ -46,6 +52,12 @@ struct IntegralCtorTest {
     test_runtime_observers(E(ext[Indices]...), all_ext);
   }
 };
+
+constexpr bool test_rvalue_conversion() {
+  std::dextents<int, 1> e(RValueInt{1});
+  assert(e.extent(0) == 1);
+  return true;
+}
 
 int main(int, char**) {
   test_index_type_combo<IntegralCtorTest>();
@@ -65,5 +77,9 @@ int main(int, char**) {
   static_assert(std::is_convertible_v<IntType, int>, "Test helper IntType unexpectedly not convertible to int");
   static_assert(!std::is_constructible_v< std::extents<unsigned long, D>, IntType>,
                 "extents constructible from illegal arguments");
+
+  test_rvalue_conversion();
+  static_assert(test_rvalue_conversion());
+
   return 0;
 }

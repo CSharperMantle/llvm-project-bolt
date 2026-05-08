@@ -322,7 +322,7 @@ public:
              (is_nothrow_constructible_v<index_type, _OtherIndexTypes> && ...) &&
              (sizeof...(_OtherIndexTypes) == __rank_ || sizeof...(_OtherIndexTypes) == __rank_dynamic_))
   _LIBCPP_HIDE_FROM_ABI constexpr explicit extents(_OtherIndexTypes... __dynvals) noexcept
-      : __vals_(static_cast<index_type>(__dynvals)...) {
+      : __vals_(static_cast<index_type>(std::move(__dynvals))...) {
     // Not catching this could lead to out of bounds errors later
     // e.g. mdspan m(ptr, dextents<char, 1>(200u)); leads to an extent of -56 on m
     _LIBCPP_ASSERT_VALID_ELEMENT_ACCESS(__mdspan_detail::__are_representable_as<index_type>(__dynvals...),
