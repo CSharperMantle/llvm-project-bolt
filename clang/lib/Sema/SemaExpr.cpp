@@ -17331,13 +17331,20 @@ ExprResult Sema::BuildVAArgExpr(SourceLocation BuiltinLoc,
       if (!PromoteType.isNull() && !UnderlyingType->isBooleanType() &&
           PromoteType->isUnsignedIntegerType() !=
               UnderlyingType->isUnsignedIntegerType()) {
-        UnderlyingType =
-            UnderlyingType->isUnsignedIntegerType()
-                ? Context.getCorrespondingSignedType(UnderlyingType)
-                : Context.getCorrespondingUnsignedType(UnderlyingType);
-        if (Context.typesAreCompatible(PromoteType, UnderlyingType,
-                                       /*CompareUnqualified*/ true))
-          PromoteType = QualType();
+
+        // Because char16_t and char32_t have no corresponding signed type,
+        // calling getCorrespondingSignedType on them would assert. Guard
+        // against this.
+        const auto *BT = UnderlyingType->getAs<BuiltinType>();
+        if (!BT || (BT->getKind() != BuiltinType::Char16 &&
+                    BT->getKind() != BuiltinType::Char32)) {
+          UnderlyingType =
+              UnderlyingType->isUnsignedIntegerType()
+                  ? Context.getCorrespondingSignedType(UnderlyingType)
+                  : Context.getCorrespondingUnsignedType(UnderlyingType);
+          if (Context.typesAreCompatible(PromoteType, UnderlyingType, true))
+            PromoteType = QualType();
+        }
       }
     }
     if (TInfo->getType()->isSpecificBuiltinType(BuiltinType::Float))
