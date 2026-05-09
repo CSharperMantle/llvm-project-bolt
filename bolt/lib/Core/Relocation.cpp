@@ -133,7 +133,7 @@ static bool isSupportedRISCV(uint32_t Type) {
   }
 }
 
-static bool isSupportedLoongArch(uint64_t Type) {
+static bool isSupportedLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
@@ -262,7 +262,7 @@ static size_t getSizeForTypeRISCV(uint32_t Type) {
   }
 }
 
-static size_t getSizeForTypeLoongArch(uint64_t Type) {
+static size_t getSizeForTypeLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
@@ -310,7 +310,7 @@ static bool skipRelocationTypeRISCV(uint32_t Type) {
   }
 }
 
-static bool skipRelocationTypeLoongArch(uint64_t Type) {
+static bool skipRelocationTypeLoongArch(uint32_t Type) {
   return Type == ELF::R_LARCH_NONE;
 }
 
@@ -400,7 +400,7 @@ static uint64_t canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
   }
 }
 
-static uint64_t encodeValueLoongArch(uint64_t Type, uint64_t Value,
+static uint64_t encodeValueLoongArch(uint32_t Type, uint64_t Value,
                                      uint64_t PC) {
   switch (Type) {
   default:
@@ -599,7 +599,7 @@ static uint64_t extractValueRISCV(uint32_t Type, uint64_t Contents,
   }
 }
 
-static uint64_t extractValueLoongArch(uint64_t Type, uint64_t Contents,
+static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
                                       uint64_t PC) {
   switch (Type) {
   default:
@@ -697,7 +697,7 @@ static bool isGOTRISCV(uint32_t Type) {
   }
 }
 
-static bool isGOTLoongArch(uint64_t Type) {
+static bool isGOTLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
@@ -753,7 +753,7 @@ static bool isTLSRISCV(uint32_t Type) {
   }
 }
 
-static bool isTLSLoongArch(uint64_t Type) {
+static bool isTLSLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
@@ -865,7 +865,7 @@ static bool isPCRelativeRISCV(uint32_t Type) {
   }
 }
 
-static bool isPCRelativeLoongArch(uint64_t Type) {
+static bool isPCRelativeLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     llvm_unreachable("Unknown relocation type");
