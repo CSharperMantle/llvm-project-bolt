@@ -11,14 +11,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/LoongArchFixupKinds.h"
-#include "MCTargetDesc/LoongArchMCExpr.h"
+#include "MCTargetDesc/LoongArchMCAsmInfo.h"
 #include "MCTargetDesc/LoongArchMCTargetDesc.h"
 #include "bolt/Core/MCPlusBuilder.h"
 #include "llvm/BinaryFormat/ELF.h"
-#include "llvm/MC/MCFixupKindInfo.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define DEBUG_TYPE "mcplus"
@@ -32,7 +33,7 @@ class LoongArchMCPlusBuilder : public MCPlusBuilder {
 public:
   using MCPlusBuilder::MCPlusBuilder;
 
-  bool shouldRecordCodeRelocation(uint64_t RelType) const override {
+  bool shouldRecordCodeRelocation(uint32_t RelType) const override {
     switch (RelType) {
     case ELF::R_LARCH_B26:
     case ELF::R_LARCH_32_PCREL:
@@ -81,7 +82,7 @@ public:
     }
   }
 
-  bool replaceBranchTarget(MCInst &Inst, const MCSymbol *TBB,
+  void replaceBranchTarget(MCInst &Inst, const MCSymbol *TBB,
                            MCContext *Ctx) const override {
     assert((isCall(Inst) || isBranch(Inst)) && !isIndirectBranch(Inst) &&
            "Invalid instruction");
@@ -91,22 +92,22 @@ public:
     (void)Result;
     assert(Result && "unimplemented branch");
 
-    Inst.getOperand(SymOpIndex) = MCOperand::createExpr(
-        MCSymbolRefExpr::create(TBB, MCSymbolRefExpr::VK_None, *Ctx));
-    return true;
+    Inst.getOperand(SymOpIndex) =
+        MCOperand::createExpr(MCSymbolRefExpr::create(TBB, *Ctx));
   }
 
   IndirectBranchType analyzeIndirectBranch(
       MCInst &Instruction, InstructionIterator Begin, InstructionIterator End,
       const unsigned PtrSize, MCInst *&MemLocInstr, unsigned &BaseRegNum,
       unsigned &IndexRegNum, int64_t &DispValue, const MCExpr *&DispExpr,
-      MCInst *&PCRelBaseOut) const override {
+      MCInst *&PCRelBaseOut, MCInst *&FixedEntryLoadInst) const override {
     MemLocInstr = nullptr;
     BaseRegNum = 0;
     IndexRegNum = 0;
     DispValue = 0;
     DispExpr = nullptr;
     PCRelBaseOut = nullptr;
+    FixedEntryLoadInst = nullptr;
     return IndirectBranchType::UNKNOWN;
   }
 
@@ -118,31 +119,27 @@ public:
     return true;
   }
 
-  bool createReturn(MCInst &Inst) const override {
+  void createReturn(MCInst &Inst) const override {
     Inst.setOpcode(LoongArch::JIRL);
     Inst.clear();
     Inst.addOperand(MCOperand::createReg(LoongArch::R0));
     Inst.addOperand(MCOperand::createReg(LoongArch::R1));
     Inst.addOperand(MCOperand::createImm(0));
-    return true;
   }
 
-  bool createNoop(MCInst &Inst) const override {
+  void createNoop(MCInst &Inst) const override {
     Inst.setOpcode(LoongArch::ANDI);
     Inst.clear();
     Inst.addOperand(MCOperand::createReg(LoongArch::R0));
     Inst.addOperand(MCOperand::createReg(LoongArch::R0));
     Inst.addOperand(MCOperand::createImm(0));
-    return true;
   }
 
-  bool createUncondBranch(MCInst &Inst, const MCSymbol *TBB,
+  void createUncondBranch(MCInst &Inst, const MCSymbol *TBB,
                           MCContext *Ctx) const override {
     Inst.setOpcode(LoongArch::B);
     Inst.clear();
-    Inst.addOperand(MCOperand::createExpr(
-        MCSymbolRefExpr::create(TBB, MCSymbolRefExpr::VK_None, *Ctx)));
-    return true;
+    Inst.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(TBB, *Ctx)));
   }
 
   StringRef getTrapFillValue() const override {
@@ -158,8 +155,7 @@ public:
     else
       InstA.addOperand(MCOperand::createReg(LoongArch::R1));
     InstA.addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, MCSymbolRefExpr::VK_None, *Ctx),
-        LoongArchMCExpr::VK_LoongArch_CALL36, *Ctx)));
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_CALL36, *Ctx)));
 
     InstB.setOpcode(LoongArch::JIRL);
     InstB.clear();
@@ -175,20 +171,19 @@ public:
     return true;
   }
 
-  bool createDirectCall(MCInst &Inst, const MCSymbol *Target, MCContext *Ctx,
+  void createDirectCall(MCInst &Inst, const MCSymbol *Target, MCContext *Ctx,
                         bool IsTailCall) override {
     Inst.clear();
     Inst.setOpcode(IsTailCall ? LoongArch::B : LoongArch::BL);
-    Inst.addOperand(MCOperand::createExpr(
-        MCSymbolRefExpr::create(Target, MCSymbolRefExpr::VK_None, *Ctx)));
+    Inst.addOperand(
+        MCOperand::createExpr(MCSymbolRefExpr::create(Target, *Ctx)));
     if (IsTailCall)
       setTailCall(Inst);
-    return true;
   }
 
-  bool createTailCall(MCInst &Inst, const MCSymbol *Target,
+  void createTailCall(MCInst &Inst, const MCSymbol *Target,
                       MCContext *Ctx) override {
-    return createDirectCall(Inst, Target, Ctx, /*IsTailCall*/ true);
+    createDirectCall(Inst, Target, Ctx, /*IsTailCall*/ true);
   }
 
   void createLongTailCall(InstructionListType &Seq, const MCSymbol *Target,
@@ -289,7 +284,7 @@ public:
       return getTargetSymbol(BinExpr->getLHS());
 
     auto *SymExpr = dyn_cast<MCSymbolRefExpr>(Expr);
-    if (SymExpr && SymExpr->getKind() == MCSymbolRefExpr::VK_None)
+    if (SymExpr && SymExpr->getKind() == LoongArchMCExpr::VK_None)
       return &SymExpr->getSymbol();
 
     return nullptr;
@@ -352,7 +347,7 @@ public:
 
   bool replaceImmWithSymbolRef(MCInst &Inst, const MCSymbol *Symbol,
                                int64_t Addend, MCContext *Ctx, int64_t &Value,
-                               uint64_t RelType) const override {
+                               uint32_t RelType) const override {
     unsigned ImmOpNo = -1U;
     for (unsigned Index = 0; Index < MCPlus::getNumPrimeOperands(Inst);
          ++Index) {
@@ -373,35 +368,28 @@ public:
 
   const MCExpr *getTargetExprFor(MCInst &Inst, const MCExpr *Expr,
                                  MCContext &Ctx,
-                                 uint64_t RelType) const override {
+                                 uint32_t RelType) const override {
     switch (RelType) {
     default:
       return Expr;
     case ELF::R_LARCH_B26:
-      return LoongArchMCExpr::create(Expr, LoongArchMCExpr::VK_LoongArch_B26,
-                                     Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B26, Ctx);
     case ELF::R_LARCH_PCALA_LO12:
     case ELF::R_LARCH_GOT_PC_LO12:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_PCALA_LO12, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_LO12, Ctx);
     case ELF::R_LARCH_PCALA_HI20:
     case ELF::R_LARCH_GOT_PC_HI20:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_PCALA_HI20, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_HI20, Ctx);
     case ELF::R_LARCH_PCALA64_LO20:
     case ELF::R_LARCH_GOT64_PC_LO20:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_PCALA64_LO20, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA64_LO20, Ctx);
     case ELF::R_LARCH_PCALA64_HI12:
     case ELF::R_LARCH_GOT64_PC_HI12:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_PCALA64_HI12, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA64_HI12, Ctx);
     case ELF::R_LARCH_TLS_LE_HI20:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_TLS_LE_HI20, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_TLS_LE_HI20, Ctx);
     case ELF::R_LARCH_TLS_LE_LO12:
-      return LoongArchMCExpr::create(
-          Expr, LoongArchMCExpr::VK_LoongArch_TLS_LE_LO12, Ctx);
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_TLS_LE_LO12, Ctx);
     }
   }
 
@@ -433,10 +421,10 @@ public:
     }
   }
 
-  bool reverseBranchCondition(MCInst &Inst, const MCSymbol *TBB,
+  void reverseBranchCondition(MCInst &Inst, const MCSymbol *TBB,
                               MCContext *Ctx) const override {
     Inst.setOpcode(getInvertedBranchOpcode(Inst.getOpcode()));
-    return replaceBranchTarget(Inst, TBB, Ctx);
+    replaceBranchTarget(Inst, TBB, Ctx);
   }
 
   bool lowerTailCall(MCInst &Inst) override {
@@ -469,7 +457,7 @@ public:
     assert(FKI.TargetOffset == 0 && "0-bit relocation offset expected");
     const uint64_t RelOffset = Fixup.getOffset();
 
-    uint64_t RelType;
+    uint32_t RelType;
     if (Fixup.getKind() == MCFixupKind(LoongArch::fixup_loongarch_b26))
       RelType = ELF::R_LARCH_B26;
     else // TODO: Need more consideration. Refs to x86 or AArch64.
@@ -480,7 +468,7 @@ public:
     return Relocation({RelOffset, RelSymbol, RelType, RelAddend, 0});
   }
 
-  bool equals(const MCTargetExpr &A, const MCTargetExpr &B,
+  bool equals(const MCSpecifierExpr &A, const MCSpecifierExpr &B,
               CompFuncTy Comp) const override {
     const auto &LoongArchExprA = cast<LoongArchMCExpr>(A);
     const auto &LoongArchExprB = cast<LoongArchMCExpr>(B);
