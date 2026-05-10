@@ -10,7 +10,6 @@
 #ifdef AARCH64_AVAILABLE
 #include "AArch64Subtarget.h"
 #include "MCTargetDesc/AArch64MCTargetDesc.h"
-#endif // AARCH64_AVAILABLE
 
 #include "bolt/Core/BinaryBasicBlock.h"
 #include "bolt/Core/BinaryFunction.h"
@@ -333,7 +332,7 @@ TEST_P(PassTester, fillUnknownStubsEmpty) {
   EXPECT_FALSE(*RAState);
 }
 
-#ifdef AARCH64_AVAILABLE
 INSTANTIATE_TEST_SUITE_P(AArch64, PassTester,
                          ::testing::Values(Triple::aarch64));
-#endif
+
+#endif /* AARCH64_AVAILABLE */
