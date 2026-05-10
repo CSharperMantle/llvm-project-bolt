@@ -10,7 +10,7 @@
 // CHECK:      Binary Function "_start" after fix-loongarch-calls {
 // CHECK:      b .Ltmp0
 // CHECK:      pcaddu18i $t8, %call36(f)
-// CHECK-NEXT: jirl $zero, $t8, 0 # TAILCALL
+// CHECK-NEXT: jr $t8 # TAILCALL
 
 // OBJDUMP:      0000000000400000 <f>:
 // OBJDUMP:      0000000000400004 <_start>:
