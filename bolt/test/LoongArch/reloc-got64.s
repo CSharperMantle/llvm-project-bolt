@@ -14,8 +14,8 @@ f:
   .p2align 1
 // CHECK: Binary Function "_start" after building cfg {
 _start:
-// CHECK: lu32i.d $t1, %pc64_lo20(__BOLT_got_zero+{{[0-9]+}})
-// CHECK-NEXT: lu52i.d $t1, $t1, %pc64_hi12(__BOLT_got_zero+{{[0-9]+}})
+// CHECK: lu32i.d $t1, %pc64_lo20(__BOLT_got_zero{{(\+[0-9]+)?}})
+// CHECK-NEXT: lu52i.d $t1, $t1, %pc64_hi12(__BOLT_got_zero{{(\+[0-9]+)?}})
   lu32i.d $t1, %got64_pc_lo20(f)
   lu52i.d $t1, $t1, %got64_pc_hi12(f)
   ret
