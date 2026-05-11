@@ -405,6 +405,9 @@ bool LoongArchAsmBackend::addReloc(const MCFragment &F, const MCFixup &Fixup,
   };
   uint64_t FixedValueA, FixedValueB;
   if (Target.getSubSym()) {
+    if (!Target.getAddSym())
+      return Fallback();
+
     assert(Target.getSpecifier() == 0 &&
            "relocatable SymA-SymB cannot have relocation specifier");
     std::pair<MCFixupKind, MCFixupKind> FK;
