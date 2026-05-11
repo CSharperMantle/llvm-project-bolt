@@ -144,3 +144,7 @@ TEST_P(MemoryMapsTester, MultipleSegmentsMismatchedBaseAddress) {
       { Error Err = DA.preprocessProfile(*BC); },
       "Base address on multiple segment mappings should match");
 }
+
+#if !defined(X86_AVAILABLE) && !defined(AARCH64_AVAILABLE)
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(MemoryMapsTester);
+#endif // !defined(X86_AVAILABLE) && !defined(AARCH64_AVAILABLE)
