@@ -4,11 +4,13 @@ static_library("LoongArch") {
   deps = [
     "//bolt/lib/Core",
     "//llvm/lib/MC",
+    "//llvm/lib/MC/MCDisassembler",
     "//llvm/lib/Support",
     "//llvm/lib/Target/LoongArch/MCTargetDesc",
   ]
   sources = [
     "LoongArchMCPlusBuilder.cpp",
+    "LoongArchMCSymbolizer.cpp",
   ]
 
   # This target reaches into the internal headers of LLVM's LoongArch library.

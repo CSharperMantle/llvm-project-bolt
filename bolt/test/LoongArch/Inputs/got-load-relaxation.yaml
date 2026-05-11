@@ -1,0 +1,72 @@
+--- !ELF
+FileHeader:
+  Class: ELFCLASS64
+  Data: ELFDATA2LSB
+  Type: ET_EXEC
+  Machine: EM_LOONGARCH
+  Flags: [ EF_LOONGARCH_ABI_DOUBLE_FLOAT, EF_LOONGARCH_OBJABI_V1 ]
+  Entry: 0x20820
+ProgramHeaders:
+  - Type: PT_LOAD
+    Flags: [ PF_R, PF_X ]
+    FirstSec: .text
+    LastSec: .text
+    VAddr: 0x20820
+    Align: 0x4
+  - Type: PT_LOAD
+    Flags: [ PF_R, PF_W ]
+    FirstSec: .got
+    LastSec: .got
+    VAddr: 0x30120
+    Align: 0x8
+Sections:
+  - Name: .text
+    Type: SHT_PROGBITS
+    Flags: [ SHF_ALLOC, SHF_EXECINSTR ]
+    Address: 0x20820
+    AddressAlign: 0x4
+    Content: 2400001A84B0E0022000004C2000004C0402001A8480C4022000004C
+  - Name: .got
+    Type: SHT_PROGBITS
+    Flags: [ SHF_ALLOC, SHF_WRITE ]
+    Address: 0x30120
+    AddressAlign: 0x8
+    Content: 2C08020000000000
+  - Name: .rela.text
+    Type: SHT_RELA
+    Flags: [ SHF_INFO_LINK ]
+    Link: .symtab
+    Info: .text
+    AddressAlign: 0x8
+    Relocations:
+      - Offset: 0x20820
+        Symbol: target
+        Type: R_LARCH_GOT_PC_HI20
+      - Offset: 0x20824
+        Symbol: target
+        Type: R_LARCH_GOT_PC_LO12
+      - Offset: 0x20830
+        Symbol: target
+        Type: R_LARCH_GOT_PC_HI20
+      - Offset: 0x20834
+        Symbol: target
+        Type: R_LARCH_GOT_PC_LO12
+Symbols:
+  - Name: _start
+    Type: STT_FUNC
+    Section: .text
+    Binding: STB_GLOBAL
+    Value: 0x20820
+    Size: 0xC
+  - Name: target
+    Type: STT_FUNC
+    Section: .text
+    Binding: STB_GLOBAL
+    Value: 0x2082C
+    Size: 0x4
+  - Name: got_address
+    Type: STT_FUNC
+    Section: .text
+    Binding: STB_GLOBAL
+    Value: 0x20830
+    Size: 0xC

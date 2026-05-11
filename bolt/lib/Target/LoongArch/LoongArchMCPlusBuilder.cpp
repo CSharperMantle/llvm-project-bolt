@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LoongArchMCSymbolizer.h"
 #include "MCTargetDesc/LoongArchFixupKinds.h"
 #include "MCTargetDesc/LoongArchMCAsmInfo.h"
 #include "MCTargetDesc/LoongArchMCTargetDesc.h"
@@ -17,9 +18,9 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define DEBUG_TYPE "mcplus"
@@ -32,6 +33,11 @@ namespace {
 class LoongArchMCPlusBuilder : public MCPlusBuilder {
 public:
   using MCPlusBuilder::MCPlusBuilder;
+
+  std::unique_ptr<MCSymbolizer> createTargetSymbolizer(BinaryFunction &Function,
+                                                       bool) const override {
+    return std::make_unique<LoongArchMCSymbolizer>(Function);
+  }
 
   bool shouldRecordCodeRelocation(uint32_t RelType) const override {
     switch (RelType) {
@@ -47,6 +53,8 @@ public:
     case ELF::R_LARCH_GOT64_PC_HI12:
     case ELF::R_LARCH_TLS_LE_HI20:
     case ELF::R_LARCH_TLS_LE_LO12:
+    case ELF::R_LARCH_TLS_IE_PC_HI20:
+    case ELF::R_LARCH_TLS_IE_PC_LO12:
       return true;
     default:
       llvm_unreachable("Unexpected LoongArch relocation type in code");
@@ -378,9 +386,11 @@ public:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B26, Ctx);
     case ELF::R_LARCH_PCALA_LO12:
     case ELF::R_LARCH_GOT_PC_LO12:
+    case ELF::R_LARCH_TLS_IE_PC_LO12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_LO12, Ctx);
     case ELF::R_LARCH_PCALA_HI20:
     case ELF::R_LARCH_GOT_PC_HI20:
+    case ELF::R_LARCH_TLS_IE_PC_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_HI20, Ctx);
     case ELF::R_LARCH_PCALA64_LO20:
     case ELF::R_LARCH_GOT64_PC_LO20:

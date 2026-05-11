@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -1468,7 +1469,7 @@ Error BinaryFunction::disassemble() {
         if (BC.isAArch64())
           handleAArch64IndirectCall(Instruction, Offset);
       }
-    } else if (BC.isRISCV() || BC.isLoongArch()) {
+    } else if (BC.isRISCV()) {
       // Check if there's a relocation associated with this instruction.
       for (auto Itr = Relocations.lower_bound(Offset),
                 ItrE = Relocations.lower_bound(Offset + Size);

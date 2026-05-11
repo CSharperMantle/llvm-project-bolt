@@ -1,0 +1,24 @@
+/// Check that BOLT recognizes GOT relocations left on direct address
+/// materialization by comparing the complete relocation pair with the
+/// ABI-defined PCALA decomposition of the referenced symbol address.
+///
+/// `_start` contains PCALAU12I+ADDI.D encoded for `target`, including the
+/// signed-low rounding case where `(S+A)[11]` is set, while its relocations
+/// remain R_LARCH_GOT_PC_HI20+R_LARCH_GOT_PC_LO12. BOLT must use the canonical
+/// target symbol for both instructions.
+///
+/// `got_address` has the same opcodes, register flow, and relocation types, but
+/// its encoded pair addresses the GOT entry. BOLT must retain GOT semantics;
+/// opcode matching alone would misclassify this pair.
+
+// RUN: yaml2obj %p/Inputs/got-load-relaxation.yaml -o %t
+// RUN: llvm-bolt %t -o %t.bolt --print-cfg \
+// RUN:   --print-only=_start,got_address | FileCheck %s
+
+// CHECK-LABEL: Binary Function "_start" after building cfg
+// CHECK:      pcalau12i $a0, %pc_hi20(target)
+// CHECK-NEXT: addi.d $a0, $a0, %pc_lo12(target)
+
+// CHECK-LABEL: Binary Function "got_address" after building cfg
+// CHECK:      pcalau12i $a0, %pc_hi20(__BOLT_got_zero+196608)
+// CHECK-NEXT: addi.d $a0, $a0, %pc_lo12(__BOLT_got_zero+288)
