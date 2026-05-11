@@ -365,6 +365,21 @@ X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   return CallsEHReturn ? CSR_32EHRet_SaveList : CSR_32_SaveList;
 }
 
+bool X86RegisterInfo::shouldSkipRegUsageInfo(const MachineFunction &MF) const {
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+  const BitVector &UsedPhysRegsMask = MRI.getUsedPhysRegsMask();
+
+  // x87 FP stack: don't store RegMask when FP or ST registers are used,
+  // as the stack model makes precise per-register tracking unreliable.
+  for (unsigned Reg = X86::FP0; Reg <= X86::FP7; ++Reg)
+    if (!MRI.def_empty(Reg) || UsedPhysRegsMask.test(Reg))
+      return true;
+  for (unsigned Reg = X86::ST0; Reg <= X86::ST7; ++Reg)
+    if (!MRI.def_empty(Reg) || UsedPhysRegsMask.test(Reg))
+      return true;
+  return false;
+}
+
 const MCPhysReg *
 X86RegisterInfo::getIPRACSRegs(const MachineFunction *MF) const {
   return Is64Bit ? CSR_IPRA_64_SaveList : CSR_IPRA_32_SaveList;

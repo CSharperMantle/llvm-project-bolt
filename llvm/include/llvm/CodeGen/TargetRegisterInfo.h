@@ -568,6 +568,14 @@ public:
     return {};
   }
 
+  /// Return true if register usage info should not be stored for this function
+  /// (e.g. x87 FP stack usage makes precise tracking unreliable). When true,
+  /// RegUsageInfoCollector will skip storing the RegMask.
+  virtual bool shouldSkipRegUsageInfo(const MachineFunction &MF) const {
+    (void)MF;
+    return false;
+  }
+
   /// Return true if all bits that are set in mask \p mask0 are also set in
   /// \p mask1.
   bool regmaskSubsetEqual(const uint32_t *mask0, const uint32_t *mask1) const;

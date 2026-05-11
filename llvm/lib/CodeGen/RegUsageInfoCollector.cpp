@@ -143,6 +143,14 @@ bool RegUsageInfoCollector::run(MachineFunction &MF) {
     return false;
   }
 
+  // Skip storing RegMask for functions that use registers with unreliable
+  // tracking (e.g. x87 FP stack on X86).
+  if (TRI->shouldSkipRegUsageInfo(MF)) {
+    LLVM_DEBUG(
+        dbgs() << "Skipping RegMask for function with special reg usage\n");
+    return false;
+  }
+
   std::vector<uint32_t> RegMask;
 
   // Compute the size of the bit vector to represent all the registers.
