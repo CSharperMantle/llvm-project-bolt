@@ -2,6 +2,7 @@
 // RUN: llvm-bolt --print-cfg --print-fix-loongarch-calls --print-only=_start \
 // RUN:     -o %t.bolt %t | FileCheck %s
 // RUN: llvm-objdump -d %t.bolt | FileCheck --check-prefix=OBJDUMP %s
+// RUN: llvm-readelf -rW %t.bolt | FileCheck --check-prefix=RELOC %s
 
 // CHECK:      Binary Function "_start" after building cfg {
 // CHECK:      bl f
@@ -13,7 +14,9 @@
 // OBJDUMP:      0000000000400000 <f>:
 // OBJDUMP:      0000000000400004 <_start>:
 // OBJDUMP-NEXT:     pcaddu18i $ra, 0
-// OBJDUMP-NEXT:     jirl $ra, $ra, -4
+// OBJDUMP-NEXT:     jirl $ra, $ra, -4 <f>
+
+// RELOC: There are no relocations in this file.
 
 /// Just provide a near call via bl, because the fix-loongarch-calls pass
 /// expand all bls whether they are near calls or far calls. To show a far
