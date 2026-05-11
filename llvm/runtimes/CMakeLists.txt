@@ -305,6 +305,7 @@ function(runtime_default_target)
                                                 CUDA CMAKE_CUDA # For runtimes that may look for the CUDA compiler and/or SDK (libc, offload, flang-rt)
                                                 FFI # offload uses libffi
                                                 FLANG_RUNTIME # Shared between Flang and Flang-RT
+                                                LIBOMPTARGET # offload plugin selection
                                                 ${ARG_PREFIXES}
                            EXTRA_TARGETS ${extra_targets}
                                          ${test_targets}
