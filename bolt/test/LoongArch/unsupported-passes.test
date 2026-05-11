@@ -1,0 +1,17 @@
+## Check that unsupported LoongArch BOLT passes fail cleanly.
+
+# RUN: split-file %s %t
+# RUN: llvm-mc --triple=loongarch64 --filetype=obj -o %t.o %t/main.s
+# RUN: ld.lld --emit-relocs -o %t.exe %t.o
+# RUN: not llvm-bolt %t.exe -o %t.bolt --frame-opt=all 2>&1 | FileCheck --check-prefix=CHECK-FRAME-OPT %s
+
+# CHECK-FRAME-OPT: BOLT-ERROR: frame-optimizer is supported only on X86
+
+#--- main.s
+  .text
+  .globl _start
+  .p2align 2
+_start:
+  addi.d $a0, $zero, 0
+  ret
+  .size _start, .-_start
