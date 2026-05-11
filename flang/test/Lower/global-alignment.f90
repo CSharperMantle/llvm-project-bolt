@@ -1,4 +1,4 @@
-! RUN: bbc -emit-fir -hlfir -o - %s | FileCheck %s
+! RUN: %flang_fc1 -emit-hlfir %s -o - | FileCheck %s
 
 module m
   implicit none
