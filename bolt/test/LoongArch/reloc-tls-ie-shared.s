@@ -1,11 +1,20 @@
 // RUN: llvm-mc --triple=loongarch64 --filetype=obj -o %t.o %s
 // RUN: ld.lld --shared --emit-relocs -o %t.so %t.o
 // RUN: llvm-bolt --print-cfg --print-only=tls_ie -o %t.null %t.so | FileCheck %s
+// RUN: llvm-objdump -d %t.null | FileCheck --check-prefix=OBJDUMP %s
+// RUN: llvm-readelf -rW %t.null | FileCheck --check-prefix=RELOC %s
 
 // CHECK-LABEL: Binary Function "tls_ie" after building cfg {
 // CHECK-LABEL: .LBB00
 // CHECK:      pcalau12i $a0, %pc_hi20(__BOLT_got_zero+{{[0-9]+}})
 // CHECK-NEXT: ld.d $a0, $a0, %pc_lo12(__BOLT_got_zero+{{[0-9]+}})
+// OBJDUMP:      0000000000400000 <tls_ie>:
+// OBJDUMP-NEXT:     pcalau12i $a0,
+// OBJDUMP-NEXT:     ld.d $a0, $a0,
+// OBJDUMP-NEXT:     ret
+
+// RELOC: Relocation section '.rela.dyn'
+// RELOC: R_LARCH_TLS_TPREL64
     .text
     .globl tls_ie, _start
     .p2align 2

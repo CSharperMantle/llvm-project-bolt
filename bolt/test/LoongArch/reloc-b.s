@@ -2,6 +2,7 @@
 // RUN: llvm-bolt --print-cfg --print-fix-loongarch-calls --print-only=_start \
 // RUN:     -o %t.bolt %t | FileCheck %s
 // RUN: llvm-objdump -d %t.bolt | FileCheck --check-prefix=OBJDUMP %s
+// RUN: llvm-readelf -rW %t.bolt | FileCheck --check-prefix=RELOC %s
 
 // CHECK:      Binary Function "_start" after building cfg {
 // CHECK:      b .Ltmp0
@@ -15,7 +16,9 @@
 // OBJDUMP:      0000000000400000 <f>:
 // OBJDUMP:      0000000000400004 <_start>:
 // OBJDUMP-NEXT:     pcaddu18i $t8, 0
-// OBJDUMP-NEXT:     jirl $zero, $t8, -4
+// OBJDUMP-NEXT:     jirl $zero, $t8, -4 <f>
+
+// RELOC: There are no relocations in this file.
 
   .text
 
