@@ -425,6 +425,7 @@ private:
   SDValue combineMUL(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineIntDIVREM(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue combineINTRINSIC(SDNode *N, DAGCombinerInfo &DCI) const;
+  SDValue combineMEMMOVE(SDNode *N, DAGCombinerInfo &DCI) const;
 
   SDValue unwrapAddress(SDValue N) const override;
 
