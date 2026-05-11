@@ -2,6 +2,16 @@
 set(common_dir ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set(common_bin_dir ${CMAKE_CURRENT_BINARY_DIR}/common)
 add_subdirectory(common)
+
+# Only build specific plugins if any are requested
+if(NOT LIBOMPTARGET_PLUGINS_TO_BUILD)
+  message(STATUS "Skipping plugin implementations (no plugins enabled)")
+  # Set empty lists for parent scope
+  set(LIBOMPTARGET_SYSTEM_TARGETS "" PARENT_SCOPE)
+  set(LIBOMPTARGET_TESTED_PLUGINS "" PARENT_SCOPE)
+  return()
+endif()
+
 function(add_target_library target_name lib_name)
   add_llvm_library(${target_name} STATIC
     LINK_COMPONENTS
