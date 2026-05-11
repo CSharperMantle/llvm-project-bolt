@@ -80,10 +80,16 @@ void RedundantParenthesesCheck::check(const MatchFinder::MatchResult &Result) {
 
     if (ParenType.isNull())
       return;
+    if (ParenType.getLParenLoc().isMacroID() || ParenType.getRParenLoc().isMacroID())
+      return;
+    const SourceRange ParenRange(ParenType.getLParenLoc(),ParenType.getRParenLoc());
+    const StringRef ParenText = Lexer::getSourceText(CharSourceRange::getTokenRange(ParenRange), *Result.SourceManager,Result.Context->getLangOpts());
+    if (ParenText.contains('*') || ParenText.contains('&'))
+      return;
     const QualType InnerLocType = ParenType.getInnerLoc().getType();
     if (InnerLocType->isPointerType() || InnerLocType->isReferenceType() ||
         InnerLocType->isMemberPointerType() || InnerLocType->isFunctionType() ||
-        InnerLocType->isArrayType())
+        InnerLocType->isArrayType()) 
       return;
     diag(ParenType.getLParenLoc(), "redundant parentheses in declaration")
         << FixItHint::CreateRemoval(ParenType.getLParenLoc())

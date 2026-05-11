@@ -130,6 +130,23 @@ void f(int (arg));
 // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: redundant parentheses in declaration
 // CHECK-FIXES: void f(int arg);
 
+int ((nestedX));
+// CHECK-MESSAGES: :[[@LINE-1]]:5: warning: redundant parentheses in declaration
+// CHECK-MESSAGES: :[[@LINE-2]]:6: warning: redundant parentheses in declaration
+// CHECK-FIXES: int nestedX;
+
+void nestedParam(int ((arg)));
+// CHECK-MESSAGES: :[[@LINE-1]]:22: warning: redundant parentheses in declaration
+// CHECK-MESSAGES: :[[@LINE-2]]:23: warning: redundant parentheses in declaration
+// CHECK-FIXES: void nestedParam(int arg);
+
 //Negative Test cases for redundant parentheses in declaration
-int (*functionPtr)(int);
-int (*array[2])(int);
+struct S {
+  int value;
+};
+int (*functionPtr)(int);       // Pointer type.
+int (&referenceVar) = x;       // Reference type.
+int (S::*memberPtr);           // Member pointer type.
+int ((*nestedFunctionPtr))(int); // Function/pointer related nested case.
+int (*arrayPtr[2])(int);       // Array type.
+int *(*var);                 
