@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/CIR/FrontendAction/CIRGenAction.h"
+#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "clang/Basic/DiagnosticFrontend.h"
@@ -29,6 +30,7 @@ static BackendAction
 getBackendActionFromOutputType(CIRGenAction::OutputType Action) {
   switch (Action) {
   case CIRGenAction::OutputType::EmitCIR:
+  case CIRGenAction::OutputType::EmitCIRBC:
     assert(false &&
            "Unsupported output type for getBackendActionFromOutputType!");
     break; // Unreachable, but fall through to report that
@@ -138,6 +140,13 @@ public:
         MlirModule->print(*OutputStream, Flags);
       }
       break;
+    case CIRGenAction::OutputType::EmitCIRBC:
+      if (OutputStream && MlirModule) {
+        mlir::FallbackAsmResourceMap fallbackResourceMap;
+        mlir::BytecodeWriterConfig writerConfig(fallbackResourceMap);
+        (void)writeBytecodeToFile(MlirModule, *OutputStream, writerConfig);
+      }
+      break;
     case CIRGenAction::OutputType::EmitLLVM:
     case CIRGenAction::OutputType::EmitBC:
     case CIRGenAction::OutputType::EmitObj:
@@ -207,6 +216,8 @@ getOutputStream(CompilerInstance &CI, StringRef InFile,
     return CI.createDefaultOutputFile(false, InFile, "s");
   case CIRGenAction::OutputType::EmitCIR:
     return CI.createDefaultOutputFile(false, InFile, "cir");
+  case CIRGenAction::OutputType::EmitCIRBC:
+    return CI.createDefaultOutputFile(true, InFile, "cirbc");
   case CIRGenAction::OutputType::EmitLLVM:
     return CI.createDefaultOutputFile(false, InFile, "ll");
   case CIRGenAction::OutputType::EmitBC:
@@ -237,6 +248,10 @@ EmitAssemblyAction::EmitAssemblyAction(mlir::MLIRContext *MLIRCtx)
 void EmitCIRAction::anchor() {}
 EmitCIRAction::EmitCIRAction(mlir::MLIRContext *MLIRCtx)
     : CIRGenAction(OutputType::EmitCIR, MLIRCtx) {}
+
+void EmitCIRBCAction::anchor() {}
+EmitCIRBCAction::EmitCIRBCAction(mlir::MLIRContext *MLIRCtx)
+    : CIRGenAction(OutputType::EmitCIRBC, MLIRCtx) {}
 
 void EmitLLVMAction::anchor() {}
 EmitLLVMAction::EmitLLVMAction(mlir::MLIRContext *MLIRCtx)
