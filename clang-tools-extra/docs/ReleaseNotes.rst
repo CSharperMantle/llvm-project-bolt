@@ -197,6 +197,12 @@ New checks
   ``llvm::to_vector(llvm::make_filter_range(...))`` that can be replaced with
   ``llvm::map_to_vector`` and ``llvm::filter_to_vector``.
 
+- New :doc:`modernize-use-if-consteval
+  <clang-tidy/checks/modernize/use-if-consteval>` check.
+
+  Replaces direct ``std::is_constant_evaluated()`` checks in ``if`` statements
+  with C++23's ``if consteval`` syntax.
+
 - New :doc:`modernize-use-std-bit
   <clang-tidy/checks/modernize/use-std-bit>` check.
 
