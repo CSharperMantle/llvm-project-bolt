@@ -189,10 +189,7 @@ public:
     return HasStdExtZfhmin || HasStdExtZfbfmin;
   }
 
-  bool hasCLZLike() const {
-    return HasStdExtZbb || HasVendorXTHeadBb ||
-           (HasVendorXCVbitmanip && !IsRV64);
-  }
+  bool hasCLZLike() const { return HasStdExtZbb || HasVendorXTHeadBb; }
   bool hasCTZLike() const {
     return HasStdExtZbb || (HasVendorXCVbitmanip && !IsRV64);
   }
