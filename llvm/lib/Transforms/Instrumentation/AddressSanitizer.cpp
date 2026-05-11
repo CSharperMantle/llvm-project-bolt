@@ -184,16 +184,56 @@ const char kAMDGPUUnreachableName[] = "llvm.amdgcn.unreachable";
 
 namespace {
 
+static DIType *solveAsanDIType(DIBuilder &DIB, Type *Ty, const DataLayout &DL);
+
 class AsanFunctionInserter {
 public:
-  AsanFunctionInserter(Module &M) : M(M) {}
+  AsanFunctionInserter(Module &M, bool EmitDebugInfo)
+      : M(M), DL(M.getDataLayout()), EmitDebugInfo(EmitDebugInfo),
+        File(M.debug_compile_units().empty()
+                 ? nullptr
+                 : DIFile::get(M.getContext(), /*Filename=*/"asan_interface.h",
+                               /*Directory=*/"sanitizer")),
+        DIB(M, false) {}
+  ~AsanFunctionInserter() { DIB.finalize(); }
 
   template <typename... ArgTypes>
   FunctionCallee insertFunction(StringRef Name, ArgTypes &&...Args) {
-    return M.getOrInsertFunction(Name, std::forward<ArgTypes>(Args)...);
+    FunctionCallee Callee =
+        M.getOrInsertFunction(Name, std::forward<ArgTypes>(Args)...);
+    maybeEmitDebugInfo(Callee);
+    return Callee;
+  }
+
+private:
+  void maybeEmitDebugInfo(FunctionCallee Callee) {
+    if (!EmitDebugInfo || !File)
+      return;
+
+    auto *F = dyn_cast<Function>(Callee.getCallee()->stripPointerCasts());
+    if (!F || !F->isDeclaration() || F->getSubprogram())
+      return;
+
+    FunctionType *FTy = F->getFunctionType();
+    SmallVector<Metadata *, 4> ParamTypes;
+    ParamTypes.push_back(solveAsanDIType(DIB, FTy->getReturnType(), DL));
+    for (Type *PT : FTy->params())
+      ParamTypes.push_back(solveAsanDIType(DIB, PT, DL));
+
+    DISubroutineType *SubTy =
+        DIB.createSubroutineType(DIB.getOrCreateTypeArray(ParamTypes));
+    DISubprogram *SP =
+        DIB.createFunction(File, F->getName(), F->getName(), File, 0, SubTy, 0,
+                           DINode::FlagArtificial | DINode::FlagPrototyped,
+                           DISubprogram::SPFlagZero);
+    F->setSubprogram(SP);
   }
 
   Module &M;
+  const DataLayout &DL;
+  bool EmitDebugInfo;
+  DIFile *File;
+  DIBuilder DIB;
 };
 
 } // end anonymous namespace
@@ -467,6 +507,11 @@ static cl::list<unsigned> ClAddrSpaces(
     cl::Hidden, cl::CommaSeparated, cl::callback([](const unsigned &AddrSpace) {
       SrcAddrSpaces.insert(AddrSpace);
     }));
+
+static cl::opt<bool> ClEmitDebugInfo(
+    "asan-emit-debug-info",
+    cl::desc("Emit debug info for inserted ASan runtime function declarations"),
+    cl::Hidden, cl::init(false));
 
 // Debug flags.
 
@@ -1309,6 +1354,34 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
                      Instruction *ThenTerm, Value *ValueIfFalse);
 };
 
+/// Resolve an LLVM IR type to a synthetic DIType for ASan runtime callbacks.
+/// Only handles the types that actually appear in ASan callback signatures.
+static DIType *solveAsanDIType(DIBuilder &DIB, Type *Ty, const DataLayout &DL) {
+  // Functions have a void return type.
+  if (Ty->isVoidTy())
+    return nullptr;
+
+  // The mem* intrinsics and AMDGPU specific calls have pointer parameters.
+  if (Ty->isPointerTy()) {
+    return DIB.createPointerType(
+        nullptr,
+        DL.getPointerSizeInBits(ClAddrSpaces.empty() ? 0
+                                                     : *ClAddrSpaces.begin()),
+        DL.getABITypeAlign(Ty).value() * CHAR_BIT, std::nullopt, "PointerType");
+  }
+
+  // All other parameters are integers, even pointers (intptr_t).
+  assert(Ty->isIntegerTy() && "unexpected type in ASan callback signature");
+
+  unsigned BitWidth = cast<IntegerType>(Ty)->getBitWidth();
+  SmallString<16> Name;
+  raw_svector_ostream OS(Name);
+  OS << "__int_" << BitWidth;
+
+  return DIB.createBasicType(OS.str(), BitWidth, dwarf::DW_ATE_signed,
+                             DINode::FlagArtificial);
+}
+
 } // end anonymous namespace
 
 void AddressSanitizerPass::printPipeline(
@@ -1338,7 +1411,7 @@ PreservedAnalyses AddressSanitizerPass::run(Module &M,
   if (checkIfAlreadyInstrumented(M, "nosanitize_address"))
     return PreservedAnalyses::all();
 
-  AsanFunctionInserter Inserter(M);
+  AsanFunctionInserter Inserter(M, ClEmitDebugInfo);
   ModuleAddressSanitizer ModuleSanitizer(
       M, Inserter, Options.InsertVersionCheck, Options.CompileKernel,
       Options.Recover, UseGlobalGC, UseOdrIndicator, DestructorKind,
