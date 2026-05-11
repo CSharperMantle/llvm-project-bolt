@@ -2211,6 +2211,7 @@ let Predicates = [HasPAuth] in {
     let Size = 32;
     let Defs = [X16,X17,NZCV];
     let Uses = [X16];
+    let usesCustomInserter = 1;
   }
 
   // AArch64AsmPrinter can clobber the $AddrDisc register as long as it is
@@ -2235,6 +2236,7 @@ let Predicates = [HasPAuth] in {
     let Size = 32;
     let Defs = [NZCV];
     let Uses = [];
+    let usesCustomInserter = 1;
   }
 
   // PAC pseudo instruction. In AsmPrinter, it is expanded into an actual PAC*
@@ -2273,6 +2275,7 @@ let Predicates = [HasPAuth] in {
     let Size = 48;
     let Defs = [X16,X17,NZCV];
     let Uses = [X16];
+    let usesCustomInserter = 1;
   }
 
   // Similiar to AUTPAC, except a 32bit value is loaded at Addend offset from
@@ -2293,6 +2296,7 @@ let Predicates = [HasPAuth] in {
     let Size = 84;
     let Defs = [X16, X17, NZCV];
     let Uses = [X16];
+    let usesCustomInserter = 1;
   }
 
   // Materialize a signed global address, with adrp+add and PAC.
