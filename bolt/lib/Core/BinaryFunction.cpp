@@ -1505,43 +1505,6 @@ Error BinaryFunction::disassemble() {
         (void)Result;
         assert(Result && "cannot replace immediate with relocation");
       }
-    } else if (BC.isLoongArch()) {
-      // Check if there's a relocation associated with this instruction.
-      for (auto Itr = Relocations.lower_bound(Offset),
-                ItrE = Relocations.lower_bound(Offset + Size);
-           Itr != ItrE; ++Itr) {
-        const Relocation &Relocation = Itr->second;
-        MCSymbol *Symbol = Relocation.Symbol;
-
-        if (Relocation::isInstructionReference(Relocation.Type)) {
-          uint64_t RefOffset = Relocation.Value - getAddress();
-          LabelsMapType::iterator LI = InstructionLabels.find(RefOffset);
-
-          if (LI == InstructionLabels.end()) {
-            Symbol = BC.Ctx->createNamedTempSymbol();
-            InstructionLabels.emplace(RefOffset, Symbol);
-          } else {
-            Symbol = LI->second;
-          }
-        }
-
-        uint64_t Addend = Relocation.Addend;
-
-        // For GOT relocations, create a reference against GOT entry ignoring
-        // the relocation symbol. Unlike RISCV where extractValue returns raw
-        // instruction immediates, LoongArch's extractValue for GOT_PC_HI20
-        // returns the page-aligned target address (PC-adjusted), so we use
-        // Relocation.Value directly without adding FixupAddr.
-        if (Relocation::isGOT(Relocation.Type)) {
-          Symbol = BC.registerNameAtAddress("__BOLT_got_zero", 0, 0, 0);
-          Addend = Relocation.Value;
-        }
-        int64_t Value = Relocation.Value;
-        const bool Result = BC.MIB->replaceImmWithSymbolRef(
-            Instruction, Symbol, Addend, Ctx.get(), Value, Relocation.Type);
-        (void)Result;
-        assert(Result && "cannot replace immediate with relocation");
-      }
     }
 
 add_instruction:
