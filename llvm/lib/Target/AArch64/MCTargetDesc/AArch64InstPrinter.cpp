@@ -919,6 +919,7 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
   bool OptionalReg = false;
   std::string Ins;
   std::string Name;
+  StringRef RegSep = ", ";
 
   if (CnVal == 7) {
     switch (CmVal) {
@@ -931,6 +932,17 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
       case 0: goto Search_IC;
       case 3: goto Search_PRCTX;
       }
+    // BRB aliases.
+    case 2: {
+      if (Op1Val != 1 ||
+          !(STI.hasFeature(AArch64::FeatureAll) ||
+            STI.hasFeature(AArch64::FeatureBRBE)) ||
+          (Op2Val != 4 && Op2Val != 5))
+        return false;
+
+      Ins = "brb\t";
+      Name = Op2Val == 4 ? "iall" : "inj";
+    } break;
     // Prediction Restriction aliases
     case 3: {
       Search_PRCTX:
@@ -988,6 +1000,34 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
       Name = std::string(AT->Name);
     }
     break;
+    // GCS aliases.
+    case 7: {
+      if (!(STI.hasFeature(AArch64::FeatureAll) ||
+            STI.hasFeature(AArch64::FeatureGCS)))
+        return false;
+
+      RegSep = "\t";
+      Name = "";
+      if (Op1Val == 0) {
+        NeedsReg = false;
+        if (Op2Val == 4) {
+          Ins = "gcspushx";
+        } else if (Op2Val == 5) {
+          Ins = "gcspopcx";
+        } else if (Op2Val == 6) {
+          Ins = "gcspopx";
+        } else {
+          return false;
+        }
+      } else if (Op1Val == 3) {
+        NeedsReg = true;
+        if (Op1Val != 0 && Op1Val != 2)
+          return false;
+        Ins = Op2Val == 0 ? "gcspushm" : "gcsss1";
+      } else {
+        return false;
+      }
+    } break;
     // Overlaps with AT and DC
     case 15: {
       const AArch64AT::AT *AT = AArch64AT::lookupATByEncoding(Encoding);
@@ -1069,7 +1109,7 @@ bool AArch64InstPrinter::printSysAlias(const MCInst *MI,
   // For optional registers, don't print the value if it's xzr/x31
   // since this defaults to xzr/x31 if register is not specified.
   if (NeedsReg || (OptionalReg && NotXZR))
-    O << ", " << Reg;
+    O << RegSep << Reg;
 
   return true;
 }
@@ -1100,6 +1140,7 @@ bool AArch64InstPrinter::printSyslAlias(const MCInst *MI,
 
   std::string Ins;
   std::string Name;
+  bool OptionalReg = false;
 
   if (CnVal == 12) {
     if (CmVal == 3) {
@@ -1113,8 +1154,33 @@ bool AArch64InstPrinter::printSyslAlias(const MCInst *MI,
       Name = std::string(GICR->Name);
     } else
       return false;
+  } else if (CnVal == 7 && CmVal == 7) {
+    if (!(STI.hasFeature(AArch64::FeatureAll) ||
+          STI.hasFeature(AArch64::FeatureGCS)) ||
+        Op1Val != 3)
+      return false;
+
+    Name = "";
+    switch (Op2Val) {
+    default:
+      return false;
+    case 1:
+      Ins = "gcspopm";
+      OptionalReg = true;
+      break;
+    case 3:
+      Ins = "gcsss2";
+      break;
+    }
   } else
     return false;
+
+  if (Name.empty()) {
+    O << '\t' << Ins;
+    if (!OptionalReg || Reg != "xzr")
+      O << '\t' << Reg.str();
+    return true;
+  }
 
   llvm::transform(Name, Name.begin(), ::tolower);
 
