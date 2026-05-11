@@ -375,6 +375,145 @@ for.exit:
   ret void
 }
 
+@global_data = external local_unnamed_addr global [9 x [9 x [9 x i32]]]
+
+; In this test the accesses are offset by the vector length (i.e, #1, mul vl apart),
+; but include a non-trival SCEV expression for the base address.
+; The SCEV expressions for the accesses are:
+; %gep.part0 =
+;  (324 + (4 * (sext i32 (3 + (-1 * %3)<nsw> + %0) to i64))<nsw> + @_QMbrute_forceEblock),+,(32 * vscale)
+; %gep.part1 =
+;  (324 + (4 * (sext i32 (3 + (-1 * %3)<nsw> + %0) to i64))<nsw> + (16 * vscale) + @_QMbrute_forceEblock),+,(32 * vscale)
+; This test checks that LSR can extract the offset of `(16 * vscale)` from the
+; expression for %gep.part1 (and use mul vl addressing from a common base for
+; both loads and stores).
+define void @vscale_complex_base_address(ptr %ptr, i32 %0, i64 %n) local_unnamed_addr #0 {
+; BASE-LABEL: vscale_complex_base_address:
+; BASE:       // %bb.0: // %entry
+; BASE-NEXT:    mov w8, #21846 // =0x5556
+; BASE-NEXT:    sub w9, w1, #1
+; BASE-NEXT:    ptrue p0.s
+; BASE-NEXT:    movk w8, #21845, lsl #16
+; BASE-NEXT:    mov x10, xzr
+; BASE-NEXT:    smull x8, w9, w8
+; BASE-NEXT:    lsr x9, x8, #32
+; BASE-NEXT:    add x8, x9, x8, lsr #63
+; BASE-NEXT:    adrp x9, :got:global_data
+; BASE-NEXT:    ldr x9, [x9, :got_lo12:global_data]
+; BASE-NEXT:    add w8, w8, w8, lsl #1
+; BASE-NEXT:    add w8, w8, #4
+; BASE-NEXT:    add x8, x9, w8, sxtw #2
+; BASE-NEXT:    add x8, x8, #324
+; BASE-NEXT:    mov x9, x8
+; BASE-NEXT:    incb x8
+; BASE-NEXT:  .LBB6_1: // %vector.body
+; BASE-NEXT:    // =>This Inner Loop Header: Depth=1
+; BASE-NEXT:    ld1w { z0.s }, p0/z, [x9, x10, lsl #2]
+; BASE-NEXT:    ld1w { z1.s }, p0/z, [x8, x10, lsl #2]
+; BASE-NEXT:    sub z0.s, z0.s, #10 // =0xa
+; BASE-NEXT:    sub z1.s, z1.s, #10 // =0xa
+; BASE-NEXT:    st1w { z0.s }, p0, [x9, x10, lsl #2]
+; BASE-NEXT:    st1w { z1.s }, p0, [x8, x10, lsl #2]
+; BASE-NEXT:    inch x10
+; BASE-NEXT:    cmp x2, x10
+; BASE-NEXT:    b.ne .LBB6_1
+; BASE-NEXT:  // %bb.2: // %exit
+; BASE-NEXT:    ret
+;
+; PREINDEX-LABEL: vscale_complex_base_address:
+; PREINDEX:       // %bb.0: // %entry
+; PREINDEX-NEXT:    mov w8, #21846 // =0x5556
+; PREINDEX-NEXT:    sub w9, w1, #1
+; PREINDEX-NEXT:    ptrue p0.s
+; PREINDEX-NEXT:    movk w8, #21845, lsl #16
+; PREINDEX-NEXT:    mov x10, xzr
+; PREINDEX-NEXT:    smull x8, w9, w8
+; PREINDEX-NEXT:    lsr x9, x8, #32
+; PREINDEX-NEXT:    add x8, x9, x8, lsr #63
+; PREINDEX-NEXT:    adrp x9, :got:global_data
+; PREINDEX-NEXT:    ldr x9, [x9, :got_lo12:global_data]
+; PREINDEX-NEXT:    add w8, w8, w8, lsl #1
+; PREINDEX-NEXT:    add w8, w8, #4
+; PREINDEX-NEXT:    add x8, x9, w8, sxtw #2
+; PREINDEX-NEXT:    add x8, x8, #324
+; PREINDEX-NEXT:    mov x9, x8
+; PREINDEX-NEXT:    incb x8
+; PREINDEX-NEXT:  .LBB6_1: // %vector.body
+; PREINDEX-NEXT:    // =>This Inner Loop Header: Depth=1
+; PREINDEX-NEXT:    ld1w { z0.s }, p0/z, [x9, x10, lsl #2]
+; PREINDEX-NEXT:    ld1w { z1.s }, p0/z, [x8, x10, lsl #2]
+; PREINDEX-NEXT:    sub z0.s, z0.s, #10 // =0xa
+; PREINDEX-NEXT:    sub z1.s, z1.s, #10 // =0xa
+; PREINDEX-NEXT:    st1w { z0.s }, p0, [x9, x10, lsl #2]
+; PREINDEX-NEXT:    st1w { z1.s }, p0, [x8, x10, lsl #2]
+; PREINDEX-NEXT:    inch x10
+; PREINDEX-NEXT:    cmp x2, x10
+; PREINDEX-NEXT:    b.ne .LBB6_1
+; PREINDEX-NEXT:  // %bb.2: // %exit
+; PREINDEX-NEXT:    ret
+;
+; POSTINDEX-LABEL: vscale_complex_base_address:
+; POSTINDEX:       // %bb.0: // %entry
+; POSTINDEX-NEXT:    mov w10, #21846 // =0x5556
+; POSTINDEX-NEXT:    sub w9, w1, #1
+; POSTINDEX-NEXT:    ptrue p0.s
+; POSTINDEX-NEXT:    movk w10, #21845, lsl #16
+; POSTINDEX-NEXT:    mov x8, xzr
+; POSTINDEX-NEXT:    smull x9, w9, w10
+; POSTINDEX-NEXT:    lsr x10, x9, #32
+; POSTINDEX-NEXT:    add x9, x10, x9, lsr #63
+; POSTINDEX-NEXT:    adrp x10, :got:global_data
+; POSTINDEX-NEXT:    ldr x10, [x10, :got_lo12:global_data]
+; POSTINDEX-NEXT:    add w9, w9, w9, lsl #1
+; POSTINDEX-NEXT:    add x10, x10, #324
+; POSTINDEX-NEXT:    add w9, w9, #4
+; POSTINDEX-NEXT:    sbfiz x11, x9, #2, #32
+; POSTINDEX-NEXT:    add x9, x10, x11
+; POSTINDEX-NEXT:    incb x11
+; POSTINDEX-NEXT:    add x10, x10, x11
+; POSTINDEX-NEXT:  .LBB6_1: // %vector.body
+; POSTINDEX-NEXT:    // =>This Inner Loop Header: Depth=1
+; POSTINDEX-NEXT:    ld1w { z0.s }, p0/z, [x9, x8, lsl #2]
+; POSTINDEX-NEXT:    ld1w { z1.s }, p0/z, [x10, x8, lsl #2]
+; POSTINDEX-NEXT:    sub z0.s, z0.s, #10 // =0xa
+; POSTINDEX-NEXT:    sub z1.s, z1.s, #10 // =0xa
+; POSTINDEX-NEXT:    st1w { z0.s }, p0, [x9, x8, lsl #2]
+; POSTINDEX-NEXT:    st1w { z1.s }, p0, [x10, x8, lsl #2]
+; POSTINDEX-NEXT:    inch x8
+; POSTINDEX-NEXT:    cmp x2, x8
+; POSTINDEX-NEXT:    b.ne .LBB6_1
+; POSTINDEX-NEXT:  // %bb.2: // %exit
+; POSTINDEX-NEXT:    ret
+entry:
+  %1 = add i32 %0, 3
+  %2 = add i32 %0, -1
+  %3 = srem i32 %2, 3
+  %4 = sub i32 %1, %3
+  %5 = sext i32 %4 to i64
+  %complex.base = getelementptr [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @global_data, i64 324), i64 %5
+  %vscale = tail call i64 @llvm.vscale.i64()
+  %VFxUF = shl nuw i64 %vscale, 3
+  %off = shl i64 %vscale, 4
+  br label %vector.body
+
+vector.body:
+  %iv = phi i64 [ 0, %entry ], [ %iv.next, %vector.body ]
+  %gep.part0 = getelementptr [4 x i8], ptr %complex.base, i64 %iv
+  %gep.part1 = getelementptr i8, ptr %gep.part0, i64 %off
+  %data = load <vscale x 4 x i32>, ptr %gep.part0, align 4
+  %data2 = load <vscale x 4 x i32>, ptr %gep.part1, align 4
+  %add = add <vscale x 4 x i32> %data, splat (i32 -10)
+  %add2 = add <vscale x 4 x i32> %data2, splat (i32 -10)
+  store <vscale x 4 x i32> %add, ptr %gep.part0, align 4
+  store <vscale x 4 x i32> %add2, ptr %gep.part1, align 4
+  %iv.next = add nuw i64 %iv, %VFxUF
+  %exit.cond = icmp eq i64 %iv.next, %n
+  br i1 %exit.cond, label %exit, label %vector.body
+
+exit:
+  ret void
+}
+
 ;; Here are two writes that should be `16 * vscale * vscale` apart, so MUL VL
 ;; addressing cannot be used to offset the second write, as for example,
 ;; `#4, mul vl` would only be an offset of `16 * vscale` (dropping a vscale).
@@ -391,8 +530,8 @@ define void @vscale_squared_offset(ptr %alloc) #0 {
 ; COMMON-NEXT:    umull x9, w9, w10
 ; COMMON-NEXT:    cntw x10
 ; COMMON-NEXT:    cmp x8, x10
-; COMMON-NEXT:    b.ge .LBB6_2
-; COMMON-NEXT:  .LBB6_1: // %for.body
+; COMMON-NEXT:    b.ge .LBB7_2
+; COMMON-NEXT:  .LBB7_1: // %for.body
 ; COMMON-NEXT:    // =>This Inner Loop Header: Depth=1
 ; COMMON-NEXT:    add x11, x0, x9
 ; COMMON-NEXT:    st1w { z0.s }, p0, [x0]
@@ -400,8 +539,8 @@ define void @vscale_squared_offset(ptr %alloc) #0 {
 ; COMMON-NEXT:    st1w { z1.s }, p0, [x11]
 ; COMMON-NEXT:    add x8, x8, #1
 ; COMMON-NEXT:    cmp x8, x10
-; COMMON-NEXT:    b.lt .LBB6_1
-; COMMON-NEXT:  .LBB6_2: // %for.exit
+; COMMON-NEXT:    b.lt .LBB7_1
+; COMMON-NEXT:  .LBB7_2: // %for.exit
 ; COMMON-NEXT:    ret
 entry:
   %vscale = call i64 @llvm.vscale.i64()
