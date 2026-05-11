@@ -399,8 +399,6 @@ static uint64_t canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
-  case ELF::R_LARCH_B26:
-    return true;
   }
 }
 
@@ -409,14 +407,6 @@ static uint64_t encodeValueLoongArch(uint32_t Type, uint64_t Value,
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
-  case ELF::R_LARCH_B26:
-    Value -= PC;
-    assert(isInt<28>(Value) &&
-           "only PC + [-128MiB, +128MiB - 4] is allowed for direct call");
-    // Immediate goes in bits 25:0 of BL.
-    // OP 0101_01 goes in bits 31:26 of BL.
-    Value = ((Value >> 2) & 0x3ffffff) | 0x54000000ULL;
-    break;
   }
   return Value;
 }
