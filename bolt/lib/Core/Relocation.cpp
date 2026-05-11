@@ -137,6 +137,8 @@ static bool isSupportedLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
+  case ELF::R_LARCH_B16:
+  case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
@@ -270,6 +272,8 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
   case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_B16:
+  case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
@@ -603,6 +607,16 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     return Contents;
   case ELF::R_LARCH_32_PCREL:
     return static_cast<int64_t>(PC) + SignExtend64<32>(Contents & 0xffffffff);
+  case ELF::R_LARCH_B16: {
+    Contents = (Contents >> 10) & 0xffff;
+    return static_cast<int64_t>(PC) + SignExtend64<18>(Contents << 2);
+  }
+  case ELF::R_LARCH_B21: {
+    const uint64_t LowBits = (Contents >> 10) & 0xffff;
+    const uint64_t HighBits = Contents & 0x1f;
+    Contents = LowBits | (HighBits << 16);
+    return static_cast<int64_t>(PC) + SignExtend64<23>(Contents << 2);
+  }
   case ELF::R_LARCH_B26: {
     Contents &= ~0xfffffffffc000000ULL;
     uint64_t LowBits = (Contents >> 10) & 0xffff;
@@ -877,6 +891,8 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_IE_PC_LO12:
     return false;
   case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_B16:
+  case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
   case ELF::R_LARCH_PCALA_HI20:
   case ELF::R_LARCH_PCALA64_LO20:

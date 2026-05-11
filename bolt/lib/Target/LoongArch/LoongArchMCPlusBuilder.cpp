@@ -41,6 +41,8 @@ public:
 
   bool shouldRecordCodeRelocation(uint32_t RelType) const override {
     switch (RelType) {
+    case ELF::R_LARCH_B16:
+    case ELF::R_LARCH_B21:
     case ELF::R_LARCH_B26:
     case ELF::R_LARCH_32_PCREL:
     case ELF::R_LARCH_PCALA_LO12:
@@ -382,6 +384,10 @@ public:
     switch (RelType) {
     default:
       return Expr;
+    case ELF::R_LARCH_B16:
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B16, Ctx);
+    case ELF::R_LARCH_B21:
+      return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B21, Ctx);
     case ELF::R_LARCH_B26:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B26, Ctx);
     case ELF::R_LARCH_PCALA_LO12:
