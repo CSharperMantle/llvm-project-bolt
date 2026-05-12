@@ -140,6 +140,7 @@ static bool isSupportedLoongArch(uint32_t Type) {
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
   case ELF::R_LARCH_PCALA64_LO20:
@@ -275,6 +276,7 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
   case ELF::R_LARCH_PCALA64_LO20:
@@ -631,6 +633,10 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     Contents = LowBits | (HighBits << 16);
     return static_cast<int64_t>(PC) + SignExtend64<28>(Contents << 2);
   }
+  case ELF::R_LARCH_PCREL20_S2: {
+    Contents = (Contents >> 5) & 0xfffff;
+    return static_cast<int64_t>(PC) + SignExtend64<22>(Contents << 2);
+  }
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_TLS_IE_PC_LO12: {
@@ -901,6 +907,7 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_PCALA_HI20:
   case ELF::R_LARCH_PCALA64_LO20:
   case ELF::R_LARCH_PCALA64_HI12:
