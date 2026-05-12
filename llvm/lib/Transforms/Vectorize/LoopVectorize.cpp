@@ -7675,7 +7675,7 @@ static SmallVector<Instruction *> preparePlanForEpilogueVectorLoop(
                 [](const VPUser *U) {
                   return isa<VPScalarIVStepsRecipe>(U) ||
                          isa<VPDerivedIVRecipe>(U) ||
-                         cast<VPRecipeBase>(U)->isScalarCast() ||
+                         cast<VPInstruction>(U)->isScalarCast() ||
                          cast<VPInstruction>(U)->getOpcode() ==
                              Instruction::Add;
                 }) &&

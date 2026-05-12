@@ -310,7 +310,7 @@ static bool sinkScalarOperands(VPlan &Plan) {
       return;
 
     if (auto *RepR = dyn_cast<VPReplicateRecipe>(Candidate))
-      if (!ScalarVFOnly && RepR->isSingleScalar())
+      if (!ScalarVFOnly && RepR->producesNarrowResult())
         return;
 
     WorkList.insert({SinkTo, Candidate});
@@ -520,8 +520,8 @@ static VPRegionBlock *createReplicateRegion(VPReplicateRecipe *PredRecipe,
   // mask but in the replicate region.
   auto *RecipeWithoutMask = new VPReplicateRecipe(
       PredRecipe->getUnderlyingInstr(), drop_end(PredRecipe->operands()),
-      PredRecipe->isSingleScalar(), nullptr /*Mask*/, *PredRecipe, *PredRecipe,
-      PredRecipe->getDebugLoc());
+      PredRecipe->producesNarrowResult(), nullptr /*Mask*/, *PredRecipe,
+      *PredRecipe, PredRecipe->getDebugLoc());
   auto *Pred =
       Plan.createVPBasicBlock(Twine(RegionName) + ".if", RecipeWithoutMask);
   auto *Exiting = Plan.createVPBasicBlock(Twine(RegionName) + ".continue");
@@ -884,7 +884,7 @@ static void legalizeAndOptimizeInductions(VPlan &Plan) {
       // Skip recipes that shouldn't be narrowed.
       if (!Def || !isa<VPReplicateRecipe, VPWidenRecipe>(Def) ||
           Def->getNumUsers() == 0 || !Def->getUnderlyingValue() ||
-          (RepR && (RepR->isSingleScalar() || RepR->isPredicated())))
+          (RepR && (RepR->producesNarrowResult() || RepR->isPredicated())))
         continue;
 
       // Skip recipes that may have other lanes than their first used.
@@ -1831,7 +1831,7 @@ static void narrowToSingleScalarRecipes(VPlan &Plan) {
       if (!isa<VPWidenRecipe, VPWidenGEPRecipe, VPReplicateRecipe>(&R))
         continue;
       auto *RepR = dyn_cast<VPReplicateRecipe>(&R);
-      if (RepR && (RepR->isSingleScalar() || RepR->isPredicated()))
+      if (RepR && (RepR->producesNarrowResult() || RepR->isPredicated()))
         continue;
 
       auto *RepOrWidenR = cast<VPRecipeWithIRFlags>(&R);
@@ -1883,7 +1883,7 @@ static void narrowToSingleScalarRecipes(VPlan &Plan) {
             auto *IRV = dyn_cast<VPIRValue>(Op);
             bool LiveInNeedsBroadcast = IRV && !isa<Constant>(IRV->getValue());
             auto *OpR = dyn_cast<VPReplicateRecipe>(Op);
-            return LiveInNeedsBroadcast || (OpR && OpR->isSingleScalar());
+            return LiveInNeedsBroadcast || (OpR && OpR->producesNarrowResult());
           }))
         continue;
 
@@ -2495,7 +2495,7 @@ static void licm(VPlan &Plan) {
         // replicates to single-scalar replicates.
         // TODO: When unrolling, replicateByVF doesn't handle sunk
         // non-single-scalar replicates correctly.
-        if (!RepR->isSingleScalar())
+        if (!RepR->producesNarrowResult())
           continue;
       }
 
@@ -4566,7 +4566,7 @@ void VPlanTransforms::hoistInvariantLoads(VPlan &Plan) {
     for (VPRecipeBase &R : *VPBB) {
       // Only handle single-scalar replicated loads with invariant addresses.
       if (auto *RepR = dyn_cast<VPReplicateRecipe>(&R)) {
-        if (RepR->isPredicated() || !RepR->isSingleScalar() ||
+        if (RepR->isPredicated() || !RepR->producesNarrowResult() ||
             RepR->getOpcode() != Instruction::Load)
           continue;
 
@@ -4708,18 +4708,18 @@ void VPlanTransforms::hoistPredicatedLoads(VPlan &Plan,
     // Find the load with minimum alignment to use.
     auto *LoadWithMinAlign = findRecipeWithMinAlign<LoadInst>(Group);
 
-    bool IsSingleScalar = EarliestLoad->isSingleScalar();
+    bool producesNarrowResult = EarliestLoad->producesNarrowResult();
     assert(all_of(Group,
-                  [IsSingleScalar](VPReplicateRecipe *R) {
-                    return R->isSingleScalar() == IsSingleScalar;
+                  [producesNarrowResult](VPReplicateRecipe *R) {
+                    return R->producesNarrowResult() == producesNarrowResult;
                   }) &&
-           "all members in group must agree on IsSingleScalar");
+           "all members in group must agree on narrowing");
 
     // Create an unpredicated version of the earliest load with common
     // metadata.
     auto *UnpredicatedLoad = new VPReplicateRecipe(
         LoadWithMinAlign->getUnderlyingInstr(), {EarliestLoad->getOperand(0)},
-        IsSingleScalar, /*Mask=*/nullptr, *EarliestLoad, CommonMetadata);
+        producesNarrowResult, /*Mask=*/nullptr, *EarliestLoad, CommonMetadata);
 
     UnpredicatedLoad->insertBefore(EarliestLoad);
 
@@ -4776,10 +4776,10 @@ void VPlanTransforms::sinkPredicatedStores(VPlan &Plan,
     VPValue *SelectedValue = Group[0]->getOperand(0);
     VPBuilder Builder(InsertBB, LastStore->getIterator());
 
-    bool IsSingleScalar = Group[0]->isSingleScalar();
+    bool producesNarrowResult = Group[0]->producesNarrowResult();
     for (unsigned I = 1; I < Group.size(); ++I) {
-      assert(IsSingleScalar == Group[I]->isSingleScalar() &&
-             "all members in group must agree on IsSingleScalar");
+      assert(producesNarrowResult == Group[I]->producesNarrowResult() &&
+             "all members in group must agree on narrowing");
       VPValue *Mask = Group[I]->getMask();
       VPValue *Value = Group[I]->getOperand(0);
       SelectedValue = Builder.createSelect(Mask, Value, SelectedValue,
@@ -4792,7 +4792,7 @@ void VPlanTransforms::sinkPredicatedStores(VPlan &Plan,
     // Create unconditional store with selected value and common metadata.
     auto *UnpredicatedStore = new VPReplicateRecipe(
         StoreWithMinAlign->getUnderlyingInstr(),
-        {SelectedValue, LastStore->getOperand(1)}, IsSingleScalar,
+        {SelectedValue, LastStore->getOperand(1)}, producesNarrowResult,
         /*Mask=*/nullptr, *LastStore, CommonMetadata);
     UnpredicatedStore->insertBefore(*InsertBB, LastStore->getIterator());
 
@@ -4867,18 +4867,15 @@ void VPlanTransforms::materializePacksAndUnpacks(VPlan &Plan) {
   for (VPBasicBlock *VPBB :
        concat<VPBasicBlock *>(VPBBsOutsideLoopRegion, VPBBsInsideLoopRegion)) {
     for (VPRecipeBase &R : make_early_inc_range(*VPBB)) {
-      if (!isa<VPScalarIVStepsRecipe, VPReplicateRecipe, VPInstruction>(&R))
+      if (!R.couldReplicatePerPart())
         continue;
       auto *DefR = cast<VPSingleDefRecipe>(&R);
       auto UsesVectorOrInsideReplicateRegion = [DefR, LoopRegion](VPUser *U) {
         VPRegionBlock *ParentRegion = cast<VPRecipeBase>(U)->getRegion();
         return !U->usesScalars(DefR) || ParentRegion != LoopRegion;
       };
-      if ((isa<VPReplicateRecipe>(DefR) &&
-           cast<VPReplicateRecipe>(DefR)->isSingleScalar()) ||
-          (isa<VPInstruction>(DefR) &&
-           (vputils::onlyFirstLaneUsed(DefR) ||
-            !cast<VPInstruction>(DefR)->doesGeneratePerAllLanes())) ||
+      if ((isa<VPInstruction>(DefR) &&
+           !cast<VPInstruction>(DefR)->doesGeneratePerAllLanes()) ||
           none_of(DefR->users(), UsesVectorOrInsideReplicateRegion))
         continue;
 
@@ -5202,7 +5199,7 @@ static bool isAlreadyNarrow(VPValue *VPV) {
   if (isa<VPIRValue>(VPV))
     return true;
   auto *RepR = dyn_cast<VPReplicateRecipe>(VPV);
-  return RepR && RepR->isSingleScalar();
+  return RepR && RepR->producesNarrowResult();
 }
 
 // Convert a wide recipe defining a VPValue \p V feeding an interleave group to
@@ -5238,7 +5235,8 @@ narrowInterleaveGroupOp(VPValue *V, SmallPtrSetImpl<VPValue *> &NarrowedOps) {
   }
 
   if (auto *RepR = dyn_cast<VPReplicateRecipe>(R)) {
-    assert(RepR->isSingleScalar() && RepR->getOpcode() == Instruction::Load &&
+    assert(RepR->producesNarrowResult() &&
+           RepR->getOpcode() == Instruction::Load &&
            "must be a single scalar load");
     NarrowedOps.insert(RepR);
     return RepR;
