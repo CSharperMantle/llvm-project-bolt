@@ -3706,7 +3706,7 @@ static bool isLegalArithImmed(uint64_t C) {
   return IsLegal;
 }
 
-bool isLegalCmpImmed(APInt C) {
+bool isLegalCmpImmed(const APInt &C) {
   // Works for negative immediates too, as it can be written as an ADDS
   // instruction with a negated immediate.
   return isLegalArithImmed(C.abs().getZExtValue());
@@ -4142,7 +4142,7 @@ static SDValue emitConjunction(SelectionDAG &DAG, SDValue Val,
 /// Returns how profitable it is to fold a comparison's operand's shift and/or
 /// extension operations.
 static unsigned getCmpOperandFoldingProfit(SDValue Op) {
-  auto isSupportedExtend = [&](SDValue V) {
+  auto isSupportedExtend = [&](const SDValue &V) {
     if (V.getOpcode() == ISD::SIGN_EXTEND_INREG)
       return true;
 
@@ -4178,15 +4178,18 @@ static unsigned getCmpOperandFoldingProfit(SDValue Op) {
 // emitComparison() converts comparison with one or negative one to comparison
 // with 0. Note that this only works for signed comparisons because of how ANDS
 // works.
-static bool shouldBeAdjustedToZero(SDValue LHS, APInt C, ISD::CondCode &CC) {
-  // Only works for ANDS and AND.
-  if (LHS.getOpcode() != ISD::AND && LHS.getOpcode() != AArch64ISD::ANDS)
-    return false;
+static bool shouldBeAdjustedToZero(SDValue LHS, const APInt &C,
+                                   ISD::CondCode &CC) {
 
-  if (C.isOne() && (CC == ISD::SETLT || CC == ISD::SETGE)) {
+  const bool IsAndLHS =
+      LHS.getOpcode() == ISD::AND || LHS.getOpcode() == AArch64ISD::ANDS;
+  if (C.isOne() && (CC == ISD::SETLT || CC == ISD::SETGE) && IsAndLHS) {
     CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
     return true;
   }
+
+  if (!LHS.hasOneUse() && !IsAndLHS)
+    return false;
 
   if (C.isAllOnes() && (CC == ISD::SETLE || CC == ISD::SETGT)) {
     CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
@@ -4250,13 +4253,12 @@ static SDValue getAArch64Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
         break;
       case ISD::SETULE:
       case ISD::SETUGT: {
-        if (!C.isAllOnes()) {
-          APInt CPlusOne = C + 1;
-          if (isLegalCmpImmed(CPlusOne) ||
-              (NumImmForC > numberOfInstrToLoadImm(CPlusOne))) {
-            CC = (CC == ISD::SETULE) ? ISD::SETULT : ISD::SETUGE;
-            RHS = DAG.getConstant(CPlusOne, DL, VT);
-          }
+        assert(!C.isAllOnes() && "C should not be -1 here!");
+        APInt CPlusOne = C + 1;
+        if (isLegalCmpImmed(CPlusOne) ||
+            (NumImmForC > numberOfInstrToLoadImm(CPlusOne))) {
+          CC = (CC == ISD::SETULE) ? ISD::SETULT : ISD::SETUGE;
+          RHS = DAG.getConstant(CPlusOne, DL, VT);
         }
         break;
       }
