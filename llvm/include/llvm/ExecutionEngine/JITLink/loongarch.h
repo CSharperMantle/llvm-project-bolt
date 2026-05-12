@@ -464,6 +464,53 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///   NONE
   ///
   RequestGOT64AndTransformToPage64Hi12,
+
+  /// Absolute address bits [31:12].
+  ///
+  /// Represents the upper 20 bits of a 32-bit absolute address.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend) >> 12 : uint20
+  ///
+  /// Notes:
+  ///   For LU12I_W fixups.
+  ///
+  AbsHi20,
+
+  /// Absolute address bits [11:0].
+  ///
+  /// Represents the lower 12 bits of an absolute address.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend) & 0xfff : uint12
+  ///
+  AbsLo12,
+
+  /// Absolute address bits [51:32].
+  ///
+  /// Represents bits 51:32 of a 64-bit absolute address as part of
+  /// the four-instruction sequence.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend) >> 32 : uint20
+  ///
+  /// Notes:
+  ///   For LU32I_D fixups.
+  ///
+  Abs64Lo20,
+
+  /// Absolute address bits [63:52].
+  ///
+  /// Represents bits 63:52 of a 64-bit absolute address as part of
+  /// the four-instruction sequence.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend) >> 52 : uint12
+  ///
+  /// Notes:
+  ///   For LU52I_D fixups.
+  ///
+  Abs64Hi12,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
