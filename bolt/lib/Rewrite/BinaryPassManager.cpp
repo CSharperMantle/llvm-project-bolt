@@ -22,6 +22,7 @@
 #include "bolt/Passes/Inliner.h"
 #include "bolt/Passes/Instrumentation.h"
 #include "bolt/Passes/JTFootprintReduction.h"
+#include "bolt/Passes/LoongArchRelaxationPass.h"
 #include "bolt/Passes/LongJmp.h"
 #include "bolt/Passes/LoopInversionPass.h"
 #include "bolt/Passes/MCF.h"
@@ -226,6 +227,11 @@ static cl::opt<bool> PrintFixLoongArchCalls(
     cl::desc("print functions after fix LoongArch calls pass"), cl::Hidden,
     cl::cat(BoltOptCategory));
 
+static cl::opt<bool> PrintLoongArchRelaxation(
+    "print-loongarch-relaxation",
+    cl::desc("print functions after LoongArch relaxation pass"), cl::Hidden,
+    cl::cat(BoltOptCategory));
+
 static cl::opt<bool> PrintVeneerElimination(
     "print-veneer-elimination",
     cl::desc("print functions after veneer elimination pass"), cl::Hidden,
@@ -403,6 +409,8 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
   if (BC.isLoongArch()) {
     Manager.registerPass(
         std::make_unique<FixLoongArchCallsPass>(PrintFixLoongArchCalls));
+    Manager.registerPass(
+        std::make_unique<LoongArchRelaxationPass>(PrintLoongArchRelaxation));
   }
 
   // Here we manage dependencies/order manually, since passes are run in the
