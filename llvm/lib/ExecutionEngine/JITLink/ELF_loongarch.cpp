@@ -388,6 +388,34 @@ private:
       *(little32_t *)FixupPtr = RawInstr | Imm63_52;
       break;
     }
+    case AbsHi20: {
+      uint64_t Value = TargetAddress + Addend;
+      uint32_t Hi20 = extractBits(Value, 31, 12) << 5;
+      uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Hi20;
+      break;
+    }
+    case AbsLo12: {
+      uint64_t Value = TargetAddress + Addend;
+      uint32_t Lo12 = (Value & 0xfff) << 10;
+      uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xffc003ff) | Lo12;
+      break;
+    }
+    case Abs64Lo20: {
+      uint64_t Value = TargetAddress + Addend;
+      uint32_t Bits51_32 = extractBits(Value, 51, 32) << 5;
+      uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Bits51_32;
+      break;
+    }
+    case Abs64Hi12: {
+      uint64_t Value = TargetAddress + Addend;
+      uint32_t Bits63_52 = extractBits(Value, 63, 52) << 10;
+      uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xffc003ff) | Bits63_52;
+      break;
+    }
     default:
       return make_error<JITLinkError>(
           "In graph " + G.getName() + ", section " + B.getSection().getName() +
@@ -704,6 +732,14 @@ private:
       return RequestGOT64AndTransformToPage64Lo20;
     case ELF::R_LARCH_GOT64_PC_HI12:
       return RequestGOT64AndTransformToPage64Hi12;
+    case ELF::R_LARCH_ABS_HI20:
+      return AbsHi20;
+    case ELF::R_LARCH_ABS_LO12:
+      return AbsLo12;
+    case ELF::R_LARCH_ABS64_LO20:
+      return Abs64Lo20;
+    case ELF::R_LARCH_ABS64_HI12:
+      return Abs64Hi12;
     }
 
     return make_error<JITLinkError>(
