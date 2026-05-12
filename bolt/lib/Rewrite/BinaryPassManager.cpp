@@ -22,6 +22,7 @@
 #include "bolt/Passes/Inliner.h"
 #include "bolt/Passes/Instrumentation.h"
 #include "bolt/Passes/JTFootprintReduction.h"
+#include "bolt/Passes/LoongArchRelaxationPass.h"
 #include "bolt/Passes/LongJmp.h"
 #include "bolt/Passes/LoopInversionPass.h"
 #include "bolt/Passes/MCF.h"
@@ -224,6 +225,11 @@ static cl::opt<bool>
 static cl::opt<bool> PrintFixLoongArchCalls(
     "print-fix-loongarch-calls",
     cl::desc("print functions after fix LoongArch calls pass"), cl::Hidden,
+    cl::cat(BoltOptCategory));
+
+static cl::opt<bool> PrintLoongArchRelaxation(
+    "print-loongarch-relaxation",
+    cl::desc("print functions after LoongArch relaxation pass"), cl::Hidden,
     cl::cat(BoltOptCategory));
 
 static cl::opt<bool> PrintVeneerElimination(
@@ -550,6 +556,11 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
 
     Manager.registerPass(
         std::make_unique<PointerAuthCFIFixup>(PrintPAuthCFIFixup));
+  }
+
+  if (BC.isLoongArch()) {
+    Manager.registerPass(
+        std::make_unique<LoongArchRelaxationPass>(PrintLoongArchRelaxation));
   }
 
   // This pass should always run last.*

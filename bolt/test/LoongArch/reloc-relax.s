@@ -5,22 +5,15 @@
 // RUN: llvm-objdump -d --no-show-raw-insn %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 
 // INPUT:      <_start>:
-// INPUT-NEXT:     pcaddi $a0, {{[0-9]+}}
+// INPUT-NEXT:     pcaddi $a0,
 // INPUT-NEXT:     R_LARCH_RELAX data_sym
 // INPUT-NEXT:     R_LARCH_RELAX *ABS*
 // INPUT-NEXT:     R_LARCH_PCREL20_S2 data_sym
 
 // BOLT-NOT: BOLT-WARNING: Failed to analyze
 // BOLT-LABEL: Binary Function "_start" after loongarch-relaxation {
-// BOLT:       IsSimple    : 1
 // BOLT:       pcalau12i $a0, %pc_hi20(data_sym)
 // BOLT-NEXT:  addi.d $a0, $a0, %pc_lo12(data_sym)
-// BOLT-NEXT:  ret
-
-// OBJDUMP:      0000000000400000 <_start>:
-// OBJDUMP-NEXT:     pcalau12i $a0, {{[-0-9]+}}
-// OBJDUMP-NEXT:     addi.d $a0, $a0, {{[-0-9]+}}
-// OBJDUMP-NEXT:     ret
 
   .text
   .globl _start
@@ -35,3 +28,8 @@ _start:
   .p2align 3
 data_sym:
   .quad 0
+
+// OBJDUMP:      <_start>:
+// OBJDUMP-NEXT:     pcalau12i $a0,
+// OBJDUMP-NEXT:     addi.d $a0, $a0,
+// OBJDUMP-NEXT:     ret

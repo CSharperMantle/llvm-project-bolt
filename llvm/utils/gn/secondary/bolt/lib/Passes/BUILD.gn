@@ -34,6 +34,7 @@ static_library("Passes") {
     "JTFootprintReduction.cpp",
     "LivenessAnalysis.cpp",
     "LongJmp.cpp",
+    "LoongArchRelaxationPass.cpp",
     "LoopInversionPass.cpp",
     "MCF.cpp",
     "PAuthGadgetScanner.cpp",

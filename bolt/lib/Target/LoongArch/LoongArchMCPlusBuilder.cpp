@@ -184,6 +184,43 @@ public:
     return true;
   }
 
+  const MCExpr *
+  tryGetLoongArchPCADDIPCRel20SubExpr(const MCInst &Inst) const override {
+    if (Inst.getOpcode() != LoongArch::PCADDI || Inst.getNumOperands() < 2 ||
+        !Inst.getOperand(1).isExpr())
+      return nullptr;
+    return tryGetPCRel20SubExpr(Inst.getOperand(1).getExpr());
+  }
+
+  InstructionListType
+  undoLoongArchPCRel20Relaxation(const MCInst &Inst,
+                                 MCContext *Ctx) const override {
+    const MCExpr *SubExpr =
+        tryGetPCRel20SubExpr(Inst.getOperand(1).getExpr(), Ctx);
+
+    assert(SubExpr && "PCADDI with R_LARCH_PCREL20_S2 expected");
+    assert(Inst.getOperand(0).isReg() && "unexpected PCADDI operand");
+
+    MCPhysReg Reg = Inst.getOperand(0).getReg();
+    assert(SubExpr && "missing PCADDI target expression");
+
+    InstructionListType Insts(2);
+    Insts[0].setOpcode(LoongArch::PCALAU12I);
+    Insts[0].clear();
+    Insts[0].addOperand(MCOperand::createReg(Reg));
+    Insts[0].addOperand(MCOperand::createExpr(
+        LoongArchMCExpr::create(SubExpr, ELF::R_LARCH_PCALA_HI20, *Ctx)));
+
+    Insts[1].setOpcode(LoongArch::ADDI_D);
+    Insts[1].clear();
+    Insts[1].addOperand(MCOperand::createReg(Reg));
+    Insts[1].addOperand(MCOperand::createReg(Reg));
+    Insts[1].addOperand(MCOperand::createExpr(
+        LoongArchMCExpr::create(SubExpr, ELF::R_LARCH_PCALA_LO12, *Ctx)));
+
+    return Insts;
+  }
+
   void createDirectCall(MCInst &Inst, const MCSymbol *Target, MCContext *Ctx,
                         bool IsTailCall) override {
     Inst.clear();
@@ -269,6 +306,9 @@ public:
     case LoongArch::BL:
       OpNum = 0;
       return true;
+    case LoongArch::PCADDI:
+      OpNum = 1;
+      return true;
     case LoongArch::BEQZ:
     case LoongArch::BNEZ:
     case LoongArch::BCEQZ:
@@ -297,7 +337,8 @@ public:
       return getTargetSymbol(BinExpr->getLHS());
 
     auto *SymExpr = dyn_cast<MCSymbolRefExpr>(Expr);
-    if (SymExpr && SymExpr->getKind() == LoongArchMCExpr::VK_None)
+    if (SymExpr && (SymExpr->getKind() == LoongArchMCExpr::VK_None ||
+                    SymExpr->getKind() == ELF::R_LARCH_PCREL20_S2))
       return &SymExpr->getSymbol();
 
     return nullptr;
@@ -498,6 +539,30 @@ public:
 
     return MCPlusBuilder::equals(*LoongArchExprA.getSubExpr(),
                                  *LoongArchExprB.getSubExpr(), Comp);
+  }
+
+protected:
+  const MCExpr *tryGetPCRel20SubExpr(const MCExpr *Expr,
+                                  MCContext *Ctx = nullptr) const {
+    if (const auto *E = dyn_cast<LoongArchMCExpr>(Expr)) {
+      if (E->getSpecifier() == ELF::R_LARCH_PCREL20_S2)
+        return E->getSubExpr();
+      return nullptr;
+    }
+    if (const auto *E = dyn_cast<MCSymbolRefExpr>(Expr)) {
+      if (E->getSpecifier() == ELF::R_LARCH_PCREL20_S2) {
+        assert(Ctx && "MCContext required to strip relocation specifier");
+        return MCSymbolRefExpr::create(&E->getSymbol(), *Ctx);
+      }
+      return nullptr;
+    }
+    if (const auto *E = dyn_cast<MCBinaryExpr>(Expr)) {
+      const MCExpr *LHS = tryGetPCRel20SubExpr(E->getLHS(), Ctx);
+      if (LHS && Ctx)
+        return MCBinaryExpr::create(E->getOpcode(), LHS, E->getRHS(), *Ctx);
+      return nullptr;
+    }
+    return nullptr;
   }
 };
 

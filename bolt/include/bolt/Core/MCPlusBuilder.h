@@ -1948,6 +1948,17 @@ public:
     return false;
   }
 
+  virtual const MCExpr *
+  tryGetLoongArchPCADDIPCRel20SubExpr(const MCInst &Inst) const {
+    return nullptr;
+  }
+
+  /// Undo the linker's PCALAU12I+ADDI to PCADDI (R_LARCH_PCREL20_S2) relaxation.
+  virtual InstructionListType
+  undoLoongArchPCRel20Relaxation(const MCInst &Inst, MCContext *Ctx) const {
+    llvm_unreachable("not implemented");
+  }
+
   /// Creates a new tail call instruction in Inst and sets its operand to
   /// Target.
   virtual void createTailCall(MCInst &Inst, const MCSymbol *Target,
