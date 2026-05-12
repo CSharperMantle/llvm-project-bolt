@@ -533,6 +533,32 @@ def select_constant_cmp: GICombineRule<
   (apply [{ Helper.replaceSingleDefInstWithOperand(*${root}, ${matchinfo}); }])
 >;
 
+def select_zero_true: GICombineRule<
+  (defs root:$root),
+  (match (G_SELECT $dst, $c, 0, $x):$root,
+    [{ return MRI.getType(${c}.getReg()) == MRI.getType(${dst}.getReg()) &&
+              VT->computeNumSignBits(${c}.getReg()) == MRI.getType(${dst}.getReg()).getScalarSizeInBits(); }]),
+  (apply (G_XOR $xor, $c, -1),
+         (G_AND $dst, $xor, $x))
+>;
+
+def select_zero_false: GICombineRule<
+  (defs root:$root),
+  (match (G_SELECT $dst, $c, $x, 0):$root,
+    [{ return MRI.getType(${c}.getReg()) == MRI.getType(${dst}.getReg()) &&
+              VT->computeNumSignBits(${c}.getReg()) == MRI.getType(${dst}.getReg()).getScalarSizeInBits(); }]),
+  (apply (G_AND $dst, $c, $x))
+>;
+
+def select_not: GICombineRule<
+  (defs root:$root),
+  (match (G_XOR $c, $src, -1),
+         (G_SELECT $dst, $c, $x, $y):$root),
+  (apply (G_SELECT $dst, $src, $y, $x))
+>;
+
+def select_zero : GICombineGroup<[select_zero_true, select_zero_false, select_not]>;
+
 // Fold (C op x) -> (x op C)
 // TODO: handle more isCommutable opcodes
 // TODO: handle compares (currently not marked as isCommutable)
@@ -2201,6 +2227,16 @@ def sext_inreg_of_sext_inreg : GICombineRule<
           [{ return Helper.matchRedundantSextInReg(*${root}, *${other}, ${matchinfo}); }]),
    (apply [{ Helper.applyBuildFn(*${root}, ${matchinfo}); }])>;
 
+// sext_inreg(and(x, 1), 1) -> sext_inreg(1). Note that this is a demand-bits
+// combine that can probably be removed once demand bits combines are handled
+// in gisel.
+def sext_inreg_of_and: GICombineRule <
+  (defs root:$root),
+  (match (G_AND $tmp, $src, 1),
+         (G_SEXT_INREG $dst, $tmp, 1):$root),
+  (apply (G_SEXT_INREG $dst, $src, 1))
+>;
+
 // Push cast through build vector.
 class buildvector_of_opcode<Instruction castOpcode> : GICombineRule <
   (defs root:$root, build_fn_matchinfo:$matchinfo),
@@ -2266,6 +2302,7 @@ def cast_of_cast_combines: GICombineGroup<[
   anyext_of_zext,
   anyext_of_sext,
   sext_inreg_of_sext_inreg,
+  sext_inreg_of_and,
 ]>;
 
 def cast_combines: GICombineGroup<[
@@ -2324,7 +2361,7 @@ def undef_combines : GICombineGroup<[undef_to_fp_zero, undef_to_int_zero,
                                      erase_undef_store,
                                      insert_extract_vec_elt_out_of_bounds]>;
 
-def identity_combines : GICombineGroup<[select_same_val, right_identity_zero,
+def identity_combines : GICombineGroup<[select_same_val, select_zero, right_identity_zero,
                                         binop_same_val, same_val_zero, binop_left_to_zero,
                                         binop_right_to_zero, p2i_to_i2p,
                                         i2p_to_p2i, anyext_trunc_fold,
