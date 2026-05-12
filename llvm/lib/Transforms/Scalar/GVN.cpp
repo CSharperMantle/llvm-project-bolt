@@ -93,6 +93,8 @@ STATISTIC(NumGVNPRE, "Number of instructions PRE'd");
 STATISTIC(NumGVNBlocks, "Number of blocks merged");
 STATISTIC(NumGVNSimpl, "Number of instructions simplified");
 STATISTIC(NumGVNEqProp, "Number of equalities propagated");
+STATISTIC(NumGVNScalarMulToExtract,
+          "Number of scalar mul/fmuls folded to extract of vector mul/fmul");
 STATISTIC(NumPRELoad, "Number of loads PRE'd");
 STATISTIC(NumPRELoopLoad, "Number of loop loads PRE'd");
 STATISTIC(NumPRELoadMoved2CEPred,
@@ -740,6 +742,24 @@ uint32_t GVNPass::ValueTable::lookup(Value *V, bool Verify) const {
     return VI->second;
   }
   return (VI != ValueNumbering.end()) ? VI->second : 0;
+}
+
+/// Returns the value number of an existing binary operator expression, or 0 if
+/// no such expression has been numbered yet.
+uint32_t GVNPass::ValueTable::lookupBinOp(unsigned Opcode, Type *Ty, Value *LHS,
+                                          Value *RHS) {
+  assert(Instruction::isBinaryOp(Opcode) && "Not a binary operator!");
+  Expression Exp;
+  Exp.Ty = Ty;
+  Exp.Opcode = Opcode;
+  Exp.VarArgs.push_back(lookupOrAdd(LHS));
+  Exp.VarArgs.push_back(lookupOrAdd(RHS));
+  if (Instruction::isCommutative(Opcode)) {
+    if (Exp.VarArgs[0] > Exp.VarArgs[1])
+      std::swap(Exp.VarArgs[0], Exp.VarArgs[1]);
+    Exp.Commutative = true;
+  }
+  return ExpressionNumbering.lookup(Exp);
 }
 
 /// Returns the value number of the given comparison,
@@ -2654,6 +2674,111 @@ bool GVNPass::propagateEquality(
   return Changed;
 }
 
+static bool isFPMathMetadataCompatible(const Instruction *VecI,
+                                       const Instruction *ScalarI) {
+  float VecAcc = cast<FPMathOperator>(VecI)->getFPAccuracy();
+  if (VecAcc == 0.0)
+    return true;
+
+  float ScalarAcc = cast<FPMathOperator>(ScalarI)->getFPAccuracy();
+  return ScalarAcc != 0.0 && VecAcc <= ScalarAcc;
+}
+
+static bool isFastMathFlagsCompatible(const Instruction *VecI,
+                                      const Instruction *ScalarI) {
+  FastMathFlags VecFMF = VecI->getFastMathFlags();
+  FastMathFlags ScalarFMF = ScalarI->getFastMathFlags();
+
+  // nnan/ninf are poison-generating constraints for fmul.
+  if (VecFMF.noNaNs() != ScalarFMF.noNaNs())
+    return false;
+  if (VecFMF.noInfs() != ScalarFMF.noInfs())
+    return false;
+
+  // nsz changes FP value semantics, so a vector op with nsz cannot replace a
+  // scalar op that requires the exact sign of zero.
+  if (VecFMF.noSignedZeros() && !ScalarFMF.noSignedZeros())
+    return false;
+
+  // These flags do not create poison, but they do authorize later rewrites of
+  // the producing instruction. Reusing a vector fmul with any extra rewrite
+  // permissions could change the scalar result after subsequent transforms.
+  if (VecFMF.allowReassoc() && !ScalarFMF.allowReassoc())
+    return false;
+  if (VecFMF.allowReciprocal() && !ScalarFMF.allowReciprocal())
+    return false;
+  if (VecFMF.allowContract() && !ScalarFMF.allowContract())
+    return false;
+  if (VecFMF.approxFunc() && !ScalarFMF.approxFunc())
+    return false;
+
+  return isFPMathMetadataCompatible(VecI, ScalarI);
+}
+
+/// If I is a scalar mul/fmul whose operands are both extracted from the same
+/// index of two vectors, and a matching vector mul/fmul dominates I, replace
+/// I with an extractelement from that vector result.
+bool GVNPass::foldScalarMulToVectorExtract(Instruction *I) {
+  unsigned Opc = I->getOpcode();
+  if (Opc != Instruction::Mul && Opc != Instruction::FMul)
+    return false;
+
+  auto *Ext0 = dyn_cast<ExtractElementInst>(I->getOperand(0));
+  auto *Ext1 = dyn_cast<ExtractElementInst>(I->getOperand(1));
+  if (!Ext0 || !Ext1)
+    return false;
+
+  Value *Idx = Ext0->getIndexOperand();
+  if (Idx != Ext1->getIndexOperand())
+    return false;
+
+  Value *Vec0 = Ext0->getVectorOperand();
+  Value *Vec1 = Ext1->getVectorOperand();
+  if (Vec0->getType() != Vec1->getType())
+    return false;
+
+  // Reuse GVN's existing expression numbering to find an available vector
+  // multiply/fmultiply instead of matching specific users of Vec0/Vec1.
+  uint32_t VecNum = VN.lookupBinOp(Opc, Vec0->getType(), Vec0, Vec1);
+  if (!VecNum)
+    return false;
+
+  for (const auto &Entry : LeaderTable.getLeaders(VecNum)) {
+    auto *VecBO = dyn_cast<BinaryOperator>(Entry.Val);
+    if (!VecBO || VecBO->getOpcode() != Opc ||
+        VecBO->getType() != Vec0->getType())
+      continue;
+
+    // The vector op must dominate the scalar op.
+    if (!DT->dominates(VecBO, I))
+      continue;
+
+    // The replacement is only equivalent when relevant flags are compatible.
+    if (auto *OBO = dyn_cast<OverflowingBinaryOperator>(VecBO)) {
+      auto *ScalarOBO = cast<OverflowingBinaryOperator>(I);
+      if (OBO->hasNoSignedWrap() != ScalarOBO->hasNoSignedWrap())
+        continue;
+      if (OBO->hasNoUnsignedWrap() != ScalarOBO->hasNoUnsignedWrap())
+        continue;
+    }
+    if (isa<FPMathOperator>(VecBO) && !isFastMathFlagsCompatible(VecBO, I))
+      continue;
+
+    // Replace the scalar mul with extractelement from the vector result.
+    auto *Extract =
+        ExtractElementInst::Create(VecBO, Idx, "", I->getIterator());
+    Extract->setDebugLoc(I->getDebugLoc());
+
+    ICF->removeUsersOf(I);
+    patchAndReplaceAllUsesWith(I, Extract);
+    salvageAndRemoveInstruction(I);
+    ++NumGVNScalarMulToExtract;
+    return true;
+  }
+
+  return false;
+}
+
 /// When calculating availability, handle an instruction
 /// by inserting it into the appropriate sets.
 bool GVNPass::processInstruction(Instruction *I) {
@@ -2685,6 +2810,11 @@ bool GVNPass::processInstruction(Instruction *I) {
 
   if (auto *Assume = dyn_cast<AssumeInst>(I))
     return processAssumeIntrinsic(Assume);
+
+  // Try to replace a scalar mul/fmul with extractelement of an existing
+  // vector mul/fmul before regular value numbering.
+  if (foldScalarMulToVectorExtract(I))
+    return true;
 
   if (LoadInst *Load = dyn_cast<LoadInst>(I)) {
     if (processLoad(Load))
