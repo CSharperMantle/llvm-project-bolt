@@ -732,6 +732,14 @@ private:
       return RequestGOT64AndTransformToPage64Lo20;
     case ELF::R_LARCH_GOT64_PC_HI12:
       return RequestGOT64AndTransformToPage64Hi12;
+    case ELF::R_LARCH_GOT_HI20:
+      return RequestGOTAndTransformToAbsHi20;
+    case ELF::R_LARCH_GOT_LO12:
+      return RequestGOTAndTransformToAbsLo12;
+    case ELF::R_LARCH_GOT64_LO20:
+      return RequestGOT64AndTransformToAbs64Lo20;
+    case ELF::R_LARCH_GOT64_HI12:
+      return RequestGOT64AndTransformToAbs64Hi12;
     case ELF::R_LARCH_ABS_HI20:
       return AbsHi20;
     case ELF::R_LARCH_ABS_LO12:

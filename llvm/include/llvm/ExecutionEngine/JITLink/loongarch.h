@@ -511,6 +511,78 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///   For LU52I_D fixups.
   ///
   Abs64Hi12,
+
+  /// A GOT entry getter/constructor, transformed to AbsHi20 pointing at
+  /// the GOT entry for the original target.
+  ///
+  /// Indicates that this edge should be transformed into an AbsHi20
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  /// Errors:
+  ///   - *ASSERTION* Failure to handle edges of this kind prior to the fixup
+  ///     phase will result in an assert/unreachable during the fixup phase.
+  ///
+  RequestGOTAndTransformToAbsHi20,
+
+  /// A GOT entry getter/constructor, transformed to AbsLo12 pointing at
+  /// the GOT entry for the original target.
+  ///
+  /// Indicates that this edge should be transformed into an AbsLo12
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  /// Errors:
+  ///   - *ASSERTION* Failure to handle edges of this kind prior to the fixup
+  ///     phase will result in an assert/unreachable during the fixup phase.
+  ///
+  RequestGOTAndTransformToAbsLo12,
+
+  /// A GOT entry getter/constructor, transformed to Abs64Lo20 pointing at
+  /// the GOT entry for the original target. Only used for loongarch64.
+  ///
+  /// Indicates that this edge should be transformed into an Abs64Lo20
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToAbs64Lo20,
+
+  /// A GOT entry getter/constructor, transformed to Abs64Hi12 pointing at
+  /// the GOT entry for the original target. Only used for loongarch64.
+  ///
+  /// Indicates that this edge should be transformed into an Abs64Hi12
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToAbs64Hi12,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
@@ -604,6 +676,18 @@ public:
       break;
     case RequestGOT64AndTransformToPage64Hi12:
       KindToSet = Page64Hi12;
+      break;
+    case RequestGOTAndTransformToAbsHi20:
+      KindToSet = AbsHi20;
+      break;
+    case RequestGOTAndTransformToAbsLo12:
+      KindToSet = AbsLo12;
+      break;
+    case RequestGOT64AndTransformToAbs64Lo20:
+      KindToSet = Abs64Lo20;
+      break;
+    case RequestGOT64AndTransformToAbs64Hi12:
+      KindToSet = Abs64Hi12;
       break;
     default:
       return false;

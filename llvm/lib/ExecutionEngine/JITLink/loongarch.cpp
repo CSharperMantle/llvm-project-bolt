@@ -78,6 +78,10 @@ const char *getEdgeKindName(Edge::Kind K) {
     KIND_NAME_CASE(AbsLo12)
     KIND_NAME_CASE(Abs64Lo20)
     KIND_NAME_CASE(Abs64Hi12)
+    KIND_NAME_CASE(RequestGOTAndTransformToAbsHi20)
+    KIND_NAME_CASE(RequestGOTAndTransformToAbsLo12)
+    KIND_NAME_CASE(RequestGOT64AndTransformToAbs64Lo20)
+    KIND_NAME_CASE(RequestGOT64AndTransformToAbs64Hi12)
   default:
     return getGenericEdgeKindName(K);
   }
