@@ -936,6 +936,14 @@ void RewriteInstance::discoverFileObjects() {
       return true;
     if (BType == SymbolRef::ST_Debug && AType != SymbolRef::ST_Debug)
       return true;
+    
+    // Global names have higher precedence.
+    const bool AGlobal =
+        cantFail(A.Symbol.getFlags()) & SymbolRef::SF_Global;
+    const bool BGlobal =
+        cantFail(B.Symbol.getFlags()) & SymbolRef::SF_Global;
+    if (AGlobal != BGlobal)
+      return AGlobal;
 
     return false;
   };
