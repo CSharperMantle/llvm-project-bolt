@@ -183,6 +183,21 @@ private:
       *(ulittle32_t *)FixupPtr = RawInstr | Imm11_0;
       break;
     }
+    case PCRel20S2: {
+      int64_t Value = TargetAddress - FixupAddress + Addend;
+
+      if (!isInt<22>(Value))
+        return makeTargetOutOfRangeError(G, B, E);
+
+      if (!isShiftedInt<20, 2>(Value))
+        return makeAlignmentError(orc::ExecutorAddr(FixupAddress), Value, 4, E);
+
+      uint32_t RawInstr = *(little32_t *)FixupPtr;
+      uint32_t Imm = static_cast<uint32_t>(Value >> 2);
+      uint32_t Imm19_0 = extractBits(Imm, /*Hi=*/19, /*Lo=*/0) << 5;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Imm19_0;
+      break;
+    }
     case PCAddHi20: {
       uint64_t Target = TargetAddress + Addend;
       int64_t Delta = Target - FixupAddress + 0x800;
@@ -190,9 +205,9 @@ private:
       if (!isInt<32>(Delta))
         return makeTargetOutOfRangeError(G, B, E);
 
-      uint32_t RawInstr = *(little32_t *)FixupPtr;
+      uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
       uint32_t Imm31_12 = extractBits(Delta, /*Hi=*/31, /*Lo=*/12) << 5;
-      *(little32_t *)FixupPtr = RawInstr | Imm31_12;
+      *(ulittle32_t *)FixupPtr = RawInstr | Imm31_12;
       break;
     }
     case PCAddLo12: {
@@ -634,6 +649,8 @@ private:
       return Branch21PCRel;
     case ELF::R_LARCH_B26:
       return Branch26PCRel;
+    case ELF::R_LARCH_PCREL20_S2:
+      return PCRel20S2;
     case ELF::R_LARCH_PCALA_HI20:
       return Page20;
     case ELF::R_LARCH_PCALA_LO12:
