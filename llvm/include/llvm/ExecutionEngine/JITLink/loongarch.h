@@ -170,6 +170,24 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///
   PageOffset12,
 
+  /// A 20-bit PC-relative add.
+  ///
+  /// Represents the signed 4-byte-aligned delta from the fixup to the target.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target - Fixup + Addend) >> 2 : int20
+  ///
+  /// Notes:
+  ///   For PCADDI fixups.
+  ///
+  /// Errors:
+  ///   - The result of the unshifted part of the fixup expression must be
+  ///     4-byte aligned otherwise an alignment error will be returned.
+  ///   - The result of the fixup expression must fit into an int20 otherwise an
+  ///     out-of-range error will be returned.
+  ///
+  PCRel20S2,
+
   /// The upper 20 bits of the offset from the fixup to the target.
   ///
   /// Fixup expression:
