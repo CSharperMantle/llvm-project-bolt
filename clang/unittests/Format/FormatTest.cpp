@@ -15365,11 +15365,24 @@ TEST_F(FormatTest, MergeShortFunctionBody) {
   auto Style = getLLVMStyle();
   Style.AllowShortFunctionsOnASingleLine = FormatStyle::ShortFunctionStyle();
   Style.AllowShortBlocksOnASingleLine = FormatStyle::SBS_Always;
+  Style.AllowShortIfStatementsOnASingleLine = FormatStyle::SIS_WithoutElse;
   Style.BreakBeforeBraces = FormatStyle::BS_Custom;
   Style.BraceWrapping.AfterFunction = true;
 
   verifyFormat("int foo()\n"
-               "{ return 1; }",
+               "{\n"
+               "  return 1;\n"
+               "}\n",
+               Style);
+  verifyFormat("int foo()\n"
+               "{\n"
+               "  if (true) { return 42; };\n"
+               "}\n",
+               Style);
+  verifyFormat("int foo()\n"
+               "{\n"
+               "  static constexpr auto lambda = []() -> int { return 42; };\n"
+               "}\n",
                Style);
 }
 
@@ -15718,11 +15731,15 @@ TEST_F(FormatTest, AllowShortRecordOnASingleLine) {
 
   Style.AllowShortRecordOnASingleLine = FormatStyle::SRS_Never;
   verifyFormat("class foo\n"
-               "{ int i; };",
+               "{\n"
+               "  int i;\n"
+               "};",
                Style);
   Style.AllowShortRecordOnASingleLine = FormatStyle::SRS_Empty;
   verifyFormat("class foo\n"
-               "{ int i; };",
+               "{\n"
+               "  int i;\n"
+               "};",
                Style);
   Style.AllowShortRecordOnASingleLine = FormatStyle::SRS_Always;
   verifyFormat("class foo\n"
