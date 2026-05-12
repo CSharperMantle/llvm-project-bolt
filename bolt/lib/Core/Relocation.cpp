@@ -155,6 +155,10 @@ static bool isSupportedLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB64:
     return true;
   }
 }
@@ -289,8 +293,12 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
     return 4;
   case ELF::R_LARCH_64:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB64:
     return 8;
   }
 }
@@ -613,6 +621,10 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
   case ELF::R_LARCH_64:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB64:
     return Contents;
   case ELF::R_LARCH_32_PCREL:
     return static_cast<int64_t>(PC) + SignExtend64<32>(Contents & 0xffffffff);
@@ -902,6 +914,10 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_HI20:
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB64:
     return false;
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_B16:
@@ -1234,14 +1250,19 @@ const MCExpr *Relocation::createExpr(MCStreamer *Streamer,
 }
 
 MCBinaryExpr::Opcode Relocation::getComposeOpcodeFor(uint32_t Type) {
-  assert(Arch == Triple::riscv64 && "only implemented for RISC-V");
+  assert((Arch == Triple::riscv64 || Arch == Triple::loongarch64) &&
+         "only implemented for RISC-V and LoongArch");
 
   switch (Type) {
   default:
     llvm_unreachable("not implemented");
   case ELF::R_RISCV_ADD32:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_ADD64:
     return MCBinaryExpr::Add;
   case ELF::R_RISCV_SUB32:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_SUB64:
     return MCBinaryExpr::Sub;
   }
 }
