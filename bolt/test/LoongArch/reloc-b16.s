@@ -4,7 +4,7 @@
 // RUN: llvm-objdump -d --no-show-raw-insn %t.null | FileCheck --check-prefix=OBJDUMP %s
 // RUN: llvm-readelf -rW %t.null | FileCheck --check-prefix=RELOC %s
 
-// CHECK-NOT: BOLT-WARNING: Failed to analyze
+// BOLT-NOT: BOLT-WARNING: Failed to analyze
 // CHECK-LABEL: Binary Function "_start" after building cfg {
 // CHECK:       IsSimple    : 1
 // CHECK:       IsMultiEntry: 0
