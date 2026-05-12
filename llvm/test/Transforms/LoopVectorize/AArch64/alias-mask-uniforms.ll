@@ -13,9 +13,8 @@ define void @vf_dependent_uniform(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n)
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1
@@ -121,9 +120,8 @@ define void @uniform_load(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n) {
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT1:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT1:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT1]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1
@@ -189,9 +187,8 @@ define void @uniform_store(ptr noalias %p, ptr %p.out, ptr %p.in, i64 %n) {
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[ALIAS_MASK:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[P_IN2]], i64 [[P_OUT1]], i64 8)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[ALIAS_MASK]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT1:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT1:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT1]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1

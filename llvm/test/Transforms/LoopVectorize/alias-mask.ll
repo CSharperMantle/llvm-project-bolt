@@ -16,9 +16,8 @@ define void @alias_mask(ptr noalias %a, ptr %b, ptr %c, i64 %n) {
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[TMP2:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[B2]], i64 [[C1]], i64 1)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT1:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT1:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT1]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1
@@ -89,9 +88,8 @@ define void @alias_mask_multiple(ptr %a, ptr %b, ptr %c, i64 %n) {
 ; CHECK-NEXT:    [[TMP2:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[A3]], i64 [[C1]], i64 1)
 ; CHECK-NEXT:    [[TMP5:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[B2]], i64 [[C1]], i64 1)
 ; CHECK-NEXT:    [[TMP6:%.*]] = and <4 x i1> [[TMP2]], [[TMP5]]
-; CHECK-NEXT:    [[TMP7:%.*]] = zext <4 x i1> [[TMP6]] to <4 x i32>
-; CHECK-NEXT:    [[TMP8:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP7]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP8]] to i64
+; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[TMP6]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP3]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT1:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT1:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT1]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1
@@ -157,9 +155,8 @@ define void @alias_mask_non_default_address_space(ptr addrspace(1) noalias %a, p
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[TMP2:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[B2]], i64 [[C1]], i64 1)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT1:%.*]] = insertelement <4 x i64> poison, i64 [[NUM_ACTIVE_LANES]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT1:%.*]] = shufflevector <4 x i64> [[BROADCAST_SPLATINSERT1]], <4 x i64> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:    [[VF_IS_SCALAR:%.*]] = icmp ule i64 [[NUM_ACTIVE_LANES]], 1
@@ -227,9 +224,8 @@ define void @alias_mask_known_trip_count(ptr noalias %a, ptr %b, ptr %c) {
 ; CHECK-NEXT:    br label %[[VECTOR_CLAMPED_VF_CHECK:.*]]
 ; CHECK:       [[VECTOR_CLAMPED_VF_CHECK]]:
 ; CHECK-NEXT:    [[TMP2:%.*]] = call <4 x i1> @llvm.loop.dependence.war.mask.v4i1.i64(i64 [[B2]], i64 [[C1]], i64 1)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i32>
-; CHECK-NEXT:    [[TMP4:%.*]] = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> [[TMP3]])
-; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = zext i32 [[TMP4]] to i64
+; CHECK-NEXT:    [[TMP1:%.*]] = zext <4 x i1> [[TMP2]] to <4 x i64>
+; CHECK-NEXT:    [[NUM_ACTIVE_LANES:%.*]] = call i64 @llvm.vector.reduce.add.v4i64(<4 x i64> [[TMP1]])
 ; CHECK-NEXT:    [[TMP14:%.*]] = trunc i64 [[NUM_ACTIVE_LANES]] to i8
 ; CHECK-NEXT:    [[BROADCAST_SPLATINSERT:%.*]] = insertelement <4 x i8> poison, i8 [[TMP14]], i64 0
 ; CHECK-NEXT:    [[BROADCAST_SPLAT:%.*]] = shufflevector <4 x i8> [[BROADCAST_SPLATINSERT]], <4 x i8> poison, <4 x i32> zeroinitializer

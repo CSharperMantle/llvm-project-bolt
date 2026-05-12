@@ -699,7 +699,7 @@ VPBlockUtils::blocksInSingleSuccessorChainBetween(VPBasicBlock *FirstBB,
 }
 
 VPValue *vputils::findIncomingAliasMask(const VPlan &Plan) {
-  for (VPRecipeBase &R : *const_cast<VPlan &>(Plan).getVectorPreheader())
+  for (VPRecipeBase &R : *Plan.getVectorPreheader())
     if (match(&R, m_VPInstruction<VPInstruction::IncomingAliasMask>()))
       return cast<VPInstruction>(&R);
   return nullptr;

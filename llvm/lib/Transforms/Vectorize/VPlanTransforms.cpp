@@ -5056,10 +5056,19 @@ VPlanTransforms::materializeAliasMask(VPlan &Plan, VPBasicBlock *AliasCheckVPBB,
         vputils::getOrCreateVPValueForSCEVExpr(Plan, Check.SinkStart);
     Type *AddrType = TypeInfo.inferScalarType(Src);
 
-    VPWidenIntrinsicRecipe *WARMask = new VPWidenIntrinsicRecipe(
+    // TODO: Only freeze the required pointer (not both src and sink).
+    if (Check.NeedsFreeze) {
+      Src = Builder.createScalarFreeze(Src, AddrType, DebugLoc::getUnknown());
+      Sink = Builder.createScalarFreeze(Sink, AddrType, DebugLoc::getUnknown());
+    }
+
+    // TODO: Generate loop_dependence_raw_mask when there's a read-after-write
+    // dependency between the source and the sink. This is not necessary for
+    // correctness of the mask, but using the "raw" variant prevents loads
+    // depending on the completion of stores.
+    VPWidenIntrinsicRecipe *WARMask = Builder.insert(new VPWidenIntrinsicRecipe(
         Intrinsic::loop_dependence_war_mask,
-        {Src, Sink, Plan.getConstantInt(AddrType, Check.AccessSize)}, I1Ty);
-    Builder.insert(WARMask);
+        {Src, Sink, Plan.getConstantInt(AddrType, Check.AccessSize)}, I1Ty));
 
     if (AliasMask)
       AliasMask = Builder.createAnd(AliasMask, WARMask);

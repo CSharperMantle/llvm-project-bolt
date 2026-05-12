@@ -665,11 +665,10 @@ Value *VPInstruction::generate(VPTransformState &State) {
 
     Type *Ty = State.TypeAnalysis.inferScalarType(this);
     Value *ZExt = Builder.CreateCast(
-        Instruction::ZExt, Op,
-        VectorType::get(Builder.getInt32Ty(), VecTy->getElementCount()));
-    Value *Count =
+        Instruction::ZExt, Op, VectorType::get(Ty, VecTy->getElementCount()));
+    Value *NumActive =
         Builder.CreateUnaryIntrinsic(Intrinsic::vector_reduce_add, ZExt);
-    return Builder.CreateCast(Instruction::ZExt, Count, Ty, "num.active.lanes");
+    return NumActive;
   }
   case VPInstruction::FirstOrderRecurrenceSplice: {
     // Generate code to combine the previous and current values in vector v3.
@@ -1644,6 +1643,12 @@ void VPInstructionWithType::execute(VPTransformState &State) {
     return;
   }
   switch (getOpcode()) {
+  case Instruction::Freeze: {
+    Value *Op = State.get(getOperand(0), VPLane(0));
+    Value *Freeze = State.Builder.CreateFreeze(Op);
+    State.set(this, Freeze, VPLane(0));
+    break;
+  }
   case VPInstruction::StepVector: {
     Value *StepVector =
         State.Builder.CreateStepVector(VectorType::get(ResultTy, State.VF));
