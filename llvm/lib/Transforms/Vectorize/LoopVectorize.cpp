@@ -6831,8 +6831,6 @@ void LoopVectorizationPlanner::buildVPlans(ElementCount MinVF,
     // Now optimize the initial VPlan.
     RUN_VPLAN_PASS(VPlanTransforms::hoistPredicatedLoads, *Plan, PSE, OrigLoop);
     RUN_VPLAN_PASS(VPlanTransforms::sinkPredicatedStores, *Plan, PSE, OrigLoop);
-    RUN_VPLAN_PASS(VPlanTransforms::truncateToMinimalBitwidths, *Plan,
-                   Config.getMinimalBitwidths());
     RUN_VPLAN_PASS(VPlanTransforms::optimize, *Plan);
     // TODO: try to put addExplicitVectorLength close to addActiveLaneMask
     if (CM.foldTailWithEVL()) {
@@ -7060,15 +7058,21 @@ VPlanPtr LoopVectorizationPlanner::tryToBuildVPlan(VPlanPtr Plan,
   if (Range.Start.isScalar())
     Range.End = Range.Start * 2;
 
-  for (ElementCount VF : Range)
-    Plan->addVF(VF);
-  Plan->setName("Initial VPlan");
-
   // Interleave memory: for each Interleave Group we marked earlier as relevant
   // for this VPlan, replace the Recipes widening its memory instructions with a
   // single VPInterleaveRecipe at its insertion point.
   RUN_VPLAN_PASS(VPlanTransforms::createInterleaveGroups, *Plan,
                  InterleaveGroups, CM.isEpilogueAllowed());
+
+  RUN_VPLAN_PASS(VPlanTransforms::truncateToMinimalBitwidths, *Plan,
+                 Config.getMinimalBitwidths());
+  RUN_VPLAN_PASS(VPlanTransforms::simplifyRecipes, *Plan);
+  RUN_VPLAN_PASS(VPlanTransforms::narrowScatters, *Plan, CostCtx, Range,
+                 CM.foldTailWithEVL());
+
+  for (ElementCount VF : Range)
+    Plan->addVF(VF);
+  Plan->setName("Initial VPlan");
 
   // Replace VPValues for known constant strides.
   RUN_VPLAN_PASS(VPlanTransforms::replaceSymbolicStrides, *Plan, PSE,
