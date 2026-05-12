@@ -167,6 +167,7 @@ static bool isSupportedLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_IE_PC_LO12:
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_PCREL20_S2:
+  case ELF::R_LARCH_CALL36:
     return true;
   }
 }
@@ -315,6 +316,7 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD64:
   case ELF::R_LARCH_SUB64:
+  case ELF::R_LARCH_CALL36:
     return 8;
   }
 }
@@ -716,6 +718,19 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     Contents &= ~0xffffffffffc003ffULL;
     return SignExtend64<12>(Contents >> 10);
   }
+  case ELF::R_LARCH_CALL36: {
+    // Two-instruction pair: pcaddu18i (low 32 bits) + jirl (high 32 bits).
+    // Encoding: Hi20 = ((V+0x20000)>>18) & 0xFFFFF, Lo16 = (V>>2) & 0xFFFF.
+    uint32_t Pcaddu18i = static_cast<uint32_t>(Contents & 0xFFFFFFFF);
+    uint32_t Jirl = static_cast<uint32_t>((Contents >> 32) & 0xFFFFFFFF);
+    uint64_t Hi20 = (Pcaddu18i >> 5) & 0xFFFFF;
+    uint64_t Lo16 = (Jirl >> 10) & 0xFFFF;
+    int64_t V = (static_cast<int64_t>(Hi20) << 18) |
+                (static_cast<int64_t>(Lo16) << 2);
+    if (Lo16 >> 15)
+      V -= 0x40000;
+    return static_cast<int64_t>(PC) + SignExtend64<38>(V);
+  }
   }
 }
 
@@ -976,6 +991,7 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_PCREL20_S2:
+  case ELF::R_LARCH_CALL36:
     return true;
   }
 }
