@@ -137,28 +137,28 @@ static bool isSupportedLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
+  case ELF::R_LARCH_64:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_SUB64:
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
-  case ELF::R_LARCH_PCREL20_S2:
-  case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA64_LO20:
   case ELF::R_LARCH_PCALA64_HI12:
-  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
-  case ELF::R_LARCH_64:
-  case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_TLS_LE_HI20:
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
-  case ELF::R_LARCH_ADD32:
-  case ELF::R_LARCH_SUB32:
-  case ELF::R_LARCH_ADD64:
-  case ELF::R_LARCH_SUB64:
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_PCREL20_S2:
     return true;
   }
 }
@@ -276,25 +276,25 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   default:
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
-  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
-  case ELF::R_LARCH_PCREL20_S2:
-  case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_PCALA64_LO20:
   case ELF::R_LARCH_PCALA64_HI12:
-  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
   case ELF::R_LARCH_TLS_LE_HI20:
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
-  case ELF::R_LARCH_ADD32:
-  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_PCREL20_S2:
     return 4;
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD64:
@@ -622,8 +622,8 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     llvm_unreachable("unsupported relocation type");
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD32:
-  case ELF::R_LARCH_SUB32:
   case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB32:
   case ELF::R_LARCH_SUB64:
     return Contents;
   case ELF::R_LARCH_32_PCREL:
@@ -736,8 +736,8 @@ static bool isGOTLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
-  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
@@ -909,21 +909,19 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   default:
     llvm_unreachable("Unknown relocation type");
   case ELF::R_LARCH_64:
+  case ELF::R_LARCH_ADD32:
+  case ELF::R_LARCH_SUB32:
+  case ELF::R_LARCH_ADD64:
+  case ELF::R_LARCH_SUB64:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_TLS_LE_HI20:
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
-  case ELF::R_LARCH_ADD32:
-  case ELF::R_LARCH_SUB32:
-  case ELF::R_LARCH_ADD64:
-  case ELF::R_LARCH_SUB64:
     return false;
-  case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_B16:
   case ELF::R_LARCH_B21:
   case ELF::R_LARCH_B26:
-  case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_PCALA_HI20:
   case ELF::R_LARCH_PCALA64_LO20:
   case ELF::R_LARCH_PCALA64_HI12:
@@ -931,6 +929,8 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_PCREL20_S2:
     return true;
   }
 }
