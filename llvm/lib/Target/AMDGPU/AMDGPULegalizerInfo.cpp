@@ -2235,7 +2235,6 @@ AMDGPULegalizerInfo::AMDGPULegalizerInfo(const GCNSubtarget &ST_,
       .alwaysLegal();
   getActionDefinitionsBuilder(G_BR).alwaysLegal();
 
-  getLegacyLegalizerInfo().computeTables();
   verify(*ST.getInstrInfo());
 }
 
