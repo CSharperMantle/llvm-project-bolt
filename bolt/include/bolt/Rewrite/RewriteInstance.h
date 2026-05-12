@@ -438,6 +438,7 @@ private:
 
   /// Section name used for extra BOLT code in addition to .text.
   static StringRef getBOLTTextSectionName() { return ".bolt.text"; }
+  static StringRef getBOLTInfoNoteSectionName() { return ".note.bolt_info"; }
 
   /// Symbol markers for BOLT reserved area.
   static StringRef getBOLTReservedStart() { return "__bolt_reserved_start"; }
