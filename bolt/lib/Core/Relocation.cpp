@@ -324,6 +324,7 @@ static bool skipRelocationTypeLoongArch(uint32_t Type) {
     return false;
   case ELF::R_LARCH_NONE:
   case ELF::R_LARCH_RELAX:
+  case ELF::R_LARCH_ALIGN:
     return true;
   }
 }
