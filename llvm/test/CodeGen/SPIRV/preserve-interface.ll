@@ -3,7 +3,8 @@
 ; RUN:   -filetype=obj -o - %s | spirv-val --target-env vulkan1.3 %}
 ;
 ; Confirm that an addrspace(7) global protected by llvm.compiler.used appears
-; in the SPIR-V output as a distinct OpVariable, even though it has no IR users.
+; in the SPIR-V output as a distinct OpVariable, even though it has no IR
+; users, and that it is also listed in the OpEntryPoint interface.
 ;
 ; @used_input has a real load. @dead_input is only in llvm.compiler.used.
 ;
@@ -13,15 +14,22 @@
 ; Without the processGlobalValue fix in SPIRVEmitIntrinsics.cpp, @dead_input
 ; gets no spv_unref_global, buildGlobalVariable is never called for it, and
 ; both OpDecorate Location 1 and the second OpVariable Input are absent.
+;
+; The OpEntryPoint check pins the interface to exactly three IDs. The SPIR-V
+; backend builds the interface by iterating every Input/Output OpVariable in
+; the module, so combined with the three OpVariable checks below this proves
+; all three preserved variables appear in OpEntryPoint regardless of the
+; backend's interface ordering.
 
 ; CHECK: OpCapability Shader
-; CHECK: OpEntryPoint Vertex %[[#]] "main"
+; CHECK: OpEntryPoint Vertex %[[#]] "main" %[[#]] %[[#]] %[[#]]
 
 ; CHECK-DAG: OpDecorate %[[#USED:]] Location 0
 ; CHECK-DAG: OpDecorate %[[#DEAD:]] Location 1
+; CHECK-DAG: OpDecorate %[[#OUTPUT:]] Location 0
 ; CHECK-DAG: %[[#USED]] = OpVariable %[[#]] Input
 ; CHECK-DAG: %[[#DEAD]] = OpVariable %[[#]] Input
-; CHECK-DAG: %[[#]]     = OpVariable %[[#]] Output
+; CHECK-DAG: %[[#OUTPUT]] = OpVariable %[[#]] Output
 
 @used_input = external hidden thread_local addrspace(7) global float,
     !spirv.Decorations !0
