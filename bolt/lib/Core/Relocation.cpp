@@ -319,7 +319,14 @@ static bool skipRelocationTypeRISCV(uint32_t Type) {
 }
 
 static bool skipRelocationTypeLoongArch(uint32_t Type) {
-  return Type == ELF::R_LARCH_NONE;
+  switch (Type) {
+  default:
+    return false;
+  case ELF::R_LARCH_NONE:
+  case ELF::R_LARCH_RELAX:
+  case ELF::R_LARCH_ALIGN:
+    return true;
+  }
 }
 
 static uint64_t encodeValueX86(uint32_t Type, uint64_t Value, uint64_t PC) {
