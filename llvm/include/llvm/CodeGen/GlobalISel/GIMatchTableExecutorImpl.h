@@ -892,6 +892,10 @@ bool GIMatchTableExecutor::executeMatchTable(
           if (handleReject() == RejectAndGiveUp)
             return false;
         }
+      } else if (MO.isImm()) {
+        if ((uint64_t)MO.getImm() != Value)
+          if (handleReject() == RejectAndGiveUp)
+            return false;
       } else if (handleReject() == RejectAndGiveUp)
         return false;
 
