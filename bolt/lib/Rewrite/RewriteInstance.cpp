@@ -647,7 +647,8 @@ Error RewriteInstance::discoverStorage() {
     if (!opts::HeatmapMode &&
         !(opts::AggregateOnly && BAT->enabledFor(InputFile)) &&
         (SectionName.starts_with(getOrgSecPrefix()) ||
-         SectionName == getBOLTTextSectionName()))
+         SectionName == getBOLTTextSectionName() ||
+         SectionName == getBOLTInfoNoteSectionName()))
       return createStringError(
           errc::function_not_supported,
           "BOLT-ERROR: input file was processed by BOLT. Cannot re-optimize");
@@ -4850,8 +4851,8 @@ void RewriteInstance::addBoltInfoSection() {
   // Encode as GNU GOLD VERSION so it is easily printable by 'readelf -n'
   const std::string BoltInfo =
       BinarySection::encodeELFNote("GNU", DescStr, 4 /*NT_GNU_GOLD_VERSION*/);
-  BC->registerOrUpdateNoteSection(".note.bolt_info", copyByteArray(BoltInfo),
-                                  BoltInfo.size(),
+  BC->registerOrUpdateNoteSection(getBOLTInfoNoteSectionName(),
+                                  copyByteArray(BoltInfo), BoltInfo.size(),
                                   /*Alignment=*/1,
                                   /*IsReadOnly=*/true, ELF::SHT_NOTE);
 }
