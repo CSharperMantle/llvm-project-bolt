@@ -2588,10 +2588,8 @@ APValue *VarDecl::evaluateValueImpl(SmallVectorImpl<PartialDiagnosticAt> &Notes,
       (Ctx.getLangOpts().CPlusPlus ||
        (isConstexpr() && Ctx.getLangOpts().C23)) &&
       !Notes.empty()) {
-    if (!Ctx.shouldIgnoreNotesForConstEval(Notes))
+    if (!Ctx.maybeFoldMSConstexpr(Notes))
       Result = false;
-    else
-      Notes.clear();
   }
 
   // Ensure the computed APValue is cleaned up later if evaluation succeeded,
