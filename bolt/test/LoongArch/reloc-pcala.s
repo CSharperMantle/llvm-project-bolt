@@ -1,6 +1,5 @@
 // RUN: %clang %cflags -o %t %s
-// RUN: llvm-bolt --print-cfg --print-only=_start -o %t.null %t \
-// RUN:    | FileCheck %s
+// RUN: llvm-bolt --print-cfg --print-only=_start -o %t.null %t | FileCheck %s
 // RUN: llvm-objdump -d %t.null | FileCheck --check-prefix=OBJDUMP %s
 // RUN: llvm-readelf -rW %t.null | FileCheck --check-prefix=RELOC %s
 

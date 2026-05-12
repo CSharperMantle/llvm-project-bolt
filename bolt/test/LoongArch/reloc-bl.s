@@ -1,6 +1,5 @@
 // RUN: %clang %cflags -o %t %s
-// RUN: llvm-bolt --print-cfg --print-fix-loongarch-calls --print-only=_start \
-// RUN:     -o %t.bolt %t | FileCheck %s
+// RUN: llvm-bolt --print-cfg --print-fix-loongarch-calls --print-only=_start -o %t.bolt %t | FileCheck %s
 // RUN: llvm-objdump -d %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 // RUN: llvm-readelf -rW %t.bolt | FileCheck --check-prefix=RELOC %s
 
