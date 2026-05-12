@@ -56,6 +56,10 @@ public:
     case ELF::R_LARCH_GOT_PC_HI20:
     case ELF::R_LARCH_GOT64_PC_LO20:
     case ELF::R_LARCH_GOT64_PC_HI12:
+    case ELF::R_LARCH_GOT_HI20:
+    case ELF::R_LARCH_GOT_LO12:
+    case ELF::R_LARCH_GOT64_LO20:
+    case ELF::R_LARCH_GOT64_HI12:
     case ELF::R_LARCH_TLS_LE_HI20:
     case ELF::R_LARCH_TLS_LE_LO12:
     case ELF::R_LARCH_TLS_IE_PC_HI20:
@@ -437,12 +441,16 @@ public:
     case ELF::R_LARCH_B26:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B26, Ctx);
     case ELF::R_LARCH_ABS_HI20:
+    case ELF::R_LARCH_GOT_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS_HI20, Ctx);
     case ELF::R_LARCH_ABS_LO12:
+    case ELF::R_LARCH_GOT_LO12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS_LO12, Ctx);
     case ELF::R_LARCH_ABS64_LO20:
+    case ELF::R_LARCH_GOT64_LO20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS64_LO20, Ctx);
     case ELF::R_LARCH_ABS64_HI12:
+    case ELF::R_LARCH_GOT64_HI12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS64_HI12, Ctx);
     case ELF::R_LARCH_PCALA_LO12:
     case ELF::R_LARCH_GOT_PC_LO12:
