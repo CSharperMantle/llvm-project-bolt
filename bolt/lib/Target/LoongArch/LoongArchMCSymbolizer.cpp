@@ -107,6 +107,7 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
       break;
     }
   }
+  // Relaxed by lld's LoongArch::tlsIeToLe (R_RELAX_TLS_GD_TO_LE).
   if (Rel.Type == ELF::R_LARCH_TLS_IE_PC_LO12) {
     switch (Inst.getOpcode()) {
     default:
@@ -116,6 +117,7 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
       break;
     }
   }
+  // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
   if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_HI20) {
     switch (Inst.getOpcode()) {
     default:
@@ -124,12 +126,22 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
       break;
     }
   }
+  // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
   if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_LO12) {
     switch (Inst.getOpcode()) {
     default:
       return std::nullopt; // May be relaxed, can't adjust anyway
     case LoongArch::ADDI_D:
     case LoongArch::ADDI_W:
+      break;
+    }
+  }
+  // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
+  if (Rel.Type == ELF::R_LARCH_TLS_DESC_PCREL20_S2) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt; // May be relaxed, can't adjust anyway
+    case LoongArch::PCADDI:
       break;
     }
   }
