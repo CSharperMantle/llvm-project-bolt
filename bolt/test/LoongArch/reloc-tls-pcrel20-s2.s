@@ -3,7 +3,7 @@
 // RUN: llvm-bolt --print-cfg --print-only=_start -o %t.bolt %t 2>&1 | FileCheck %s
 // RUN: llvm-objdump -d --no-show-raw-insn %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 
-// BOLT-NOT: BOLT-WARNING: Failed to analyze
+// CHECK-NOT: BOLT-WARNING: Failed to analyze
 // CHECK-LABEL: Binary Function "_start{{.*}}" after building cfg {
 // CHECK:       pcaddi $a0, %pcrel_20(__BOLT_got_zero{{.*}})
 // CHECK-NEXT:  pcaddi $a1, %pcrel_20(__BOLT_got_zero{{.*}})

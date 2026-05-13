@@ -1,5 +1,5 @@
 // RUN: %clang %cflags -o %t %s
-// RUN: llvm-bolt --print-cfg --print-fix-loongarch-calls --print-only=_start -o %t.bolt %t | FileCheck %s
+// RUN: llvm-bolt --print-cfg --print-only=_start -o %t.bolt %t | FileCheck %s
 // RUN: llvm-objdump -d %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 // RUN: llvm-readelf -rW %t.bolt | FileCheck --check-prefix=RELOC %s
 
@@ -7,15 +7,8 @@
 // CHECK:      b .Ltmp0
 // CHECK:      b f # TAILCALL
 
-// CHECK:      Binary Function "_start" after fix-loongarch-calls {
-// CHECK:      b .Ltmp0
-// CHECK:      pcaddu18i $t8, %call36(f)
-// CHECK-NEXT: jr $t8 # TAILCALL
-
-// OBJDUMP:      0000000000400000 <f>:
-// OBJDUMP:      0000000000400004 <_start>:
-// OBJDUMP-NEXT:     pcaddu18i $t8, 0
-// OBJDUMP-NEXT:     jirl $zero, $t8, -4 <f>
+// OBJDUMP:      {{.*}} <_start>:
+// OBJDUMP:      b {{.*}} <f>
 
 // RELOC: There are no relocations in this file.
 

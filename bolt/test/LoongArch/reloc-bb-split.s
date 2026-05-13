@@ -3,7 +3,7 @@
 // RUN: llvm-bolt --print-cfg --print-only=_start -o %t.bolt %t 2>&1 | FileCheck %s
 // RUN: llvm-objdump -d --no-show-raw-insn %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 
-// BOLT-NOT: BOLT-WARNING: Failed to analyze
+// CHECK-NOT: BOLT-WARNING: Failed to analyze
 // CHECK-LABEL: Binary Function "_start{{.*}}" after building cfg {
 // CHECK-LABEL: .LBB00
 // CHECK:       pcaddu12i $a0, %pcadd_hi20(data_sym)
