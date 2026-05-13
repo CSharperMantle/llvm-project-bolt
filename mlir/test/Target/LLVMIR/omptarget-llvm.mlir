@@ -638,3 +638,29 @@ module attributes {omp.target_triples = ["amdgcn-amd-amdhsa"]} {
 // CHECK: @.offload_sizes = private unnamed_addr constant [2 x i64] [i64 8, i64 0]
 // CHECK: @.offload_maptypes = private unnamed_addr constant [2 x i64] [i64 288, i64 288]
 // CHECK-LABEL: define void @_QPomp_target_is_device_ptr
+
+// -----
+
+module attributes {omp.target_triples = ["amdgcn-amd-amdhsa"]} {
+  llvm.func @_QPomp_target_enter_attach(%desc : !llvm.ptr,
+                                        %pointee : !llvm.ptr) {
+    %map = omp.map.info
+        var_ptr(%pointee : !llvm.ptr, !llvm.struct<(ptr, i64)>)
+        map_clauses(attach) capture(ByRef)
+        var_ptr_ptr(%desc : !llvm.ptr) -> !llvm.ptr {name = ""}
+    omp.target_enter_data map_entries(%map : !llvm.ptr)
+    llvm.return
+  }
+}
+
+// CHECK: @.offload_sizes = private unnamed_addr constant [1 x i64] [i64 16]
+// CHECK: @.offload_maptypes = private unnamed_addr constant [1 x i64] [i64 16384]
+// CHECK-LABEL: define void @_QPomp_target_enter_attach
+// CHECK-SAME: (ptr %[[DESC:.*]], ptr %[[POINTEE:.*]]) {
+// CHECK:         %[[BASEPTRS:.*]] = alloca [1 x ptr], align 8
+// CHECK:         %[[PTRS:.*]] = alloca [1 x ptr], align 8
+// CHECK:         %[[BASEPTR:.*]] = getelementptr inbounds [1 x ptr], ptr %[[BASEPTRS]], i32 0, i32 0
+// CHECK-NEXT:    store ptr %[[DESC]], ptr %[[BASEPTR]], align 8
+// CHECK-NEXT:    %[[PTR:.*]] = getelementptr inbounds [1 x ptr], ptr %[[PTRS]], i32 0, i32 0
+// CHECK-NEXT:    store ptr %[[POINTEE]], ptr %[[PTR]], align 8
+// CHECK:         call void @__tgt_target_data_begin_mapper(ptr @2, i64 -1, i32 1, ptr %{{.*}}, ptr %{{.*}}, ptr @.offload_sizes, ptr @.offload_maptypes, ptr @.offload_mapnames, ptr null)

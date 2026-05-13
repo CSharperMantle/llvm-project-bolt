@@ -5316,10 +5316,13 @@ static void collectMapDataFromMapOperands(
   // Process MapOperands
   for (Value mapValue : mapVars) {
     auto mapOp = cast<omp::MapInfoOp>(mapValue.getDefiningOp());
+    bool isAttachMap = (mapOp.getMapType() & omp::ClauseMapFlags::attach) ==
+                       omp::ClauseMapFlags::attach;
     Value offloadPtr =
         mapOp.getVarPtrPtr() ? mapOp.getVarPtrPtr() : mapOp.getVarPtr();
+    Value pointeePtr = isAttachMap ? mapOp.getVarPtr() : offloadPtr;
     mapData.OriginalValue.push_back(moduleTranslation.lookupValue(offloadPtr));
-    mapData.Pointers.push_back(mapData.OriginalValue.back());
+    mapData.Pointers.push_back(moduleTranslation.lookupValue(pointeePtr));
 
     if (llvm::Value *refPtr =
             getRefPtrIfDeclareTarget(offloadPtr, moduleTranslation)) {
@@ -5971,7 +5974,10 @@ static void processIndividualMap(MapInfoData &mapData, size_t mapDataIdx,
   auto mapInfoOp = llvm::cast<omp::MapInfoOp>(mapData.MapClause[mapDataIdx]);
 
   bool isPtrTy = checkIfPointerMap(mapInfoOp);
-  if (isPtrTy)
+  bool isAttach =
+      (mapFlag & llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_ATTACH) ==
+      llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_ATTACH;
+  if (isPtrTy && !isAttach)
     mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_PTR_AND_OBJ;
 
   if (targetDirective == TargetDirectiveEnumTy::Target &&
@@ -6056,6 +6062,10 @@ createAlteredByCaptureMap(MapInfoData &mapData,
     // if it's declare target, skip it, it's handled separately.
     if (!mapData.IsDeclareTarget[i]) {
       auto mapOp = cast<omp::MapInfoOp>(mapData.MapClause[i]);
+      if ((mapOp.getMapType() & omp::ClauseMapFlags::attach) ==
+          omp::ClauseMapFlags::attach)
+        continue;
+
       omp::VariableCaptureKind captureKind = mapOp.getMapCaptureType();
       bool isPtrTy = checkIfPointerMap(mapOp);
 
@@ -7678,6 +7688,35 @@ convertDeclareTargetAttr(Operation *op, mlir::omp::DeclareTargetAttr attribute,
           convertToCaptureClauseKind(attribute.getCaptureClause().getValue());
       auto deviceClause =
           convertToDeviceClauseKind(attribute.getDeviceType().getValue());
+      llvm::StringRef entryMangledName = mangledName;
+      llvm::Constant *entryAddr = llvm::cast<llvm::Constant>(gVal);
+      std::function<llvm::GlobalValue::LinkageTypes()> variableLinkage;
+      llvm::SmallString<128> entryNameStorage;
+      if ((attribute.getCaptureClause().getValue() ==
+               mlir::omp::DeclareTargetCaptureClause::to ||
+           attribute.getCaptureClause().getValue() ==
+               mlir::omp::DeclareTargetCaptureClause::enter) &&
+          !isDeclaration &&
+          (gVal->hasLocalLinkage() || gVal->hasHiddenVisibility())) {
+        // Keep the original symbol local so target code can address it using
+        // target-specific local relocations, but create a visible alias for
+        // the offload entry so libomptarget can associate the host global with
+        // the actual device global.
+        entryNameStorage = (mangledName + llvm::Twine("_decl_tgt_entry")).str();
+        entryMangledName = entryNameStorage;
+        if (llvm::GlobalValue *existing =
+                llvmModule->getNamedValue(entryMangledName)) {
+          entryAddr = llvm::cast<llvm::Constant>(existing);
+        } else {
+          entryAddr = llvm::GlobalAlias::create(
+              gVal->getValueType(), gVal->getAddressSpace(),
+              llvm::GlobalValue::WeakAnyLinkage, entryMangledName, entryAddr,
+              llvmModule);
+          llvm::cast<llvm::GlobalAlias>(entryAddr)->setVisibility(
+              llvm::GlobalValue::DefaultVisibility);
+        }
+        variableLinkage = [] { return llvm::GlobalValue::WeakAnyLinkage; };
+      }
       // unused for MLIR at the moment, required in Clang for book
       // keeping
       std::vector<llvm::GlobalVariable *> generatedRefs;
@@ -7707,9 +7746,9 @@ convertDeclareTargetAttr(Operation *op, mlir::omp::DeclareTargetAttr attribute,
       ompBuilder->registerTargetGlobalVariable(
           captureClause, deviceClause, isDeclaration, isExternallyVisible,
           ompBuilder->getTargetEntryUniqueInfo(fileInfoCallBack, vfs),
-          mangledName, generatedRefs, /*OpenMPSimd*/ false, targetTriple,
-          /*GlobalInitializer*/ nullptr, /*VariableLinkage*/ nullptr,
-          gVal->getType(), gVal);
+          entryMangledName, generatedRefs, /*OpenMPSimd*/ false, targetTriple,
+          /*GlobalInitializer*/ nullptr, variableLinkage, gVal->getType(),
+          entryAddr);
 
       if (ompBuilder->Config.isTargetDevice() &&
           (attribute.getCaptureClause().getValue() !=
