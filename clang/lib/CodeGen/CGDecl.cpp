@@ -1637,6 +1637,37 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
       }
     }
 
+    if (Bypasses.IsBypassed(&D) && !emission.IsEscapingByRef &&
+        !emission.NRVOFlag && !Ty->isVariablyModifiedType()) {
+      if (getAutoVarInitKind(Ty, D) !=
+              LangOptions::TrivialAutoVarInitKind::Uninitialized &&
+          isTrivialInitializer(D.getInit())) {
+        // Record this bypassed var's address for switch-case init emission.
+        BypassedVarInits.insert({&D, address});
+
+        if (Bypasses.isAlwaysBypassed()) {
+          // Computed gotos: we can't determine jump sources, so init in the
+          // entry block next to the alloca.
+          llvm::IRBuilderBase::InsertPointGuard IPG(Builder);
+          Builder.SetInsertPoint(getPostAllocaInsertPoint());
+          emitZeroOrPatternForAutoVarInit(Ty, D, address);
+        } else {
+          // For forward gotos that bypass this var, retroactively insert
+          // init stores before the goto's branch instruction.
+          for (const auto &FG : BypassingForwardGotos) {
+            const auto *Vars = Bypasses.getBypassedVarsForSource(FG.Goto);
+            if (Vars && Vars->contains(&D)) {
+              if (llvm::Instruction *Term = FG.Block->getTerminator()) {
+                llvm::IRBuilderBase::InsertPointGuard IPG(Builder);
+                Builder.SetInsertPoint(Term);
+                emitZeroOrPatternForAutoVarInit(Ty, D, address);
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (D.hasAttr<StackProtectorIgnoreAttr>()) {
       if (auto *AI = dyn_cast<llvm::AllocaInst>(address.getBasePointer())) {
         llvm::LLVMContext &Ctx = Builder.getContext();
@@ -1834,6 +1865,31 @@ bool CodeGenFunction::isTrivialInitializer(const Expr *Init) {
   return false;
 }
 
+LangOptions::TrivialAutoVarInitKind
+CodeGenFunction::getAutoVarInitKind(QualType type, const VarDecl &D) {
+  auto hasNoTrivialAutoVarInitAttr = [](const Decl *D) {
+    return D && D->hasAttr<NoTrivialAutoVarInitAttr>();
+  };
+  if (D.isConstexpr() || D.getAttr<UninitializedAttr>() ||
+      hasNoTrivialAutoVarInitAttr(type->getAsTagDecl()) ||
+      hasNoTrivialAutoVarInitAttr(CurFuncDecl))
+    return LangOptions::TrivialAutoVarInitKind::Uninitialized;
+  return getContext().getLangOpts().getTrivialAutoVarInit();
+}
+
+void CodeGenFunction::emitBypassedVarInitsForSource(const Stmt *Source) {
+  const auto *Vars = Bypasses.getBypassedVarsForSource(Source);
+  if (!Vars)
+    return;
+  for (const VarDecl *VD : *Vars) {
+    auto It = BypassedVarInits.find(VD);
+    if (It != BypassedVarInits.end()) {
+      QualType Ty = VD->getType().getNonReferenceType();
+      emitZeroOrPatternForAutoVarInit(Ty, *VD, It->second);
+    }
+  }
+}
+
 void CodeGenFunction::emitZeroOrPatternForAutoVarInit(QualType type,
                                                       const VarDecl &D,
                                                       Address Loc) {
@@ -1993,16 +2049,9 @@ void CodeGenFunction::EmitAutoVarInit(const AutoVarEmission &emission) {
   const Address Loc =
       locIsByrefHeader ? emission.getObjectAddress(*this) : emission.Addr;
 
-  auto hasNoTrivialAutoVarInitAttr = [&](const Decl *D) {
-    return D && D->hasAttr<NoTrivialAutoVarInitAttr>();
-  };
   // Note: constexpr already initializes everything correctly.
   LangOptions::TrivialAutoVarInitKind trivialAutoVarInit =
-      ((D.isConstexpr() || D.getAttr<UninitializedAttr>() ||
-        hasNoTrivialAutoVarInitAttr(type->getAsTagDecl()) ||
-        hasNoTrivialAutoVarInitAttr(CurFuncDecl))
-           ? LangOptions::TrivialAutoVarInitKind::Uninitialized
-           : getContext().getLangOpts().getTrivialAutoVarInit());
+      getAutoVarInitKind(type, D);
 
   auto initializeWhatIsTechnicallyUninitialized = [&](Address Loc) {
     if (trivialAutoVarInit ==

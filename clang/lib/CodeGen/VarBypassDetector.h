@@ -47,6 +47,10 @@ class VarBypassDetector {
   llvm::DenseMap<const Stmt *, unsigned> ToScopes;
   // Set of variables which were bypassed by some jump.
   llvm::DenseSet<const VarDecl *> Bypasses;
+  // Map from jump source to the set of variable declarations bypassed by the
+  // jump.
+  llvm::DenseMap<const Stmt *, llvm::DenseSet<const VarDecl *>>
+      BypassedVarsAtSource;
   // If true assume that all variables are being bypassed.
   bool AlwaysBypassed = false;
 
@@ -59,13 +63,27 @@ public:
     return AlwaysBypassed || Bypasses.contains(D);
   }
 
+  /// Returns true if precise bypass info is unavailable (e.g. computed gotos)
+  /// and all variables should be treated as bypassed.
+  bool isAlwaysBypassed() const { return AlwaysBypassed; }
+
+  /// Returns the set of variable declarations bypassed by jumps to the given
+  /// target statement, or nullptr if no variables are bypassed to that target.
+  const llvm::DenseSet<const VarDecl *> *
+  getBypassedVarsForSource(const Stmt *Source) const {
+    auto It = BypassedVarsAtSource.find(Source);
+    if (It == BypassedVarsAtSource.end())
+      return nullptr;
+    return &It->second;
+  }
+
 private:
   bool BuildScopeInformation(CodeGenModule &CGM, const Decl *D,
                              unsigned &ParentScope);
   bool BuildScopeInformation(CodeGenModule &CGM, const Stmt *S,
                              unsigned &origParentScope);
   void Detect();
-  void Detect(unsigned From, unsigned To);
+  void Detect(unsigned From, unsigned To, const Stmt *Source);
 };
 }
 }

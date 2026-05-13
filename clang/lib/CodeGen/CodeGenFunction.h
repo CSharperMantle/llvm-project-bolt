@@ -25,6 +25,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/ExprOpenMP.h"
+#include "clang/AST/Stmt.h"
 #include "clang/AST/StmtOpenACC.h"
 #include "clang/AST/StmtOpenMP.h"
 #include "clang/AST/StmtSYCL.h"
@@ -33,6 +34,7 @@
 #include "clang/Basic/CapturedStmt.h"
 #include "clang/Basic/CodeGenOptions.h"
 #include "clang/Basic/OpenMPKinds.h"
+#include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -298,6 +300,16 @@ public:
   // Stores variables for which we can't generate correct lifetime markers
   // because of jumps.
   VarBypassDetector Bypasses;
+
+  // Map from bypassed VarDecl to its alloca address, for per-target init.
+  llvm::SmallDenseMap<const VarDecl *, Address, 4> BypassedVarInits;
+
+  struct BypassingForwardGoto {
+    llvm::AssertingVH<llvm::BasicBlock> Block;
+    const GotoStmt *Goto;
+  };
+
+  llvm::SmallVector<BypassingForwardGoto, 4> BypassingForwardGotos;
 
   /// List of recently emitted OMPCanonicalLoops.
   ///
@@ -3534,6 +3546,9 @@ public:
   void emitAutoVarTypeCleanup(const AutoVarEmission &emission,
                               QualType::DestructionKind dtorKind);
 
+  /// Emit zero/pattern init stores for bypassed variables at a jump target.
+  void emitBypassedVarInitsForSource(const Stmt *Source);
+
   void MaybeEmitDeferredVarDeclInit(const VarDecl *var);
 
   /// Emits the alloca and debug information for the size expressions for each
@@ -5602,6 +5617,8 @@ private:
 
   void emitZeroOrPatternForAutoVarInit(QualType type, const VarDecl &D,
                                        Address Loc);
+  LangOptions::TrivialAutoVarInitKind getAutoVarInitKind(QualType type,
+                                                         const VarDecl &D);
 
 public:
   enum class EvaluationOrder {

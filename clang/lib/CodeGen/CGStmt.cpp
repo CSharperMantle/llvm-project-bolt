@@ -837,6 +837,13 @@ void CodeGenFunction::EmitGotoStmt(const GotoStmt &S) {
   if (HaveInsertPoint())
     EmitStopPoint(&S);
 
+  // Record this goto so that EmitAutoVarAlloca can retroactively insert
+  // trivial-auto-var-init stores for any variables this goto bypasses.
+  if (HaveInsertPoint()) {
+    emitBypassedVarInitsForSource(&S);
+    BypassingForwardGotos.push_back({Builder.GetInsertBlock(), &S});
+  }
+
   ApplyAtomGroup Grp(getDebugInfo());
   EmitBranchThroughCleanup(getJumpDestForLabel(S.getLabel()));
 }
@@ -1744,6 +1751,7 @@ void CodeGenFunction::EmitCaseStmtRange(const CaseStmt &S,
   // switch machinery to enter this block.
   llvm::BasicBlock *CaseDest = createBasicBlock("sw.bb");
   EmitBlockWithFallThrough(CaseDest, &S);
+  emitBypassedVarInitsForSource(&S);
   EmitStmt(S.getSubStmt());
 
   // If range is empty, do nothing.
@@ -1881,6 +1889,7 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S,
 
   llvm::BasicBlock *CaseDest = createBasicBlock("sw.bb");
   EmitBlockWithFallThrough(CaseDest, &S);
+  emitBypassedVarInitsForSource(&S);
   if (SwitchWeights)
     SwitchWeights->push_back(getProfileCount(&S));
   SwitchInsn->addCase(CaseVal, CaseDest);
@@ -1913,6 +1922,7 @@ void CodeGenFunction::EmitCaseStmt(const CaseStmt &S,
       CaseDest = createBasicBlock("sw.bb");
       EmitBlockWithFallThrough(CaseDest, CurCase);
     }
+    emitBypassedVarInitsForSource(CurCase);
     // Since this loop is only executed when the CaseStmt has no attributes
     // use a hard-coded value.
     if (SwitchLikelihood)
@@ -1950,6 +1960,7 @@ void CodeGenFunction::EmitDefaultStmt(const DefaultStmt &S,
     SwitchLikelihood->front() = Stmt::getLikelihood(Attrs);
 
   EmitBlockWithFallThrough(DefaultBlock, &S);
+  emitBypassedVarInitsForSource(&S);
 
   EmitStmt(S.getSubStmt());
 }
