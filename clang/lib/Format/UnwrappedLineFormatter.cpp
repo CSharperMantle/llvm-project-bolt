@@ -264,13 +264,10 @@ private:
                 : Limit - TheLine->Last->TotalLength;
 
     if (TheLine->Last->is(TT_FunctionLBrace) &&
-        TheLine->First == TheLine->Last) {
-      const bool EmptyFunctionBody = NextLine.First->is(tok::r_brace);
-      if ((EmptyFunctionBody && !Style.BraceWrapping.SplitEmptyFunction) ||
-          (!EmptyFunctionBody &&
-           Style.AllowShortBlocksOnASingleLine == FormatStyle::SBS_Always)) {
-        return tryMergeSimpleBlock(I, E, Limit);
-      }
+        TheLine->First == TheLine->Last &&
+        !Style.BraceWrapping.SplitEmptyFunction &&
+        NextLine.First->is(tok::r_brace)) {
+      return tryMergeSimpleBlock(I, E, Limit);
     }
 
     // Try merging record blocks that have had their left brace wrapped into
@@ -647,11 +644,8 @@ private:
       const bool IsEmptyBlock =
           Line->Last->is(tok::l_brace) && NextLine->First->is(tok::r_brace);
 
-      if ((IsEmptyBlock && !Style.BraceWrapping.SplitEmptyRecord) ||
-          (!IsEmptyBlock &&
-           Style.AllowShortBlocksOnASingleLine == FormatStyle::SBS_Always)) {
+      if (IsEmptyBlock && !Style.BraceWrapping.SplitEmptyRecord)
         return tryMergeSimpleBlock(I, E, Limit);
-      }
     }
 
     return 0;
@@ -988,9 +982,11 @@ private:
         if (I[1]->Last->is(TT_LineComment))
           return 0;
         do {
-          if (Tok->isOneOf(tok::l_brace, tok::r_brace) &&
-              Tok->isNot(BK_BracedInit)) {
-            return 0;
+          if (Tok->isOneOf(tok::l_brace, tok::r_brace)) {
+            const FormatToken *Open =
+                Tok->is(tok::l_brace) ? Tok : Tok->MatchingParen;
+            if (!Open || Open->isNot(BK_BracedInit))
+              return 0;
           }
           Tok = Tok->Next;
         } while (Tok);
