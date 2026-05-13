@@ -38,7 +38,7 @@ define void @pointer_induction_used_as_vector(ptr noalias %start.1, ptr noalias 
 ; CHECK-NEXT:    [[TMP10:%.*]] = extractelement <vscale x 2 x ptr> [[VECTOR_GEP]], i64 0
 ; CHECK-NEXT:    [[OFFSET_IDX:%.*]] = shl i64 [[INDEX]], 3
 ; CHECK-NEXT:    [[NEXT_GEP:%.*]] = getelementptr i8, ptr [[START_1]], i64 [[OFFSET_IDX]]
-; CHECK-NEXT:    [[TMP9:%.*]] = getelementptr inbounds i8, <vscale x 2 x ptr> [[VECTOR_GEP]], i64 1
+; CHECK-NEXT:    [[TMP9:%.*]] = getelementptr inbounds i8, <vscale x 2 x ptr> [[VECTOR_GEP]], <vscale x 2 x i64> splat (i64 1)
 ; CHECK-NEXT:    store <vscale x 2 x ptr> [[TMP9]], ptr [[NEXT_GEP]], align 8
 ; CHECK-NEXT:    [[WIDE_LOAD:%.*]] = load <vscale x 2 x i8>, ptr [[TMP10]], align 1
 ; CHECK-NEXT:    [[TMP12:%.*]] = add <vscale x 2 x i8> [[WIDE_LOAD]], splat (i8 1)

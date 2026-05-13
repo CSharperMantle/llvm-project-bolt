@@ -315,7 +315,7 @@ define i64 @avx512_cond_load_cost(ptr %src, i32 %a, i64 %b, i32 %c, i32 %d) #1 {
 ; CHECK-NEXT:    [[TMP66:%.*]] = phi <8 x i32> [ [[TMP62]], [[PRED_UDIV_CONTINUE26]] ], [ [[TMP65]], [[IF_THEN]] ]
 ; CHECK-NEXT:    [[TMP67:%.*]] = or <8 x i32> [[TMP66]], [[TMP34]]
 ; CHECK-NEXT:    [[TMP68:%.*]] = sext <8 x i32> [[TMP67]] to <8 x i64>
-; CHECK-NEXT:    [[TMP69:%.*]] = getelementptr { i64, i64, i64 }, ptr [[SRC:%.*]], <8 x i64> [[TMP68]], i32 2
+; CHECK-NEXT:    [[TMP69:%.*]] = getelementptr { i64, i64, i64 }, ptr [[SRC:%.*]], <8 x i64> [[TMP68]], <8 x i32> splat (i32 2)
 ; CHECK-NEXT:    [[WIDE_MASKED_GATHER:%.*]] = call <8 x i64> @llvm.masked.gather.v8i64.v8p0(<8 x ptr> align 8 [[TMP69]], <8 x i1> [[TMP1]], <8 x i64> poison)
 ; CHECK-NEXT:    [[IV_NEXT]] = add nuw i32 [[IV]], 8
 ; CHECK-NEXT:    [[VEC_IND_NEXT]] = add <8 x i32> [[VEC_IND]], splat (i32 8)

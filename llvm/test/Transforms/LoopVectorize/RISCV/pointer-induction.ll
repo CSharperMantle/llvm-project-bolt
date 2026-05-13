@@ -97,8 +97,8 @@ define i1 @scalarize_ptr_induction(ptr %start, ptr %end, ptr noalias %dst, i1 %c
 ; CHECK-NEXT:    [[TMP14:%.*]] = mul <vscale x 2 x i64> [[TMP13]], splat (i64 12)
 ; CHECK-NEXT:    [[VECTOR_GEP:%.*]] = getelementptr i8, ptr [[POINTER_PHI]], <vscale x 2 x i64> [[TMP14]]
 ; CHECK-NEXT:    [[TMP11:%.*]] = call i32 @llvm.experimental.get.vector.length.i64(i64 [[AVL]], i32 2, i1 true)
-; CHECK-NEXT:    [[TMP12:%.*]] = getelementptr i8, <vscale x 2 x ptr> [[VECTOR_GEP]], i64 4
-; CHECK-NEXT:    [[TMP18:%.*]] = call <vscale x 2 x i32> @llvm.vp.gather.nxv2i32.nxv2p0(<vscale x 2 x ptr> align 4 [[TMP12]], <vscale x 2 x i1> splat (i1 true), i32 [[TMP11]]), !alias.scope [[META3:![0-9]+]]
+; CHECK-NEXT:    [[WIDE_GEP:%.*]] = getelementptr i8, <vscale x 2 x ptr> [[VECTOR_GEP]], <vscale x 2 x i64> splat (i64 4)
+; CHECK-NEXT:    [[TMP18:%.*]] = call <vscale x 2 x i32> @llvm.vp.gather.nxv2i32.nxv2p0(<vscale x 2 x ptr> align 4 [[WIDE_GEP]], <vscale x 2 x i1> splat (i1 true), i32 [[TMP11]]), !alias.scope [[META3:![0-9]+]]
 ; CHECK-NEXT:    [[TMP19:%.*]] = zext <vscale x 2 x i32> [[TMP18]] to <vscale x 2 x i64>
 ; CHECK-NEXT:    [[TMP20:%.*]] = mul <vscale x 2 x i64> [[TMP19]], splat (i64 -7070675565921424023)
 ; CHECK-NEXT:    [[TMP21:%.*]] = add <vscale x 2 x i64> [[TMP20]], splat (i64 -4)
@@ -110,7 +110,7 @@ define i1 @scalarize_ptr_induction(ptr %start, ptr %end, ptr noalias %dst, i1 %c
 ; CHECK-NEXT:    [[TMP28:%.*]] = icmp eq i64 [[AVL_NEXT]], 0
 ; CHECK-NEXT:    br i1 [[TMP28]], label %[[MIDDLE_BLOCK:.*]], label %[[VECTOR_BODY]], !llvm.loop [[LOOP8:![0-9]+]]
 ; CHECK:       [[MIDDLE_BLOCK]]:
-; CHECK-NEXT:    [[TMP30:%.*]] = getelementptr nusw i8, <vscale x 2 x ptr> [[VECTOR_GEP]], i64 12
+; CHECK-NEXT:    [[TMP30:%.*]] = getelementptr nusw i8, <vscale x 2 x ptr> [[VECTOR_GEP]], <vscale x 2 x i64> splat (i64 12)
 ; CHECK-NEXT:    [[TMP17:%.*]] = icmp eq <vscale x 2 x ptr> [[TMP30]], [[BROADCAST_SPLAT7]]
 ; CHECK-NEXT:    [[TMP29:%.*]] = sub i64 [[TMP26]], 1
 ; CHECK-NEXT:    [[TMP25:%.*]] = extractelement <vscale x 2 x i1> [[TMP17]], i64 [[TMP29]]
