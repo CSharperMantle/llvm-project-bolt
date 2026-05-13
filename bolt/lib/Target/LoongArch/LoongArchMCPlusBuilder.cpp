@@ -284,8 +284,19 @@ public:
     Seq.swap(Insts);
   }
 
+  void createTrap(MCInst &Inst) const override {
+    Inst.clear();
+    Inst.setOpcode(LoongArch::BREAK);
+    Inst.addOperand(MCOperand::createImm(0));
+  }
+
+  bool isTrap(const MCInst &Inst) const override {
+    return Inst.getOpcode() == LoongArch::BREAK && Inst.getNumOperands() == 1 &&
+           Inst.getOperand(0).isImm() && Inst.getOperand(0).getImm() == 0;
+  }
+
   StringRef getTrapFillValue() const override {
-    return StringRef("\0\0\0\0", 4);
+    return StringRef("\x00\x00\x2a\x00", 4);
   }
 
   const MCExpr *
