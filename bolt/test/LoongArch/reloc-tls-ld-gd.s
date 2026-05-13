@@ -4,7 +4,7 @@
 // RUN: llvm-objdump -d --no-show-raw-insn %t.bolt | FileCheck --check-prefix=OBJDUMP %s
 // RUN: llvm-readelf -rW %t.bolt | FileCheck --check-prefix=RELOC %s
 
-// BOLT-NOT: BOLT-WARNING: Failed to analyze
+// CHECK-NOT: BOLT-WARNING: Failed to analyze
 // CHECK-LABEL: Binary Function "_start{{.*}}" after building cfg {
 // CHECK:       pcalau12i $a0, %pc_hi20(__BOLT_got_zero{{.*}})
 // CHECK-NEXT:  addi.d $a0, $a0, %pc_lo12(__BOLT_got_zero{{.*}})
