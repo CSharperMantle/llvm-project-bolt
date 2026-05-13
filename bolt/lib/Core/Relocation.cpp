@@ -180,6 +180,9 @@ static bool isSupportedLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC64_HI12:
   case ELF::R_LARCH_TLS_DESC_LD:
   case ELF::R_LARCH_TLS_DESC_CALL:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
   case ELF::R_LARCH_PCADD_HI20:
   case ELF::R_LARCH_PCADD_LO12:
   case ELF::R_LARCH_GOT_PCADD_HI20:
@@ -340,6 +343,9 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC64_HI12:
   case ELF::R_LARCH_TLS_DESC_LD:
   case ELF::R_LARCH_TLS_DESC_CALL:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
   case ELF::R_LARCH_PCADD_HI20:
   case ELF::R_LARCH_PCADD_LO12:
   case ELF::R_LARCH_GOT_PCADD_HI20:
@@ -714,7 +720,10 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     Contents &= ~0xffffffffffc003ffULL;
     return SignExtend64<52>(Contents << 42);
   }
-  case ELF::R_LARCH_PCREL20_S2: {
+  case ELF::R_LARCH_PCREL20_S2:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2: {
     Contents = (Contents >> 5) & 0xfffff;
     return static_cast<int64_t>(PC) + SignExtend64<22>(Contents << 2);
   }
@@ -855,6 +864,9 @@ static bool isGOTLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC_LO12:
   case ELF::R_LARCH_TLS_DESC64_LO20:
   case ELF::R_LARCH_TLS_DESC64_HI12:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
   case ELF::R_LARCH_GOT_PCADD_HI20:
     return true;
   }
@@ -923,6 +935,9 @@ static bool isTLSLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC64_LO20:
   case ELF::R_LARCH_TLS_DESC64_HI12:
   case ELF::R_LARCH_TLS_DESC_LD:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
     return true;
   }
 }
@@ -1079,6 +1094,9 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC_PC_HI20:
   case ELF::R_LARCH_TLS_DESC64_PC_LO20:
   case ELF::R_LARCH_TLS_DESC64_PC_HI12:
+  case ELF::R_LARCH_TLS_LD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_GD_PCREL20_S2:
+  case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
   case ELF::R_LARCH_PCADD_HI20:
   case ELF::R_LARCH_GOT_PCADD_HI20:
     return true;
