@@ -295,10 +295,14 @@ public:
       if (!isTerminator(*I) || isTailCall(*I) || !isBranch(*I))
         break;
 
+      // Handle indirect branches before unconditional branches. On LoongArch
+      // JIRL $r0, $rj is both unconditional and indirect; the unconditional
+      // path asserts on missing target symbol so we must check indirect first.
+      if (isIndirectBranch(*I))
+        return false;
+
       // Handle unconditional branches.
       if (isUnconditionalBranch(*I)) {
-        // If any code was seen after this unconditional branch, we've seen
-        // unreachable code. Ignore them.
         CondBranch = nullptr;
         UncondBranch = &*I;
         const MCSymbol *Sym = getTargetSymbol(*I);
@@ -307,10 +311,6 @@ public:
         TBB = Sym;
         continue;
       }
-
-      // Handle conditional branches and ignore indirect branches
-      if (isIndirectBranch(*I))
-        return false;
 
       if (CondBranch == nullptr) {
         const MCSymbol *TargetBB = getTargetSymbol(*I);
