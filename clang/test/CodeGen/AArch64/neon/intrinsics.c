@@ -5096,3 +5096,251 @@ uint64_t test_vaddlvq_u32(uint32x4_t a) {
 // LLVM-NEXT:    ret i64 [[VADDLVQ_U32_I]]
   return vaddlvq_u32(a);
 }
+
+//===------------------------------------------------------===//
+// 2.1.12.1 Directed Rounding
+//
+// TODO: Implement the remaining intrinsics from this group.
+//===------------------------------------------------------===//
+
+// LLVM-LABEL: @test_vrnda_f32(
+// CIR-LABEL: @vrnda_f32(
+float32x2_t test_vrnda_f32(float32x2_t a) {
+// CIR: cir.round {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDA_I:%.*]] = call <2 x float> @llvm.round.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDA_I]]
+  return vrnda_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndaq_f32(
+// CIR-LABEL: @vrndaq_f32(
+float32x4_t test_vrndaq_f32(float32x4_t a) {
+// CIR: cir.round {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDA_I:%.*]] = call <4 x float> @llvm.round.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDA_I]]
+  return vrndaq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndm_f32(
+// CIR-LABEL: @vrndm_f32(
+float32x2_t test_vrndm_f32(float32x2_t a) {
+// CIR: cir.floor {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDM_I:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDM_I]]
+  return vrndm_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndmq_f32(
+// CIR-LABEL: @vrndmq_f32(
+float32x4_t test_vrndmq_f32(float32x4_t a) {
+// CIR: cir.floor {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDM_I:%.*]] = call <4 x float> @llvm.floor.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDM_I]]
+  return vrndmq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndn_f32(
+// CIR-LABEL: @vrndn_f32(
+float32x2_t test_vrndn_f32(float32x2_t a) {
+// CIR: cir.roundeven {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDN_I:%.*]] = call <2 x float> @llvm.roundeven.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDN_I]]
+  return vrndn_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndnq_f32(
+// CIR-LABEL: @vrndnq_f32(
+float32x4_t test_vrndnq_f32(float32x4_t a) {
+// CIR: cir.roundeven {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDN_I:%.*]] = call <4 x float> @llvm.roundeven.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDN_I]]
+  return vrndnq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndns_f32(
+// CIR-LABEL: @vrndns_f32(
+float32_t test_vrndns_f32(float32_t a) {
+// CIR: cir.roundeven {{%.*}} : !cir.float
+
+// LLVM-SAME: float noundef [[A:%.*]])
+// LLVM: [[VRNDN_I:%.*]] = call float @llvm.roundeven.f32(float [[A]])
+// LLVM: ret float [[VRNDN_I]]
+  return vrndns_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndp_f32(
+// CIR-LABEL: @vrndp_f32(
+float32x2_t test_vrndp_f32(float32x2_t a) {
+// CIR: cir.ceil {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDP_I:%.*]] = call <2 x float> @llvm.ceil.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDP_I]]
+  return vrndp_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndpq_f32(
+// CIR-LABEL: @vrndpq_f32(
+float32x4_t test_vrndpq_f32(float32x4_t a) {
+// CIR: cir.ceil {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDP_I:%.*]] = call <4 x float> @llvm.ceil.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDP_I]]
+  return vrndpq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndx_f32(
+// CIR-LABEL: @vrndx_f32(
+float32x2_t test_vrndx_f32(float32x2_t a) {
+// CIR: cir.rint {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDX_I:%.*]] = call <2 x float> @llvm.rint.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDX_I]]
+  return vrndx_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndxq_f32(
+// CIR-LABEL: @vrndxq_f32(
+float32x4_t test_vrndxq_f32(float32x4_t a) {
+// CIR: cir.rint {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDX_I:%.*]] = call <4 x float> @llvm.rint.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDX_I]]
+  return vrndxq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrnd_f32(
+// CIR-LABEL: @vrnd_f32(
+float32x2_t test_vrnd_f32(float32x2_t a) {
+// CIR: cir.trunc {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRND_I:%.*]] = call <2 x float> @llvm.trunc.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRND_I]]
+  return vrnd_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndq_f32(
+// CIR-LABEL: @vrndq_f32(
+float32x4_t test_vrndq_f32(float32x4_t a) {
+// CIR: cir.trunc {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRND_I:%.*]] = call <4 x float> @llvm.trunc.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRND_I]]
+  return vrndq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndi_f32(
+// CIR-LABEL: @vrndi_f32(
+float32x2_t test_vrndi_f32(float32x2_t a) {
+// CIR: cir.nearbyint {{%.*}} : !cir.vector<2 x !cir.float>
+
+// LLVM-SAME: <2 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDI_I:%.*]] = call <2 x float> @llvm.nearbyint.v2f32(<2 x float> {{.*}})
+// LLVM: ret <2 x float> [[VRNDI_I]]
+  return vrndi_f32(a);
+}
+
+// LLVM-LABEL: @test_vrndiq_f32(
+// CIR-LABEL: @vrndiq_f32(
+float32x4_t test_vrndiq_f32(float32x4_t a) {
+// CIR: cir.nearbyint {{%.*}} : !cir.vector<4 x !cir.float>
+
+// LLVM-SAME: <4 x float> noundef [[A:%.*]])
+// LLVM: [[VRNDI_I:%.*]] = call <4 x float> @llvm.nearbyint.v4f32(<4 x float> {{.*}})
+// LLVM: ret <4 x float> [[VRNDI_I]]
+  return vrndiq_f32(a);
+}
+
+// LLVM-LABEL: @test_vrnda_f64(
+// CIR-LABEL: @vrnda_f64(
+float64x1_t test_vrnda_f64(float64x1_t a) {
+// CIR: cir.round {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDA_I:%.*]] = call <1 x double> @llvm.round.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDA_I]]
+  return vrnda_f64(a);
+}
+
+// LLVM-LABEL: @test_vrndm_f64(
+// CIR-LABEL: @vrndm_f64(
+float64x1_t test_vrndm_f64(float64x1_t a) {
+// CIR: cir.floor {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDM_I:%.*]] = call <1 x double> @llvm.floor.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDM_I]]
+  return vrndm_f64(a);
+}
+
+// LLVM-LABEL: @test_vrndn_f64(
+// CIR-LABEL: @vrndn_f64(
+float64x1_t test_vrndn_f64(float64x1_t a) {
+// CIR: cir.roundeven {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDN_I:%.*]] = call <1 x double> @llvm.roundeven.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDN_I]]
+  return vrndn_f64(a);
+}
+
+// LLVM-LABEL: @test_vrndp_f64(
+// CIR-LABEL: @vrndp_f64(
+float64x1_t test_vrndp_f64(float64x1_t a) {
+// CIR: cir.ceil {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDP_I:%.*]] = call <1 x double> @llvm.ceil.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDP_I]]
+  return vrndp_f64(a);
+}
+
+// LLVM-LABEL: @test_vrndx_f64(
+// CIR-LABEL: @vrndx_f64(
+float64x1_t test_vrndx_f64(float64x1_t a) {
+// CIR: cir.rint {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDX_I:%.*]] = call <1 x double> @llvm.rint.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDX_I]]
+  return vrndx_f64(a);
+}
+
+// LLVM-LABEL: @test_vrnd_f64(
+// CIR-LABEL: @vrnd_f64(
+float64x1_t test_vrnd_f64(float64x1_t a) {
+// CIR: cir.trunc {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRND_I:%.*]] = call <1 x double> @llvm.trunc.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRND_I]]
+  return vrnd_f64(a);
+}
+
+// LLVM-LABEL: @test_vrndi_f64(
+// CIR-LABEL: @vrndi_f64(
+float64x1_t test_vrndi_f64(float64x1_t a) {
+// CIR: cir.nearbyint {{%.*}} : !cir.vector<1 x !cir.double>
+
+// LLVM-SAME: <1 x double> noundef [[A:%.*]])
+// LLVM: [[VRNDI_I:%.*]] = call <1 x double> @llvm.nearbyint.v1f64(<1 x double> {{.*}})
+// LLVM: ret <1 x double> [[VRNDI_I]]
+  return vrndi_f64(a);
+}
