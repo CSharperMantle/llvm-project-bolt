@@ -811,7 +811,7 @@ NVPTXTargetLowering::NVPTXTargetLowering(const NVPTXTargetMachine &TM,
   setOperationAction(ISD::ABS_MIN_POISON, {MVT::i16, MVT::i32, MVT::i64},
                      Legal);
 
-  setOperationAction({ISD::CTPOP, ISD::CTLZ, ISD::CTLZ_ZERO_UNDEF}, MVT::i16,
+  setOperationAction({ISD::CTPOP, ISD::CTLZ, ISD::CTLZ_ZERO_POISON}, MVT::i16,
                      Promote);
   setOperationAction({ISD::CTPOP, ISD::CTLZ}, MVT::i32, Legal);
   setOperationAction({ISD::CTPOP, ISD::CTLZ}, MVT::i64, Custom);
