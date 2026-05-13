@@ -91,6 +91,7 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using namespace llvm;
 
@@ -180,6 +181,62 @@ const char kAMDGPUAddressSharedName[] = "llvm.amdgcn.is.shared";
 const char kAMDGPUAddressPrivateName[] = "llvm.amdgcn.is.private";
 const char kAMDGPUBallotName[] = "llvm.amdgcn.ballot.i64";
 const char kAMDGPUUnreachableName[] = "llvm.amdgcn.unreachable";
+
+namespace {
+
+static DIType *solveAsanDIType(DIBuilder &DIB, Type *Ty, const DataLayout &DL);
+
+class AsanFunctionInserter {
+public:
+  AsanFunctionInserter(Module &M, bool EmitDebugInfo)
+      : M(M), DL(M.getDataLayout()), EmitDebugInfo(EmitDebugInfo),
+        File(M.debug_compile_units().empty()
+                 ? nullptr
+                 : DIFile::get(M.getContext(), /*Filename=*/"asan_interface.h",
+                               /*Directory=*/"sanitizer")),
+        DIB(M, false) {}
+  ~AsanFunctionInserter() { DIB.finalize(); }
+
+  template <typename... ArgTypes>
+  FunctionCallee insertFunction(StringRef Name, ArgTypes &&...Args) {
+    FunctionCallee Callee =
+        M.getOrInsertFunction(Name, std::forward<ArgTypes>(Args)...);
+    maybeEmitDebugInfo(Callee);
+    return Callee;
+  }
+
+private:
+  void maybeEmitDebugInfo(FunctionCallee Callee) {
+    if (!EmitDebugInfo || !File)
+      return;
+
+    auto *F = dyn_cast<Function>(Callee.getCallee()->stripPointerCasts());
+    if (!F || !F->isDeclaration() || F->getSubprogram())
+      return;
+
+    FunctionType *FTy = F->getFunctionType();
+    SmallVector<Metadata *, 4> ParamTypes;
+    ParamTypes.push_back(solveAsanDIType(DIB, FTy->getReturnType(), DL));
+    for (Type *PT : FTy->params())
+      ParamTypes.push_back(solveAsanDIType(DIB, PT, DL));
+
+    DISubroutineType *SubTy =
+        DIB.createSubroutineType(DIB.getOrCreateTypeArray(ParamTypes));
+    DISubprogram *SP =
+        DIB.createFunction(File, F->getName(), F->getName(), File, 0, SubTy, 0,
+                           DINode::FlagArtificial | DINode::FlagPrototyped,
+                           DISubprogram::SPFlagZero);
+    F->setSubprogram(SP);
+  }
+
+  Module &M;
+  const DataLayout &DL;
+  bool EmitDebugInfo;
+  DIFile *File;
+  DIBuilder DIB;
+};
+
+} // end anonymous namespace
 
 // Accesses sizes are powers of two: 1, 2, 4, 8, 16.
 static const size_t kNumberOfAccessSizes = 5;
@@ -450,6 +507,11 @@ static cl::list<unsigned> ClAddrSpaces(
     cl::Hidden, cl::CommaSeparated, cl::callback([](const unsigned &AddrSpace) {
       SrcAddrSpaces.insert(AddrSpace);
     }));
+
+static cl::opt<bool> ClEmitDebugInfo(
+    "asan-emit-debug-info",
+    cl::desc("Emit debug info for inserted ASan runtime function declarations"),
+    cl::Hidden, cl::init(false));
 
 // Debug flags.
 
@@ -783,13 +845,14 @@ public:
 
 /// AddressSanitizer: instrument the code in module to find memory bugs.
 struct AddressSanitizer {
-  AddressSanitizer(Module &M, const StackSafetyGlobalInfo *SSGI,
+  AddressSanitizer(Module &M, AsanFunctionInserter &Inserter,
+                   const StackSafetyGlobalInfo *SSGI,
                    int InstrumentationWithCallsThreshold,
                    uint32_t MaxInlinePoisoningSize, bool CompileKernel = false,
                    bool Recover = false, bool UseAfterScope = false,
                    AsanDetectStackUseAfterReturnMode UseAfterReturn =
                        AsanDetectStackUseAfterReturnMode::Runtime)
-      : M(M),
+      : M(M), Inserter(Inserter),
         CompileKernel(ClEnableKasan.getNumOccurrences() > 0 ? ClEnableKasan
                                                             : CompileKernel),
         Recover(ClRecover.getNumOccurrences() > 0 ? ClRecover : Recover),
@@ -901,6 +964,7 @@ private:
   };
 
   Module &M;
+  AsanFunctionInserter &Inserter;
   LLVMContext *C;
   const DataLayout *DL;
   Triple TargetTriple;
@@ -938,12 +1002,13 @@ private:
 
 class ModuleAddressSanitizer {
 public:
-  ModuleAddressSanitizer(Module &M, bool InsertVersionCheck,
-                         bool CompileKernel = false, bool Recover = false,
-                         bool UseGlobalsGC = true, bool UseOdrIndicator = true,
+  ModuleAddressSanitizer(Module &M, AsanFunctionInserter &Inserter,
+                         bool InsertVersionCheck, bool CompileKernel = false,
+                         bool Recover = false, bool UseGlobalsGC = true,
+                         bool UseOdrIndicator = true,
                          AsanDtorKind DestructorKind = AsanDtorKind::Global,
                          AsanCtorKind ConstructorKind = AsanCtorKind::Global)
-      : M(M),
+      : M(M), Inserter(Inserter),
         CompileKernel(ClEnableKasan.getNumOccurrences() > 0 ? ClEnableKasan
                                                             : CompileKernel),
         InsertVersionCheck(ClInsertVersionCheck.getNumOccurrences() > 0
@@ -1023,6 +1088,7 @@ private:
   GlobalVariable *getOrCreateModuleName();
 
   Module &M;
+  AsanFunctionInserter &Inserter;
   bool CompileKernel;
   bool InsertVersionCheck;
   bool Recover;
@@ -1288,6 +1354,34 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
                      Instruction *ThenTerm, Value *ValueIfFalse);
 };
 
+/// Resolve an LLVM IR type to a synthetic DIType for ASan runtime callbacks.
+/// Only handles the types that actually appear in ASan callback signatures.
+static DIType *solveAsanDIType(DIBuilder &DIB, Type *Ty, const DataLayout &DL) {
+  // Functions have a void return type.
+  if (Ty->isVoidTy())
+    return nullptr;
+
+  // The mem* intrinsics and AMDGPU specific calls have pointer parameters.
+  if (Ty->isPointerTy()) {
+    return DIB.createPointerType(
+        nullptr,
+        DL.getPointerSizeInBits(ClAddrSpaces.empty() ? 0
+                                                     : *ClAddrSpaces.begin()),
+        DL.getABITypeAlign(Ty).value() * CHAR_BIT, std::nullopt, "PointerType");
+  }
+
+  // All other parameters are integers, even pointers (intptr_t).
+  assert(Ty->isIntegerTy() && "unexpected type in ASan callback signature");
+
+  unsigned BitWidth = cast<IntegerType>(Ty)->getBitWidth();
+  SmallString<16> Name;
+  raw_svector_ostream OS(Name);
+  OS << "__int_" << BitWidth;
+
+  return DIB.createBasicType(OS.str(), BitWidth, dwarf::DW_ATE_signed,
+                             DINode::FlagArtificial);
+}
+
 } // end anonymous namespace
 
 void AddressSanitizerPass::printPipeline(
@@ -1317,9 +1411,11 @@ PreservedAnalyses AddressSanitizerPass::run(Module &M,
   if (checkIfAlreadyInstrumented(M, "nosanitize_address"))
     return PreservedAnalyses::all();
 
+  AsanFunctionInserter Inserter(M, ClEmitDebugInfo);
   ModuleAddressSanitizer ModuleSanitizer(
-      M, Options.InsertVersionCheck, Options.CompileKernel, Options.Recover,
-      UseGlobalGC, UseOdrIndicator, DestructorKind, ConstructorKind);
+      M, Inserter, Options.InsertVersionCheck, Options.CompileKernel,
+      Options.Recover, UseGlobalGC, UseOdrIndicator, DestructorKind,
+      ConstructorKind);
   bool Modified = false;
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   const StackSafetyGlobalInfo *const SSGI =
@@ -1336,7 +1432,7 @@ PreservedAnalyses AddressSanitizerPass::run(Module &M,
     if (F.isPresplitCoroutine())
       continue;
     AddressSanitizer FunctionSanitizer(
-        M, SSGI, Options.InstrumentationWithCallsThreshold,
+        M, Inserter, SSGI, Options.InstrumentationWithCallsThreshold,
         Options.MaxInlinePoisoningSize, Options.CompileKernel, Options.Recover,
         Options.UseAfterScope, Options.UseAfterReturn);
     const TargetLibraryInfo &TLI = FAM.getResult<TargetLibraryAnalysis>(F);
@@ -1922,11 +2018,10 @@ Instruction *AddressSanitizer::instrumentAMDGPUAddress(
 
 Instruction *AddressSanitizer::genAMDGPUReportBlock(IRBuilder<> &IRB,
                                                     Value *Cond, bool Recover) {
-  Module &M = *IRB.GetInsertBlock()->getModule();
   Value *ReportCond = Cond;
   if (!Recover) {
-    auto Ballot = M.getOrInsertFunction(kAMDGPUBallotName, IRB.getInt64Ty(),
-                                        IRB.getInt1Ty());
+    auto Ballot = Inserter.insertFunction(kAMDGPUBallotName, IRB.getInt64Ty(),
+                                          IRB.getInt1Ty());
     ReportCond = IRB.CreateIsNotNull(IRB.CreateCall(Ballot, {Cond}));
   }
 
@@ -1941,7 +2036,7 @@ Instruction *AddressSanitizer::genAMDGPUReportBlock(IRBuilder<> &IRB,
   Trm = SplitBlockAndInsertIfThen(Cond, Trm, false);
   IRB.SetInsertPoint(Trm);
   return IRB.CreateCall(
-      M.getOrInsertFunction(kAMDGPUUnreachableName, IRB.getVoidTy()), {});
+      Inserter.insertFunction(kAMDGPUUnreachableName, IRB.getVoidTy()), {});
 }
 
 void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
@@ -2304,30 +2399,30 @@ void ModuleAddressSanitizer::initializeCallbacks() {
   IRBuilder<> IRB(*C);
 
   // Declare our poisoning and unpoisoning functions.
-  AsanPoisonGlobals =
-      M.getOrInsertFunction(kAsanPoisonGlobalsName, IRB.getVoidTy(), IntptrTy);
+  AsanPoisonGlobals = Inserter.insertFunction(kAsanPoisonGlobalsName,
+                                              IRB.getVoidTy(), IntptrTy);
   AsanUnpoisonGlobals =
-      M.getOrInsertFunction(kAsanUnpoisonGlobalsName, IRB.getVoidTy());
+      Inserter.insertFunction(kAsanUnpoisonGlobalsName, IRB.getVoidTy());
 
   // Declare functions that register/unregister globals.
-  AsanRegisterGlobals = M.getOrInsertFunction(
+  AsanRegisterGlobals = Inserter.insertFunction(
       kAsanRegisterGlobalsName, IRB.getVoidTy(), IntptrTy, IntptrTy);
-  AsanUnregisterGlobals = M.getOrInsertFunction(
+  AsanUnregisterGlobals = Inserter.insertFunction(
       kAsanUnregisterGlobalsName, IRB.getVoidTy(), IntptrTy, IntptrTy);
 
   // Declare the functions that find globals in a shared object and then invoke
   // the (un)register function on them.
-  AsanRegisterImageGlobals = M.getOrInsertFunction(
+  AsanRegisterImageGlobals = Inserter.insertFunction(
       kAsanRegisterImageGlobalsName, IRB.getVoidTy(), IntptrTy);
-  AsanUnregisterImageGlobals = M.getOrInsertFunction(
+  AsanUnregisterImageGlobals = Inserter.insertFunction(
       kAsanUnregisterImageGlobalsName, IRB.getVoidTy(), IntptrTy);
 
   AsanRegisterElfGlobals =
-      M.getOrInsertFunction(kAsanRegisterElfGlobalsName, IRB.getVoidTy(),
-                            IntptrTy, IntptrTy, IntptrTy);
+      Inserter.insertFunction(kAsanRegisterElfGlobalsName, IRB.getVoidTy(),
+                              IntptrTy, IntptrTy, IntptrTy);
   AsanUnregisterElfGlobals =
-      M.getOrInsertFunction(kAsanUnregisterElfGlobalsName, IRB.getVoidTy(),
-                            IntptrTy, IntptrTy, IntptrTy);
+      Inserter.insertFunction(kAsanUnregisterElfGlobalsName, IRB.getVoidTy(),
+                              IntptrTy, IntptrTy, IntptrTy);
 }
 
 // Put the metadata and the instrumented global in the same group. This ensures
@@ -2902,24 +2997,25 @@ void AddressSanitizer::initializeCallbacks(const TargetLibraryInfo *TLI) {
           AL1 = AL1.addParamAttribute(*C, 1, AK);
         }
       }
-      AsanErrorCallbackSized[AccessIsWrite][Exp] = M.getOrInsertFunction(
+      AsanErrorCallbackSized[AccessIsWrite][Exp] = Inserter.insertFunction(
           kAsanReportErrorTemplate + ExpStr + TypeStr + "_n" + EndingStr,
           FunctionType::get(IRB.getVoidTy(), Args2, false), AL2);
 
-      AsanMemoryAccessCallbackSized[AccessIsWrite][Exp] = M.getOrInsertFunction(
-          ClMemoryAccessCallbackPrefix + ExpStr + TypeStr + "N" + EndingStr,
-          FunctionType::get(IRB.getVoidTy(), Args2, false), AL2);
+      AsanMemoryAccessCallbackSized[AccessIsWrite][Exp] =
+          Inserter.insertFunction(
+              ClMemoryAccessCallbackPrefix + ExpStr + TypeStr + "N" + EndingStr,
+              FunctionType::get(IRB.getVoidTy(), Args2, false), AL2);
 
       for (size_t AccessSizeIndex = 0; AccessSizeIndex < kNumberOfAccessSizes;
            AccessSizeIndex++) {
         const std::string Suffix = TypeStr + itostr(1ULL << AccessSizeIndex);
         AsanErrorCallback[AccessIsWrite][Exp][AccessSizeIndex] =
-            M.getOrInsertFunction(
+            Inserter.insertFunction(
                 kAsanReportErrorTemplate + ExpStr + Suffix + EndingStr,
                 FunctionType::get(IRB.getVoidTy(), Args1, false), AL1);
 
         AsanMemoryAccessCallback[AccessIsWrite][Exp][AccessSizeIndex] =
-            M.getOrInsertFunction(
+            Inserter.insertFunction(
                 ClMemoryAccessCallbackPrefix + ExpStr + Suffix + EndingStr,
                 FunctionType::get(IRB.getVoidTy(), Args1, false), AL1);
       }
@@ -2930,29 +3026,31 @@ void AddressSanitizer::initializeCallbacks(const TargetLibraryInfo *TLI) {
       (CompileKernel && !ClKasanMemIntrinCallbackPrefix)
           ? std::string("")
           : ClMemoryAccessCallbackPrefix;
-  AsanMemmove = M.getOrInsertFunction(MemIntrinCallbackPrefix + "memmove",
-                                      PtrTy, PtrTy, PtrTy, IntptrTy);
-  AsanMemcpy = M.getOrInsertFunction(MemIntrinCallbackPrefix + "memcpy", PtrTy,
-                                     PtrTy, PtrTy, IntptrTy);
-  AsanMemset = M.getOrInsertFunction(MemIntrinCallbackPrefix + "memset",
-                                     TLI->getAttrList(C, {1}, /*Signed=*/false),
-                                     PtrTy, PtrTy, IRB.getInt32Ty(), IntptrTy);
+  AsanMemmove = Inserter.insertFunction(MemIntrinCallbackPrefix + "memmove",
+                                        PtrTy, PtrTy, PtrTy, IntptrTy);
+  AsanMemcpy = Inserter.insertFunction(MemIntrinCallbackPrefix + "memcpy",
+                                       PtrTy, PtrTy, PtrTy, IntptrTy);
+  AsanMemset =
+      Inserter.insertFunction(MemIntrinCallbackPrefix + "memset",
+                              TLI->getAttrList(C, {1},
+                                               /*Signed=*/false),
+                              PtrTy, PtrTy, IRB.getInt32Ty(), IntptrTy);
 
   AsanHandleNoReturnFunc =
-      M.getOrInsertFunction(kAsanHandleNoReturnName, IRB.getVoidTy());
+      Inserter.insertFunction(kAsanHandleNoReturnName, IRB.getVoidTy());
 
   AsanPtrCmpFunction =
-      M.getOrInsertFunction(kAsanPtrCmp, IRB.getVoidTy(), IntptrTy, IntptrTy);
+      Inserter.insertFunction(kAsanPtrCmp, IRB.getVoidTy(), IntptrTy, IntptrTy);
   AsanPtrSubFunction =
-      M.getOrInsertFunction(kAsanPtrSub, IRB.getVoidTy(), IntptrTy, IntptrTy);
+      Inserter.insertFunction(kAsanPtrSub, IRB.getVoidTy(), IntptrTy, IntptrTy);
   if (Mapping.InGlobal)
     AsanShadowGlobal = M.getOrInsertGlobal("__asan_shadow",
                                            ArrayType::get(IRB.getInt8Ty(), 0));
 
   AMDGPUAddressShared =
-      M.getOrInsertFunction(kAMDGPUAddressSharedName, IRB.getInt1Ty(), PtrTy);
-  AMDGPUAddressPrivate =
-      M.getOrInsertFunction(kAMDGPUAddressPrivateName, IRB.getInt1Ty(), PtrTy);
+      Inserter.insertFunction(kAMDGPUAddressSharedName, IRB.getInt1Ty(), PtrTy);
+  AMDGPUAddressPrivate = Inserter.insertFunction(kAMDGPUAddressPrivateName,
+                                                 IRB.getInt1Ty(), PtrTy);
 }
 
 bool AddressSanitizer::maybeInsertAsanInitAtFunctionEntry(Function &F) {
@@ -3211,7 +3309,7 @@ bool AddressSanitizer::LooksLikeCodeInBug11395(Instruction *I) {
   return true;
 }
 
-void FunctionStackPoisoner::initializeCallbacks(Module &M) {
+void FunctionStackPoisoner::initializeCallbacks(Module &) {
   IRBuilder<> IRB(*C);
   if (ASan.UseAfterReturn == AsanDetectStackUseAfterReturnMode::Always ||
       ASan.UseAfterReturn == AsanDetectStackUseAfterReturnMode::Runtime) {
@@ -3221,17 +3319,17 @@ void FunctionStackPoisoner::initializeCallbacks(Module &M) {
             : kAsanStackMallocNameTemplate;
     for (int Index = 0; Index <= kMaxAsanStackMallocSizeClass; Index++) {
       std::string Suffix = itostr(Index);
-      AsanStackMallocFunc[Index] = M.getOrInsertFunction(
+      AsanStackMallocFunc[Index] = ASan.Inserter.insertFunction(
           MallocNameTemplate + Suffix, IntptrTy, IntptrTy);
       AsanStackFreeFunc[Index] =
-          M.getOrInsertFunction(kAsanStackFreeNameTemplate + Suffix,
-                                IRB.getVoidTy(), IntptrTy, IntptrTy);
+          ASan.Inserter.insertFunction(kAsanStackFreeNameTemplate + Suffix,
+                                       IRB.getVoidTy(), IntptrTy, IntptrTy);
     }
   }
   if (ASan.UseAfterScope) {
-    AsanPoisonStackMemoryFunc = M.getOrInsertFunction(
+    AsanPoisonStackMemoryFunc = ASan.Inserter.insertFunction(
         kAsanPoisonStackMemoryName, IRB.getVoidTy(), IntptrTy, IntptrTy);
-    AsanUnpoisonStackMemoryFunc = M.getOrInsertFunction(
+    AsanUnpoisonStackMemoryFunc = ASan.Inserter.insertFunction(
         kAsanUnpoisonStackMemoryName, IRB.getVoidTy(), IntptrTy, IntptrTy);
   }
 
@@ -3240,13 +3338,13 @@ void FunctionStackPoisoner::initializeCallbacks(Module &M) {
     std::ostringstream Name;
     Name << kAsanSetShadowPrefix;
     Name << std::setw(2) << std::setfill('0') << std::hex << Val;
-    AsanSetShadowFunc[Val] =
-        M.getOrInsertFunction(Name.str(), IRB.getVoidTy(), IntptrTy, IntptrTy);
+    AsanSetShadowFunc[Val] = ASan.Inserter.insertFunction(
+        Name.str(), IRB.getVoidTy(), IntptrTy, IntptrTy);
   }
 
-  AsanAllocaPoisonFunc = M.getOrInsertFunction(
+  AsanAllocaPoisonFunc = ASan.Inserter.insertFunction(
       kAsanAllocaPoison, IRB.getVoidTy(), IntptrTy, IntptrTy);
-  AsanAllocasUnpoisonFunc = M.getOrInsertFunction(
+  AsanAllocasUnpoisonFunc = ASan.Inserter.insertFunction(
       kAsanAllocasUnpoison, IRB.getVoidTy(), IntptrTy, IntptrTy);
 }
 
