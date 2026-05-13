@@ -603,8 +603,8 @@ bool LongJmpPass::needsStub(const BinaryBasicBlock &BB, const MCInst &Inst,
 Error LongJmpPass::relax(BinaryFunction &Func, bool &Modified) {
   const BinaryContext &BC = Func.getBinaryContext();
 
-  assert(BC.isAArch64() && "Unsupported arch");
-  constexpr int InsnSize = 4; // AArch64
+  assert((BC.isAArch64() || BC.isLoongArch()) && "Unsupported arch");
+  const int InsnSize = 4; // Fixed 4-byte instructions
   std::vector<std::pair<BinaryBasicBlock *, std::unique_ptr<BinaryBasicBlock>>>
       Insertions;
 

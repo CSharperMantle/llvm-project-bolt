@@ -187,6 +187,104 @@ public:
     Inst.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(TBB, *Ctx)));
   }
 
+  int getPCRelEncodingSize(const MCInst &Inst) const override {
+    switch (Inst.getOpcode()) {
+    default:
+      llvm_unreachable("Failed to get pcrel encoding size");
+    case LoongArch::BEQ:
+    case LoongArch::BNE:
+    case LoongArch::BLT:
+    case LoongArch::BGE:
+    case LoongArch::BLTU:
+    case LoongArch::BGEU:
+      return 18;
+    case LoongArch::BEQZ:
+    case LoongArch::BNEZ:
+    case LoongArch::BCEQZ:
+    case LoongArch::BCNEZ:
+      return 23;
+    case LoongArch::B:
+    case LoongArch::BL:
+      return 28;
+    }
+  }
+
+  int getShortJmpEncodingSize() const override { return 38; }
+
+  int getUncondBranchEncodingSize() const override { return 28; }
+
+  void createShortJmp(InstructionListType &Seq, const MCSymbol *Target,
+                      MCContext *Ctx, bool IsTailCall) override {
+    InstructionListType Insts(2);
+
+    // pcaddu18i $r21, %call36(target)
+    Insts[0].setOpcode(LoongArch::PCADDU18I);
+    Insts[0].clear();
+    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[0].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_CALL36, *Ctx)));
+
+    // jirl $r0, $r21, 0
+    Insts[1].setOpcode(LoongArch::JIRL);
+    Insts[1].clear();
+    Insts[1].addOperand(MCOperand::createReg(LoongArch::R0));
+    Insts[1].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[1].addOperand(MCOperand::createImm(0));
+
+    if (IsTailCall)
+      setTailCall(Insts[1]);
+
+    Seq.swap(Insts);
+  }
+
+  void createLongJmp(InstructionListType &Seq, const MCSymbol *Target,
+                     MCContext *Ctx, bool IsTailCall) override {
+    InstructionListType Insts(5);
+
+    // lu12i.w  $r21, %abs_hi20(target)           # bits 31-12
+    Insts[0].setOpcode(LoongArch::LU12I_W);
+    Insts[0].clear();
+    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[0].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS_HI20, *Ctx)));
+
+    // ori      $r21, $r21, %abs_lo12(target)     # bits 11-0
+    Insts[1].setOpcode(LoongArch::ORI);
+    Insts[1].clear();
+    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[0].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS_LO12, *Ctx)));
+
+    // lu32i.d  $r21, %abs64_lo20(target)         # bits 51-32
+    Insts[2].setOpcode(LoongArch::LU32I_D);
+    Insts[2].clear();
+    Insts[2].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[2].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[2].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS64_LO20, *Ctx)));
+
+    // lu52i.d  $r21, $r21, %abs64_hi12(target)   # bits 63-52
+    Insts[3].setOpcode(LoongArch::LU52I_D);
+    Insts[3].clear();
+    Insts[3].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[3].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[3].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
+        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS64_HI12, *Ctx)));
+
+    // jirl     $r0, $r21, 0
+    Insts[4].setOpcode(LoongArch::JIRL);
+    Insts[4].clear();
+    Insts[4].addOperand(MCOperand::createReg(LoongArch::R0));
+    Insts[4].addOperand(MCOperand::createReg(LoongArch::R21));
+    Insts[4].addOperand(MCOperand::createImm(0));
+
+    if (IsTailCall)
+      setTailCall(Insts[4]);
+
+    Seq.swap(Insts);
+  }
+
   StringRef getTrapFillValue() const override {
     return StringRef("\0\0\0\0", 4);
   }
