@@ -45,6 +45,19 @@ constexpr bool test() {
     assert(e1 != i3);
   }
 
+  // LWG4366
+  { // x.has_value()
+    const std::expected<ImplicitBool::E1, int> e1(ImplicitBool::E1{1});
+    assert(e1 == ImplicitBool::E2{1});
+    assert(e1 != ImplicitBool::E2{3});
+  }
+
+  { // !x.has_value()
+    const std::expected<ImplicitBool::E1, int> e1(std::unexpect, 1);
+    assert(e1 != ImplicitBool::E2{1});
+    assert(e1 != ImplicitBool::E2{2});
+  }
+
   return true;
 }
 

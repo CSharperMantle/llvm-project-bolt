@@ -446,6 +446,11 @@ private:
   _LIBCPP_NO_UNIQUE_ADDRESS __conditional_no_unique_address<__allow_reusing_expected_tail_padding, __repr> __repr_;
 };
 
+// Helper to handle cases for LWG4366 Heterogeneous comparison of ``expected`` may be ill-formed
+// Where the comparison may produce a value that is a type that is not bool, and is implicitly
+// convertible to bool, but not explicitly.
+constexpr bool __into_bool(bool __b) noexcept { return __b; }
+
 template <class _Tp, class _Err>
 class expected : private __expected_base<_Tp, _Err> {
   static_assert(!is_reference_v<_Tp> && !is_function_v<_Tp> && !is_same_v<remove_cv_t<_Tp>, in_place_t> &&
@@ -1169,7 +1174,7 @@ public:
     }
 #  endif
   {
-    return __x.__has_val() && static_cast<bool>(__x.__val() == __v);
+    return __x.__has_val() && std::__into_bool(__x.__val() == __v);
   }
 
   template <class _E2>
@@ -1180,7 +1185,7 @@ public:
     }
 #  endif
   {
-    return !__x.__has_val() && static_cast<bool>(__x.__unex() == __e.error());
+    return !__x.__has_val() && std::__into_bool(__x.__unex() == __e.error());
   }
 };
 
@@ -1882,7 +1887,7 @@ public:
     if (__x.__has_val() != __y.__has_val()) {
       return false;
     } else {
-      return __x.__has_val() || static_cast<bool>(__x.__unex() == __y.__unex());
+      return __x.__has_val() || std::__into_bool(__x.__unex() == __y.__unex());
     }
   }
 
@@ -1894,7 +1899,7 @@ public:
     }
 #  endif
   {
-    return !__x.__has_val() && static_cast<bool>(__x.__unex() == __y.error());
+    return !__x.__has_val() && std::__into_bool(__x.__unex() == __y.error());
   }
 };
 
