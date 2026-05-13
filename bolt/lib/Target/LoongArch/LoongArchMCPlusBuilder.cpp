@@ -70,11 +70,22 @@ public:
     case ELF::R_LARCH_32_PCREL:
     case ELF::R_LARCH_PCREL20_S2:
     case ELF::R_LARCH_CALL36:
+    case ELF::R_LARCH_TLS_DESC_PC_HI20:
+    case ELF::R_LARCH_TLS_DESC_PC_LO12:
+    case ELF::R_LARCH_TLS_DESC64_PC_LO20:
+    case ELF::R_LARCH_TLS_DESC64_PC_HI12:
+    case ELF::R_LARCH_TLS_DESC_HI20:
+    case ELF::R_LARCH_TLS_DESC_LO12:
+    case ELF::R_LARCH_TLS_DESC64_LO20:
+    case ELF::R_LARCH_TLS_DESC64_HI12:
     case ELF::R_LARCH_PCADD_HI20:
     case ELF::R_LARCH_PCADD_LO12:
     case ELF::R_LARCH_GOT_PCADD_HI20:
     case ELF::R_LARCH_GOT_PCADD_LO12:
       return true;
+    case ELF::R_LARCH_TLS_DESC_LD:
+    case ELF::R_LARCH_TLS_DESC_CALL:
+      return false;
     default:
       llvm_unreachable("Unexpected LoongArch relocation type in code");
     }
@@ -452,31 +463,39 @@ public:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_CALL36, Ctx);
     case ELF::R_LARCH_ABS_HI20:
     case ELF::R_LARCH_GOT_HI20:
+    case ELF::R_LARCH_TLS_DESC_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS_HI20, Ctx);
     case ELF::R_LARCH_ABS_LO12:
     case ELF::R_LARCH_GOT_LO12:
+    case ELF::R_LARCH_TLS_DESC_LO12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS_LO12, Ctx);
     case ELF::R_LARCH_ABS64_LO20:
     case ELF::R_LARCH_GOT64_LO20:
+    case ELF::R_LARCH_TLS_DESC64_LO20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS64_LO20, Ctx);
     case ELF::R_LARCH_ABS64_HI12:
     case ELF::R_LARCH_GOT64_HI12:
+    case ELF::R_LARCH_TLS_DESC64_HI12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_ABS64_HI12, Ctx);
     case ELF::R_LARCH_PCALA_LO12:
     case ELF::R_LARCH_GOT_PC_LO12:
     case ELF::R_LARCH_TLS_IE_PC_LO12:
+    case ELF::R_LARCH_TLS_DESC_PC_LO12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_LO12, Ctx);
     case ELF::R_LARCH_PCALA_HI20:
     case ELF::R_LARCH_GOT_PC_HI20:
     case ELF::R_LARCH_TLS_IE_PC_HI20:
     case ELF::R_LARCH_TLS_LD_PC_HI20:
     case ELF::R_LARCH_TLS_GD_PC_HI20:
+    case ELF::R_LARCH_TLS_DESC_PC_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_HI20, Ctx);
     case ELF::R_LARCH_PCALA64_LO20:
     case ELF::R_LARCH_GOT64_PC_LO20:
+    case ELF::R_LARCH_TLS_DESC64_PC_LO20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA64_LO20, Ctx);
     case ELF::R_LARCH_PCALA64_HI12:
     case ELF::R_LARCH_GOT64_PC_HI12:
+    case ELF::R_LARCH_TLS_DESC64_PC_HI12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA64_HI12, Ctx);
     case ELF::R_LARCH_TLS_LE_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_TLS_LE_HI20, Ctx);
