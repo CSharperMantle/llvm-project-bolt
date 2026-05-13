@@ -3589,6 +3589,40 @@ static bool canEmitSpuriousReferenceToVariable(CodeGenFunction &CGF,
   }
 }
 
+/// Emit an LValue for a structured binding captured in an OpenMP region.
+/// Handles extracting individual bindings from the captured decomposed
+/// declaration (struct fields, array elements, etc.).
+LValue CodeGenFunction::EmitOMPCapturedBindingLValue(const BindingDecl *BD) {
+  assert(CapturedStmtInfo && "Expected to be inside a captured region");
+  assert(CapturedStmtInfo->getKind() == CapturedRegionKind::CR_OpenMP &&
+         "Expected OpenMP captured region");
+  assert(CGM.getLangOpts().OpenMP && "Expected OpenMP to be enabled");
+
+  auto *DD = cast<VarDecl>(BD->getDecomposedDecl());
+  Expr *BindingExpr = BD->getBinding()->IgnoreImplicit();
+
+  if (isa<ArraySubscriptExpr>(BindingExpr))
+    return EmitLValue(BD->getBinding(), NotKnownNonNull);
+
+  if (auto *ME = dyn_cast<MemberExpr>(BindingExpr)) {
+    // DeclRefExpr type must be the non-reference type — EmitDeclRefLValue
+    // checks VD->getType()->isReferenceType() and calls
+    // EmitLoadOfReferenceLValue automatically.
+    QualType DREType = DD->getType().getNonReferenceType();
+    DeclarationNameInfo NameInfo(DD->getDeclName(), SourceLocation());
+    DeclRefExpr *DRE = DeclRefExpr::Create(
+        getContext(), NestedNameSpecifierLoc(), SourceLocation(), DD,
+        /*RefersToEnclosingVariableOrCapture=*/true, NameInfo, DREType,
+        VK_LValue);
+    LValue CapLVal = EmitDeclRefLValue(DRE);
+    return EmitLValueForField(CapLVal, cast<FieldDecl>(ME->getMemberDecl()));
+  }
+
+  // Sema ensures tuple-like bindings are rejected earlier, so this path
+  // should never be reached.
+  llvm_unreachable("Unexpected structured binding type in OpenMP");
+}
+
 LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
   const NamedDecl *ND = E->getDecl();
   QualType T = E->getType();
@@ -3771,6 +3805,13 @@ LValue CodeGenFunction::EmitDeclRefLValue(const DeclRefExpr *E) {
   // an enclosing scope.
   if (const auto *BD = dyn_cast<BindingDecl>(ND)) {
     if (E->refersToEnclosingVariableOrCapture()) {
+      // OpenMP case: binding was captured via its decomposed decl.
+      if (CapturedStmtInfo &&
+          CapturedStmtInfo->getKind() == CapturedRegionKind::CR_OpenMP &&
+          CGM.getLangOpts().OpenMP) {
+        return EmitOMPCapturedBindingLValue(BD);
+      }
+      // Non-OpenMP case: lambda capture.
       auto *FD = LambdaCaptureFields.lookup(BD);
       return EmitCapturedFieldLValue(*this, FD, CXXABIThisValue);
     }
