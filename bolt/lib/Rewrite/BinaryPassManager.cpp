@@ -12,7 +12,6 @@
 #include "bolt/Passes/AllocCombiner.h"
 #include "bolt/Passes/AsmDump.h"
 #include "bolt/Passes/CMOVConversion.h"
-#include "bolt/Passes/FixLoongArchCallsPass.h"
 #include "bolt/Passes/FixRISCVCallsPass.h"
 #include "bolt/Passes/FixRelaxationPass.h"
 #include "bolt/Passes/FrameOptimizer.h"
@@ -222,11 +221,6 @@ static cl::opt<bool>
                        cl::desc("print functions after fix RISCV calls pass"),
                        cl::Hidden, cl::cat(BoltOptCategory));
 
-static cl::opt<bool> PrintFixLoongArchCalls(
-    "print-fix-loongarch-calls",
-    cl::desc("print functions after fix LoongArch calls pass"), cl::Hidden,
-    cl::cat(BoltOptCategory));
-
 static cl::opt<bool> PrintLoongArchRelaxation(
     "print-loongarch-relaxation",
     cl::desc("print functions after LoongArch relaxation pass"), cl::Hidden,
@@ -406,11 +400,6 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
         std::make_unique<FixRISCVCallsPass>(PrintFixRISCVCalls));
   }
 
-  if (BC.isLoongArch()) {
-    Manager.registerPass(
-        std::make_unique<FixLoongArchCallsPass>(PrintFixLoongArchCalls));
-  }
-
   // Here we manage dependencies/order manually, since passes are run in the
   // order they're registered.
 
@@ -549,11 +538,6 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
     Manager.registerPass(
         std::make_unique<AArch64RelaxationPass>(PrintAArch64Relaxation));
 
-    // Tighten branches according to offset differences between branch and
-    // targets. No extra instructions after this pass, otherwise we may have
-    // relocations out of range and crash during linking.
-    Manager.registerPass(std::make_unique<LongJmpPass>(PrintLongJmp));
-
     Manager.registerPass(
         std::make_unique<PointerAuthCFIFixup>(PrintPAuthCFIFixup));
   }
@@ -561,6 +545,13 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
   if (BC.isLoongArch()) {
     Manager.registerPass(
         std::make_unique<LoongArchRelaxationPass>(PrintLoongArchRelaxation));
+  }
+
+  // Tighten branches according to offset differences between branch and
+  // targets. No extra instructions after this pass, otherwise we may have
+  // relocations out of range and crash during linking.
+  if (BC.isAArch64() || BC.isLoongArch()) {
+    Manager.registerPass(std::make_unique<LongJmpPass>(PrintLongJmp));
   }
 
   // This pass should always run last.*

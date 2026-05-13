@@ -1937,17 +1937,6 @@ public:
     llvm_unreachable("not implemented");
   }
 
-  /// Creates a new LoongArch medium code model call/tailcall in InstA + InstB,
-  /// and sets its operands to Target.
-  ///
-  /// Returns true on success.
-  virtual bool createLoongArchCall(MCInst &InstA, MCInst &InstB,
-                                   const MCSymbol *Target, MCContext *Ctx,
-                                   bool isTailCall) {
-    llvm_unreachable("not implemented");
-    return false;
-  }
-
   virtual const MCExpr *
   tryGetLoongArchPCADDIPCRel20SubExpr(const MCInst &Inst) const {
     return nullptr;
