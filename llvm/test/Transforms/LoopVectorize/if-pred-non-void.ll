@@ -647,12 +647,12 @@ define void @pr30172(ptr nocapture %asd, ptr nocapture %bsd) !dbg !5 {;
 ; UNROLL-NO-VF-NEXT:    [[TMP10:%.*]] = add nsw i32 [[TMP4]], 23
 ; UNROLL-NO-VF-NEXT:    [[TMP11:%.*]] = icmp slt i32 [[TMP3]], 100
 ; UNROLL-NO-VF-NEXT:    [[TMP12:%.*]] = icmp slt i32 [[TMP4]], 100
-; UNROLL-NO-VF-NEXT:    [[TMP13:%.*]] = xor i1 [[TMP11]], true, !dbg [[DBG34:![0-9]+]]
-; UNROLL-NO-VF-NEXT:    [[TMP14:%.*]] = xor i1 [[TMP12]], true, !dbg [[DBG34]]
+; UNROLL-NO-VF-NEXT:    [[TMP13:%.*]] = xor i1 [[TMP11]], true
+; UNROLL-NO-VF-NEXT:    [[TMP14:%.*]] = xor i1 [[TMP12]], true
 ; UNROLL-NO-VF-NEXT:    [[TMP15:%.*]] = icmp sge i32 [[TMP3]], 200
 ; UNROLL-NO-VF-NEXT:    [[TMP16:%.*]] = icmp sge i32 [[TMP4]], 200
-; UNROLL-NO-VF-NEXT:    [[TMP17:%.*]] = select i1 [[TMP13]], i1 [[TMP15]], i1 false, !dbg [[DBG35:![0-9]+]]
-; UNROLL-NO-VF-NEXT:    [[TMP18:%.*]] = select i1 [[TMP14]], i1 [[TMP16]], i1 false, !dbg [[DBG35]]
+; UNROLL-NO-VF-NEXT:    [[TMP17:%.*]] = select i1 [[TMP13]], i1 [[TMP15]], i1 false
+; UNROLL-NO-VF-NEXT:    [[TMP18:%.*]] = select i1 [[TMP14]], i1 [[TMP16]], i1 false
 ; UNROLL-NO-VF-NEXT:    [[TMP19:%.*]] = or i1 [[TMP17]], [[TMP11]]
 ; UNROLL-NO-VF-NEXT:    [[TMP20:%.*]] = or i1 [[TMP18]], [[TMP12]]
 ; UNROLL-NO-VF-NEXT:    br i1 [[TMP19]], label %[[PRED_SDIV_IF:.*]], label %[[PRED_SDIV_CONTINUE:.*]]
@@ -675,7 +675,7 @@ define void @pr30172(ptr nocapture %asd, ptr nocapture %bsd) !dbg !5 {;
 ; UNROLL-NO-VF-NEXT:    store i32 [[PREDPHI4]], ptr [[TMP2]], align 4, !alias.scope [[META29]], !noalias [[META32]]
 ; UNROLL-NO-VF-NEXT:    [[INDEX_NEXT]] = add nuw i64 [[INDEX]], 2
 ; UNROLL-NO-VF-NEXT:    [[TMP27:%.*]] = icmp eq i64 [[INDEX_NEXT]], 128
-; UNROLL-NO-VF-NEXT:    br i1 [[TMP27]], label %[[MIDDLE_BLOCK:.*]], label %[[VECTOR_BODY]], !llvm.loop [[LOOP36:![0-9]+]]
+; UNROLL-NO-VF-NEXT:    br i1 [[TMP27]], label %[[MIDDLE_BLOCK:.*]], label %[[VECTOR_BODY]], !llvm.loop [[LOOP34:![0-9]+]]
 ; UNROLL-NO-VF:       [[MIDDLE_BLOCK]]:
 ; UNROLL-NO-VF-NEXT:    br label %[[FOR_COND_CLEANUP:.*]]
 ; UNROLL-NO-VF:       [[SCALAR_PH]]:
@@ -690,10 +690,10 @@ define void @pr30172(ptr nocapture %asd, ptr nocapture %bsd) !dbg !5 {;
 ; UNROLL-NO-VF-NEXT:    [[LSD_B:%.*]] = load i32, ptr [[ISD_B]], align 4
 ; UNROLL-NO-VF-NEXT:    [[PSD:%.*]] = add nsw i32 [[LSD]], 23
 ; UNROLL-NO-VF-NEXT:    [[CMP1:%.*]] = icmp slt i32 [[LSD]], 100
-; UNROLL-NO-VF-NEXT:    br i1 [[CMP1]], label %[[IF_THEN:.*]], label %[[CHECKBB:.*]], !dbg [[DBG34]]
+; UNROLL-NO-VF-NEXT:    br i1 [[CMP1]], label %[[IF_THEN:.*]], label %[[CHECKBB:.*]], !dbg [[DBG35:![0-9]+]]
 ; UNROLL-NO-VF:       [[CHECKBB]]:
 ; UNROLL-NO-VF-NEXT:    [[CMP2:%.*]] = icmp sge i32 [[LSD]], 200
-; UNROLL-NO-VF-NEXT:    br i1 [[CMP2]], label %[[IF_THEN]], label %[[IF_END]], !dbg [[DBG35]]
+; UNROLL-NO-VF-NEXT:    br i1 [[CMP2]], label %[[IF_THEN]], label %[[IF_END]], !dbg [[DBG36:![0-9]+]]
 ; UNROLL-NO-VF:       [[IF_THEN]]:
 ; UNROLL-NO-VF-NEXT:    [[SD1:%.*]] = sdiv i32 [[PSD]], [[LSD]]
 ; UNROLL-NO-VF-NEXT:    [[RSD:%.*]] = sdiv i32 [[LSD_B]], [[SD1]]
