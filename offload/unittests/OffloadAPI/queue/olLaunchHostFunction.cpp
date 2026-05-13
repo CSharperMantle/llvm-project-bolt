@@ -11,10 +11,20 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-struct olLaunchHostFunctionTest : OffloadQueueTest {};
+struct olLaunchHostFunctionTest : OffloadQueueTest {
+  void SetUp() override {
+    RETURN_ON_FATAL_FAILURE(OffloadQueueTest::SetUp());
+    KNOWN_FAILURE_ON(LevelZero{"unsupported feature"});
+  }
+};
 OFFLOAD_TESTS_INSTANTIATE_DEVICE_FIXTURE(olLaunchHostFunctionTest);
 
-struct olLaunchHostFunctionKernelTest : OffloadKernelTest {};
+struct olLaunchHostFunctionKernelTest : OffloadKernelTest {
+  void SetUp() override {
+    RETURN_ON_FATAL_FAILURE(OffloadKernelTest::SetUp());
+    KNOWN_FAILURE_ON(LevelZero{"unsupported feature"});
+  }
+};
 OFFLOAD_TESTS_INSTANTIATE_DEVICE_FIXTURE(olLaunchHostFunctionKernelTest);
 
 TEST_P(olLaunchHostFunctionTest, Success) {

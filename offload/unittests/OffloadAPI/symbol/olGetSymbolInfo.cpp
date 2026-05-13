@@ -52,6 +52,8 @@ TEST_P(olGetSymbolInfoKernelTest, InvalidSize) {
 }
 
 TEST_P(olGetSymbolInfoGlobalTest, SuccessSize) {
+  KNOWN_FAILURE_ON(LevelZero{"unsupported feature"});
+
   size_t RetrievedSize = 0;
   ASSERT_SUCCESS(olGetSymbolInfo(Global, OL_SYMBOL_INFO_GLOBAL_VARIABLE_SIZE,
                                  sizeof(RetrievedSize), &RetrievedSize));
