@@ -1691,8 +1691,6 @@ private:
       }
       while (CurrentToken &&
              CurrentToken->isNoneOf(tok::l_paren, tok::semi, tok::r_paren)) {
-        if (CurrentToken->isOneOf(tok::star, tok::amp))
-          CurrentToken->setType(TT_PointerOrReference);
         auto Next = CurrentToken->getNextNonComment();
         if (!Next)
           break;
@@ -1711,7 +1709,7 @@ private:
             Previous->isPointerOrReference() ||
             // User defined literal.
             Previous->TokenText.starts_with("\"\"")) {
-          Previous->setType(TT_OverloadedOperator);
+          Previous->overwriteFixedType(TT_OverloadedOperator);
           if (CurrentToken->isOneOf(tok::less, tok::greater))
             break;
         }
