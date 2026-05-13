@@ -809,6 +809,17 @@ Register RISCVRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return TFI->hasFP(MF) ? RISCV::X8 : RISCV::X2;
 }
 
+bool RISCVRegisterInfo::isArgumentRegister(const MachineFunction &MF,
+                                           MCRegister Reg) const {
+  auto const &STI = MF.getSubtarget<RISCVSubtarget>();
+  if (!STI.getRegisterInfo()->isGeneralPurposeRegister(MF, Reg))
+    llvm::report_fatal_error(
+        "isArgumentRegister is not implemented for non-GPR registers");
+
+  return llvm::any_of(RISCV::getArgGPRs(STI.getTargetABI()),
+                      [&](MCPhysReg R) { return Reg == R; });
+}
+
 StringRef RISCVRegisterInfo::getRegAsmName(MCRegister Reg) const {
   if (Reg == RISCV::SF_VCIX_STATE)
     return "sf.vcix_state";
