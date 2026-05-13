@@ -8,6 +8,8 @@ add_clang_library(MLIRCIRTargetLowering
 
   DEPENDS
   clangBasic
+  MLIRBuiltinLocationAttributesIncGen
+  MLIRBytecodeOpInterfaceIncGen
 
   LINK_COMPONENTS
   TargetParser
