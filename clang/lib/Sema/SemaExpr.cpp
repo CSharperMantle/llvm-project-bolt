@@ -664,8 +664,9 @@ ExprResult Sema::DefaultLvalueConversion(Expr *E) {
 
   // We don't want to throw lvalue-to-rvalue casts on top of
   // expressions of certain types in C++.
+  // In HLSL LvaluetoRvalue conversion is allowed on records.
   if (getLangOpts().CPlusPlus) {
-    if (T == Context.OverloadTy || T->isRecordType() ||
+    if (T == Context.OverloadTy || (T->isRecordType() && !getLangOpts().HLSL) ||
         (T->isDependentType() && !T->isAnyPointerType() &&
          !T->isMemberPointerType()))
       return E;
@@ -16111,9 +16112,19 @@ ExprResult Sema::BuildBinOp(Scope *S, SourceLocation OpLoc,
   if (getLangOpts().CPlusPlus) {
     // Otherwise, build an overloaded op if either expression is type-dependent
     // or has an overloadable type.
+    // In HLSL, user-defined structs/classes do not have ctors or
+    // overloadable operators.
+    QualType LHSTy = LHSExpr->getType();
+    QualType RHSTy = RHSExpr->getType();
+    bool IsLHSNonOverloadableHLSLType =
+        getLangOpts().HLSL && LHSTy->isRecordType() &&
+        !LHSTy->getAsCXXRecordDecl()->hasUserProvidedSpecialMembers();
+    bool IsRHSNonOverloadableHLSLType =
+        getLangOpts().HLSL && RHSTy->isRecordType() &&
+        !RHSTy->getAsCXXRecordDecl()->hasUserProvidedSpecialMembers();
     if (LHSExpr->isTypeDependent() || RHSExpr->isTypeDependent() ||
-        LHSExpr->getType()->isOverloadableType() ||
-        RHSExpr->getType()->isOverloadableType())
+        (LHSTy->isOverloadableType() && !IsLHSNonOverloadableHLSLType) ||
+        (RHSTy->isOverloadableType() && !IsRHSNonOverloadableHLSLType))
       return BuildOverloadedBinOp(*this, S, OpLoc, Opc, LHSExpr, RHSExpr);
   }
 
