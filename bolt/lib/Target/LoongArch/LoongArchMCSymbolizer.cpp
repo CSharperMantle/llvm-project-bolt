@@ -116,6 +116,23 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
       break;
     }
   }
+  if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_HI20) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt; // May be relaxed, can't adjust anyway
+    case LoongArch::PCALAU12I:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_LO12) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt; // May be relaxed, can't adjust anyway
+    case LoongArch::ADDI_D:
+    case LoongArch::ADDI_W:
+      break;
+    }
+  }
 
   // Some linkers can relax a GOT reference into direct address
   // materialization without updating the relocation types.
