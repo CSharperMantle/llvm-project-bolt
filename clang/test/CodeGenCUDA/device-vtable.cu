@@ -13,6 +13,60 @@
 
 #include "Inputs/cuda.h"
 
+// Implicit H+D virtual dtor of an explicit instantiation, no device use:
+// device vtable slots get a per-dtor trap stub (named after the dtor)
+// instead of the real body. Comdat globals appear first in IR, so this
+// block is checked before non-comdat ones.
+template <typename T>
+struct ETI {
+  virtual ~ETI() = default;
+};
+template class ETI<float>;
+// CHECK-DEVICE: @_ZTV3ETIIfE =
+// CHECK-DEVICE-SAME: @__clang_cuda_unreachable_dtor._ZN3ETIIfED1Ev
+// CHECK-DEVICE-SAME: @__clang_cuda_unreachable_dtor._ZN3ETIIfED0Ev
+// CHECK-HOST: @_ZTV3ETIIfE = {{.*}} @_ZN3ETIIfED
+
+// Device uses ETI_Used (local var): vtable D1 slot holds the real dtor.
+template <typename T>
+struct ETI_Used {
+  virtual ~ETI_Used() = default;
+};
+template class ETI_Used<float>;
+__device__ void use_eti_used() { ETI_Used<float> x; }
+// CHECK-DEVICE: @_ZTV8ETI_UsedIfE = {{.*}} @_ZN8ETI_UsedIfED1Ev
+// CHECK-HOST: @_ZTV8ETI_UsedIfE = {{.*}} @_ZN8ETI_UsedIfED
+
+// Explicit __device__ dtor: heuristic only gates on implicit H+D, so
+// the device vtable gets the real dtor pointers.
+template <typename T>
+struct ETI_Dev {
+  virtual __device__ ~ETI_Dev() = default;
+};
+template class ETI_Dev<float>;
+// CHECK-DEVICE: @_ZTV7ETI_DevIfE = {{.*}} @_ZN7ETI_DevIfED
+
+// Heap-allocate and polymorphically delete on device: the heuristic
+// must detect device use via the ctor and emit real dtor pointers so
+// `delete pBase` dispatches to a real body, not a trap stub.
+__device__ void *operator new(__SIZE_TYPE__);
+__device__ void operator delete(void *);
+struct ETI_Base {
+  virtual ~ETI_Base() = default;
+};
+template <typename T>
+struct ETI_Poly : ETI_Base {
+  virtual ~ETI_Poly() = default;
+  T x;
+};
+template class ETI_Poly<float>;
+__device__ ETI_Base *eti_make() { return new ETI_Poly<float>; }
+__device__ void eti_destroy(ETI_Base *p) { delete p; }
+// CHECK-DEVICE: @_ZTV8ETI_PolyIfE =
+// CHECK-DEVICE-SAME: @_ZN8ETI_PolyIfED1Ev
+// CHECK-DEVICE-SAME: @_ZN8ETI_PolyIfED0Ev
+// CHECK-HOST: @_ZTV8ETI_PolyIfE = {{.*}} @_ZN8ETI_PolyIfED
+
 struct H  {
   virtual void method();
 };
@@ -65,4 +119,13 @@ void __device__ HD::d_method() {}
 void HD::h_method() {}
 // CHECK-HOST: define{{.*}} void @_ZN2HD8h_methodEv
 // CHECK-DEVICE-NOT: define{{.*}} void @_ZN2HD8h_methodEv
+
+// Trap stub body (emitted before user dtor bodies in IR).
+// CHECK-DEVICE: define internal void @__clang_cuda_unreachable_dtor._ZN3ETIIfED1Ev
+// CHECK-DEVICE: call void @llvm.trap()
+// CHECK-DEVICE-NEXT: unreachable
+
+// ETI_Poly D1/D0 bodies must be emitted on device.
+// CHECK-DEVICE: define{{.*}} @_ZN8ETI_PolyIfED1Ev
+// CHECK-DEVICE: define{{.*}} @_ZN8ETI_PolyIfED0Ev
 
