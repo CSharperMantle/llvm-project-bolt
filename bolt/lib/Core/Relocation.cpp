@@ -137,6 +137,7 @@ static bool isSupportedLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     return false;
+  case ELF::R_LARCH_32:
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD32:
   case ELF::R_LARCH_ADD64:
@@ -304,6 +305,7 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   default:
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
+  case ELF::R_LARCH_32:
   case ELF::R_LARCH_ADD32:
   case ELF::R_LARCH_SUB32:
   case ELF::R_LARCH_B16:
@@ -354,6 +356,7 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD64:
   case ELF::R_LARCH_SUB64:
+  case ELF::R_LARCH_64_PCREL:
   case ELF::R_LARCH_CALL36:
     return 8;
   }
@@ -676,6 +679,7 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
   default:
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
+  case ELF::R_LARCH_32:
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD32:
   case ELF::R_LARCH_ADD64:
@@ -685,6 +689,8 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
     return Contents;
   case ELF::R_LARCH_32_PCREL:
     return static_cast<int64_t>(PC) + SignExtend64<32>(Contents & 0xffffffff);
+  case ELF::R_LARCH_64_PCREL:
+    return static_cast<int64_t>(PC) + static_cast<int64_t>(Contents);
   case ELF::R_LARCH_B16: {
     Contents = (Contents >> 10) & 0xffff;
     return static_cast<int64_t>(PC) + SignExtend64<18>(Contents << 2);
@@ -1048,6 +1054,7 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   switch (Type) {
   default:
     llvm_unreachable("Unknown relocation type");
+  case ELF::R_LARCH_32:
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_ADD32:
   case ELF::R_LARCH_SUB32:
@@ -1090,6 +1097,7 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_GD_PC_HI20:
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_PCREL20_S2:
+  case ELF::R_LARCH_64_PCREL:
   case ELF::R_LARCH_CALL36:
   case ELF::R_LARCH_TLS_DESC_PC_HI20:
   case ELF::R_LARCH_TLS_DESC64_PC_LO20:
