@@ -160,6 +160,8 @@ Makes programs 10x faster by doing Special New Thing.
 * The `r14` register can now be used as an alias for the link register `lr`
   in inline assembly. Clang always canonicalizes the name to `lr`, but other
   frontends may not.
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
 
 ### Changes to the AVR Backend
 
@@ -181,6 +183,9 @@ Makes programs 10x faster by doing Special New Thing.
   Toolkit versions (11/12/13).
 
 ### Changes to the PowerPC Backend
+
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
 
 ### Changes to the RISC-V Backend
 
@@ -205,6 +210,13 @@ Makes programs 10x faster by doing Special New Thing.
 * Adds experimental assembler support for the 'Zvvfmm` (RISC-V Floating-Point Matrix Multiply-Accumulate) extension.
 * Adds support for 'Ziccid' (Instruction/Data Coherence and Consistency) extension.
 
+### Changes to the SystemZ Backend
+
+### Changes to the VE Backend
+
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
+
 ### Changes to the WebAssembly Backend
 
 ### Changes to the Windows Target
@@ -217,6 +229,8 @@ Makes programs 10x faster by doing Special New Thing.
 * `.att_syntax` directive is now emitted for assembly files when AT&T syntax is
   in use. This matches the behaviour of Intel syntax and aids with
   compatibility when changing the default Clang syntax to the Intel syntax.
+* The backend now stores the frame pointer and stack pointer into the jump buffer
+  when lowering `@llvm.eh.sjlj.setjmp`. This was previously handled by the frontend.
 
 ### Changes to the OCaml bindings
 
