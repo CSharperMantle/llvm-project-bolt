@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "VPlanUtils.h"
+#include "LoopVectorizationPlanner.h"
 #include "VPlanAnalysis.h"
 #include "VPlanCFG.h"
 #include "VPlanDominatorTree.h"
@@ -838,4 +839,35 @@ bool vputils::isUsedByLoadStoreAddress(const VPValue *V) {
         WorkList.push_back(SDR);
   }
   return false;
+}
+
+VPValue *VPBuilder::VPSCEVExpander::expand(const SCEV *S) {
+  switch (S->getSCEVType()) {
+  case scConstant:
+    return Plan.getOrAddLiveIn(cast<SCEVConstant>(S)->getValue());
+  case scUnknown:
+    return Plan.getOrAddLiveIn(cast<SCEVUnknown>(S)->getValue());
+  case scVScale:
+    return Builder.createNaryOp(VPInstruction::VScale, {}, S->getType());
+  case scMulExpr: {
+    auto *Mul = cast<SCEVMulExpr>(S);
+    VPIRFlags::WrapFlagsTy WrapFlags(Mul->hasNoUnsignedWrap(),
+                                     Mul->hasNoSignedWrap());
+    // Chain the operands with Mul, matching SCEVExpander behavior of applying
+    // wrap flags to all chained multiplies.
+    VPValue *Result = expand(Mul->getOperand(0));
+    for (const SCEVUse &Op : drop_begin(Mul->operands()))
+      Result = Builder.createOverflowingOp(Instruction::Mul,
+                                           {Result, expand(Op)}, WrapFlags, DL);
+    return Result;
+  }
+  default:
+    // Unsupported SCEV kind; fall back to VPExpandSCEVRecipe, which must be
+    // inserted in the entry block only, as expandSCEVs can process
+    // VPExpandSCEVRecipes only there.
+    assert(Builder.getInsertBlock() == Plan.getEntry() &&
+           "VPExpandSCEVRecipe fallback requires insertion in the entry block");
+    return Builder.createExpandSCEV(S);
+  }
+  llvm_unreachable("all expressions must be handled by switch");
 }
