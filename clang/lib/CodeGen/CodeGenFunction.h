@@ -4482,6 +4482,8 @@ public:
   LValue EmitConditionalOperatorLValue(const AbstractConditionalOperator *E);
   LValue EmitCastLValue(const CastExpr *E);
   LValue EmitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
+  std::optional<RawAddress>
+  tryEmitStaticInitListBackingArray(const MaterializeTemporaryExpr *E);
   LValue EmitOpaqueValueLValue(const OpaqueValueExpr *e);
   LValue EmitHLSLArrayAssignLValue(const BinaryOperator *E);
 

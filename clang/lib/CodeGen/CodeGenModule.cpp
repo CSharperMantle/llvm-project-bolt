@@ -7570,6 +7570,27 @@ ConstantAddress CodeGenModule::GetAddrOfGlobalTemporary(
   return ConstantAddress(CV, Type, Align);
 }
 
+ConstantAddress
+CodeGenModule::EmitStaticInitListBackingArray(llvm::Constant *Initializer,
+                                              CharUnits Alignment) {
+  LangAS AddrSpace = GetGlobalConstantAddressSpace();
+  auto TargetAS = getContext().getTargetAddressSpace(AddrSpace);
+  auto *GV = new llvm::GlobalVariable(
+      getModule(), Initializer->getType(), /*isConstant=*/true,
+      llvm::GlobalValue::PrivateLinkage, Initializer, ".init.list", nullptr,
+      llvm::GlobalValue::NotThreadLocal, TargetAS);
+  GV->setAlignment(Alignment.getAsAlign());
+
+  llvm::Constant *CV = GV;
+  if (AddrSpace != LangAS::Default)
+    CV = performAddrSpaceCast(
+        GV, llvm::PointerType::get(
+                getLLVMContext(),
+                getContext().getTargetAddressSpace(LangAS::Default)));
+
+  return ConstantAddress(CV, Initializer->getType(), Alignment);
+}
+
 /// EmitObjCPropertyImplementations - Emit information for synthesized
 /// properties for an implementation.
 void CodeGenModule::EmitObjCPropertyImplementations(const

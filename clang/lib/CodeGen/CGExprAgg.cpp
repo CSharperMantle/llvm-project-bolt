@@ -432,9 +432,33 @@ void AggExprEmitter::VisitCXXStdInitializerListExpr(
   // Emit an array containing the elements.  The array is externally destructed
   // if the std::initializer_list object is.
   ASTContext &Ctx = CGF.getContext();
-  LValue Array = CGF.EmitLValue(E->getSubExpr());
-  assert(Array.isSimple() && "initializer_list array not a simple lvalue");
-  Address ArrayPtr = Array.getAddress();
+  Address ArrayPtr = Address::invalid();
+
+  // [dcl.init.list]/p5-p6:
+  // where N is the number of elements in the initializer list; this is called
+  // the initializer list's backing array. Each element of the backing array is
+  // copy-initialized with the corresponding element of the initializer list,
+  // and the std​::​initializer_list<E> object is constructed to refer to
+  // that array.
+  //
+  // The backing array has the same lifetime as any other temporary object
+  // ([class.temporary]), except that initializing an initializer_list object
+  // from the array extends the lifetime of the array exactly like binding a
+  // reference to a temporary.
+  //
+  // Emit backing array first, if the promotion fails, the normal
+  // path still runs, including the `-fmerge-all-constants` promotion
+  // opportunity for materialized temporaries.
+  if (auto *MTE = dyn_cast<MaterializeTemporaryExpr>(E->getSubExpr())) {
+    if (std::optional<RawAddress> StaticArray =
+            CGF.tryEmitStaticInitListBackingArray(MTE))
+      ArrayPtr = Address(*StaticArray);
+  }
+  if (!ArrayPtr.isValid()) {
+    LValue Array = CGF.EmitLValue(E->getSubExpr());
+    assert(Array.isSimple() && "initializer_list array not a simple lvalue");
+    ArrayPtr = Array.getAddress();
+  }
 
   const ConstantArrayType *ArrayType =
       Ctx.getAsConstantArrayType(E->getSubExpr()->getType());

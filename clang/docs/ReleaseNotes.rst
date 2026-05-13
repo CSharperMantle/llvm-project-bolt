@@ -149,6 +149,9 @@ C++ Language Changes
 
 - ``__is_trivially_equality_comparable`` no longer returns false for all enum types. (#GH132672)
 
+- Clang now emits eligible ``std::initializer_list`` backing arrays in static
+  storage by default, implementing `P2752R3 <https://wg21.link/P2752R3>`_.
+
 C++2c Feature Support
 ^^^^^^^^^^^^^^^^^^^^^
 

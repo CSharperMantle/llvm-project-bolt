@@ -511,6 +511,50 @@ static RawAddress createReferenceTemporary(CodeGenFunction &CGF,
   llvm_unreachable("unknown storage duration");
 }
 
+std::optional<RawAddress> CodeGenFunction::tryEmitStaticInitListBackingArray(
+    const MaterializeTemporaryExpr *M) {
+  switch (M->getStorageDuration()) {
+  case SD_FullExpression:
+  case SD_Automatic:
+    break;
+  case SD_Thread:
+  case SD_Static:
+    return std::nullopt;
+  case SD_Dynamic:
+    llvm_unreachable("temporary can't have dynamic storage duration");
+  }
+
+  SmallVector<const Expr *, 2> CommaLHSs;
+  SmallVector<SubobjectAdjustment, 2> Adjustments;
+  const Expr *E =
+      M->getSubExpr()->skipRValueSubobjectAdjustments(CommaLHSs, Adjustments);
+  if (!Adjustments.empty())
+    return std::nullopt;
+
+  QualType ArrayType = E->getType();
+  if (!getContext().getAsConstantArrayType(ArrayType))
+    return std::nullopt;
+
+  QualType BaseElementType = getContext().getBaseElementType(ArrayType);
+  if (BaseElementType.isVolatileQualified())
+    return std::nullopt;
+
+  if (!ArrayType.isConstantStorage(getContext(), /*ExcludeCtor=*/true,
+                                   /*ExcludeDtor=*/false))
+    return std::nullopt;
+
+  llvm::Constant *Initializer =
+      ConstantEmitter(*this).tryEmitAbstract(E, ArrayType);
+  if (!Initializer)
+    return std::nullopt;
+
+  for (const Expr *Ignored : CommaLHSs)
+    EmitIgnoredExpr(Ignored);
+
+  CharUnits Alignment = getContext().getTypeAlignInChars(ArrayType);
+  return CGM.EmitStaticInitListBackingArray(Initializer, Alignment);
+}
+
 /// Helper method to check if the underlying ABI is AAPCS
 static bool isAAPCS(const TargetInfo &TargetInfo) {
   return TargetInfo.getABI().starts_with("aapcs");

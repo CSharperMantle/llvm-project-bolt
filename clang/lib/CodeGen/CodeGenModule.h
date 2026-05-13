@@ -1283,6 +1283,11 @@ public:
   ConstantAddress GetAddrOfGlobalTemporary(const MaterializeTemporaryExpr *E,
                                            const Expr *Inner);
 
+  /// Create a private constant global for a std::initializer_list backing array
+  /// that CodeGen has chosen to place in static storage.
+  ConstantAddress EmitStaticInitListBackingArray(llvm::Constant *Initializer,
+                                                 CharUnits Alignment);
+
   /// Retrieve the record type that describes the state of an
   /// Objective-C fast enumeration loop (for..in).
   QualType getObjCFastEnumerationStateType();
