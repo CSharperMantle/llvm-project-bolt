@@ -3689,6 +3689,13 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
           return CallBase::removeOperandBundle(II, OBU.getTagID());
         }
 
+        // Move assume to the base pointer of a gep if it's inbounds
+        if (auto *GEP = dyn_cast<GEPOperator>(RK.WasOn);
+            GEP && GEP->isInBounds()) {
+          Builder.CreateNonnullAssumption(GEP->stripInBoundsOffsets());
+          return CallBase::removeOperandBundle(II, OBU.getTagID());
+        }
+
         // TODO: apply nonnull return attributes to calls and invokes
       }
     }
