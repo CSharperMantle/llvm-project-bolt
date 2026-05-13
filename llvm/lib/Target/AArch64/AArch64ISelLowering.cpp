@@ -1156,6 +1156,7 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   // Try and combine setcc/select_cc with csel and bool-vector bitcasts.
   setTargetDAGCombine(ISD::SETCC);
   setTargetDAGCombine(ISD::SELECT_CC);
+  setTargetDAGCombine(ISD::SETCCCARRY);
 
   setTargetDAGCombine(ISD::INTRINSIC_WO_CHAIN);
 
@@ -11909,9 +11910,62 @@ SDValue AArch64TargetLowering::LowerBitreverse(SDValue Op,
 }
 
 // Check whether the continuous comparison sequence.
+static bool hasLegalCmpImmediateOperand(SDValue V) {
+  ConstantSDNode *C = dyn_cast<ConstantSDNode>(V);
+  return !C || isLegalCmpImmed(C->getAPIntValue());
+}
+
+static bool hasLegalCmpImmediate(SDValue LHS, SDValue RHS) {
+  return hasLegalCmpImmediateOperand(LHS) && hasLegalCmpImmediateOperand(RHS);
+}
+
+static bool isLegalCondCmpImmediate(const APInt &Imm) {
+  if (Imm.isNegative())
+    return Imm.sgt(-32);
+  return Imm.getLimitedValue(32) <= 31;
+}
+
+static bool hasLegalCondCmpImmediateOperand(SDValue V) {
+  ConstantSDNode *C = dyn_cast<ConstantSDNode>(V);
+  return !C || isLegalCondCmpImmediate(C->getAPIntValue());
+}
+
+static bool hasLegalCondCmpImmediate(SDValue LHS, SDValue RHS) {
+  return hasLegalCondCmpImmediateOperand(LHS) &&
+         hasLegalCondCmpImmediateOperand(RHS);
+}
+
+static bool isLegalXorImmediate(const APInt &Imm) {
+  unsigned BitWidth = Imm.getBitWidth() <= 32 ? 32 : 64;
+  if (Imm.getBitWidth() > BitWidth)
+    return false;
+  return AArch64_AM::isLogicalImmediate(Imm.getZExtValue(), BitWidth);
+}
+
+static bool hasCheapXorImmediateThatNeedsCondCmpRegOperand(SDValue V) {
+  ConstantSDNode *C = dyn_cast<ConstantSDNode>(V);
+  if (!C)
+    return false;
+
+  const APInt &Imm = C->getAPIntValue();
+  return !isLegalCondCmpImmediate(Imm) && isLegalXorImmediate(Imm);
+}
+
+static bool hasCheapXorImmediateThatNeedsCondCmpReg(
+    const std::pair<SDValue, SDValue> &Pair) {
+  return hasCheapXorImmediateThatNeedsCondCmpRegOperand(Pair.first) ||
+         hasCheapXorImmediateThatNeedsCondCmpRegOperand(Pair.second);
+}
+
+static bool preferAsFirstCmp(const std::pair<SDValue, SDValue> &Pair) {
+  return hasLegalCmpImmediate(Pair.first, Pair.second) &&
+         !hasLegalCondCmpImmediate(Pair.first, Pair.second);
+}
+
 static bool
-isOrXorChain(SDValue N, unsigned &Num,
-             SmallVector<std::pair<SDValue, SDValue>, 16> &WorkList) {
+isOrXorChain(SDValue N, SelectionDAG &DAG, unsigned &Num, bool &SawXor,
+             bool RequireLegalCmpImmediates,
+             SmallVectorImpl<std::pair<SDValue, SDValue>> &WorkList) {
   if (Num == MaxXors)
     return false;
 
@@ -11919,21 +11973,36 @@ isOrXorChain(SDValue N, unsigned &Num,
   if (N->getOpcode() == ISD::ZERO_EXTEND && N->hasOneUse())
     N = N->getOperand(0);
 
-  // The leaf node must be XOR
   if (N->getOpcode() == ISD::XOR) {
+    if (RequireLegalCmpImmediates &&
+        !hasLegalCmpImmediate(N->getOperand(0), N->getOperand(1)))
+      return false;
     WorkList.push_back(std::make_pair(N->getOperand(0), N->getOperand(1)));
     Num++;
+    SawXor = true;
     return true;
   }
 
   // All the non-leaf nodes must be OR.
-  if (N->getOpcode() != ISD::OR || !N->hasOneUse())
+  if (N->getOpcode() == ISD::OR && N->hasOneUse())
+    return isOrXorChain(N->getOperand(0), DAG, Num, SawXor,
+                        RequireLegalCmpImmediates, WorkList) &&
+           isOrXorChain(N->getOperand(1), DAG, Num, SawXor,
+                        RequireLegalCmpImmediates, WorkList);
+  if (N->getOpcode() == ISD::OR)
     return false;
 
-  if (isOrXorChain(N->getOperand(0), Num, WorkList) &&
-      isOrXorChain(N->getOperand(1), Num, WorkList))
-    return true;
-  return false;
+  EVT VT = N.getValueType();
+  if (!VT.isScalarInteger())
+    return false;
+
+  // A xor with zero may have been folded away before this combine sees it.
+  // Treat such leaves as comparisons with zero so the original OR/XOR form and
+  // type-legalized wide integer equality compares converge to the same SETCC
+  // tree.
+  WorkList.push_back(std::make_pair(N, DAG.getConstant(0, SDLoc(N), VT)));
+  Num++;
+  return true;
 }
 
 // Transform chains of ORs and XORs, which usually outlined by memcmp/bmp.
@@ -11952,9 +12021,25 @@ static SDValue performOrXorChainCombine(SDNode *N, SelectionDAG &DAG) {
   // Try to express conjunction "cmp 0 (or (xor A0 A1) (xor B0 B1))" as:
   // sub A0, A1; ccmp B0, B1, 0, eq; cmp inv(Cond) flag
   unsigned NumXors = 0;
+  bool SawXor = false;
+  bool RequireLegalCmpImmediates = any_of(N->users(), [](SDNode *User) {
+    return User->getOpcode() == ISD::BRCOND ||
+           User->getOpcode() == AArch64ISD::BRCOND;
+  });
   if ((Cond == ISD::SETEQ || Cond == ISD::SETNE) && isNullConstant(RHS) &&
       LHS->getOpcode() == ISD::OR && LHS->hasOneUse() &&
-      isOrXorChain(LHS, NumXors, WorkList)) {
+      isOrXorChain(LHS, DAG, NumXors, SawXor, RequireLegalCmpImmediates,
+                   WorkList) &&
+      SawXor) {
+    if (WorkList.size() > 2 &&
+        any_of(WorkList, hasCheapXorImmediateThatNeedsCondCmpReg))
+      return SDValue();
+
+    SmallVector<std::pair<SDValue, SDValue>, 16>::iterator First =
+        find_if(WorkList, preferAsFirstCmp);
+    if (First != WorkList.end())
+      std::iter_swap(WorkList.begin(), First);
+
     SDValue XOR0, XOR1;
     std::tie(XOR0, XOR1) = WorkList[0];
     unsigned LogicOp = (Cond == ISD::SETEQ) ? ISD::AND : ISD::OR;
@@ -27684,6 +27769,41 @@ static SDValue performSETCCCombine(SDNode *N,
   return SDValue();
 }
 
+static SDValue performSETCCCARRYCombine(SDNode *N, SelectionDAG &DAG) {
+  assert(N->getOpcode() == ISD::SETCCCARRY && "Unexpected opcode!");
+
+  // Rebuild narrow high/low compares from type-legalized wide unsigned compares
+  // so the existing CCMP conjunction/disjunction lowering can handle them.
+  SDValue HiLHS = N->getOperand(0);
+  SDValue HiRHS = N->getOperand(1);
+  SDValue Carry = N->getOperand(2);
+  ISD::CondCode Cond = cast<CondCodeSDNode>(N->getOperand(3))->get();
+  if (Cond != ISD::SETULT || Carry.getOpcode() != ISD::USUBO ||
+      Carry.getResNo() != 1)
+    return SDValue();
+
+  if (!isNullConstant(HiLHS) && !isNullConstant(HiRHS))
+    return SDValue();
+
+  SDValue LoLHS = Carry.getOperand(0);
+  SDValue LoRHS = Carry.getOperand(1);
+  if (!isa<ConstantSDNode>(LoLHS) && !isa<ConstantSDNode>(LoRHS))
+    return SDValue();
+
+  EVT VT = N->getValueType(0);
+  SDLoc DL(N);
+
+  SDValue LoCmp = DAG.getSetCC(DL, VT, LoLHS, LoRHS, ISD::SETULT);
+  if (isNullConstant(HiRHS)) {
+    SDValue HiEq = DAG.getSetCC(DL, VT, HiLHS, HiRHS, ISD::SETEQ);
+    return DAG.getNode(ISD::AND, DL, VT, HiEq, LoCmp);
+  }
+
+  SDValue HiNe = DAG.getSetCC(
+      DL, VT, HiRHS, DAG.getConstant(0, DL, HiRHS.getValueType()), ISD::SETNE);
+  return DAG.getNode(ISD::OR, DL, VT, HiNe, LoCmp);
+}
+
 static SDValue performSELECT_CCCombine(SDNode *N,
                                        TargetLowering::DAGCombinerInfo &DCI,
                                        SelectionDAG &DAG) {
@@ -29578,6 +29698,8 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
     return performVSelectCombine(N, DCI, Subtarget);
   case ISD::SETCC:
     return performSETCCCombine(N, DCI, DAG);
+  case ISD::SETCCCARRY:
+    return performSETCCCARRYCombine(N, DAG);
   case ISD::LOAD:
     return performLOADCombine(N, DCI, DAG, Subtarget);
   case ISD::STORE:
