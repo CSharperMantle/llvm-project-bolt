@@ -268,10 +268,15 @@ Error L0KernelTy::getGroupsShape(L0DeviceTy &Device, int32_t NumTeams,
   return Plugin::success();
 }
 
+using AppendLaunchFnTy = llvm::function_ref<Error(
+    ze_command_list_handle_t CmdList, ze_event_handle_t Event,
+    uint32_t NumWaitEvents, ze_event_handle_t *WaitEvents)>;
+
 static Error launchKernelWithImmCmdList(L0DeviceTy &l0Device,
                                         ze_kernel_handle_t zeKernel,
                                         L0LaunchEnvTy &KEnv,
-                                        CommandModeTy CommandMode) {
+                                        CommandModeTy CommandMode,
+                                        AppendLaunchFnTy AppendLaunch) {
   const auto DeviceId = l0Device.getDeviceId();
   auto *IdStr = l0Device.getZeIdCStr();
   auto CmdListOrErr = l0Device.getImmCmdList();
@@ -302,9 +307,8 @@ static Error launchKernelWithImmCmdList(L0DeviceTy &l0Device,
        "Kernel depends on %zu data copying events.\n", NumWaitEvents);
   Error AllErrors = Error::success();
 
-  CALL_ZE_ACCUM_ERROR(AllErrors, zeCommandListAppendLaunchKernel, CmdList,
-                      zeKernel, &KEnv.GroupCounts, Event, NumWaitEvents,
-                      WaitEvents);
+  if (auto Err = AppendLaunch(CmdList, Event, NumWaitEvents, WaitEvents))
+    AllErrors = joinErrors(std::move(AllErrors), std::move(Err));
   KEnv.Lock.unlock();
   if (AllErrors) {
     if (auto Err = l0Device.releaseEvent(Event))
@@ -334,7 +338,8 @@ static Error launchKernelWithImmCmdList(L0DeviceTy &l0Device,
 
 static Error launchKernelWithCmdQueue(L0DeviceTy &l0Device,
                                       ze_kernel_handle_t zeKernel,
-                                      L0LaunchEnvTy &KEnv) {
+                                      L0LaunchEnvTy &KEnv,
+                                      AppendLaunchFnTy AppendLaunch) {
   const auto DeviceId = l0Device.getDeviceId();
   const auto *IdStr = l0Device.getZeIdCStr();
 
@@ -351,8 +356,10 @@ static Error launchKernelWithCmdQueue(L0DeviceTy &l0Device,
        "Using regular command list for kernel submission.\n");
 
   ze_event_handle_t Event = nullptr;
-  CALL_ZE_RET_ERROR(zeCommandListAppendLaunchKernel, CmdList, zeKernel,
-                    &KEnv.GroupCounts, Event, 0, nullptr);
+
+  if (auto Err = AppendLaunch(CmdList, Event, 0, nullptr))
+    return Err;
+
   KEnv.Lock.unlock();
   CALL_ZE_RET_ERROR(zeCommandListClose, CmdList);
 
@@ -486,41 +493,83 @@ Error L0KernelTy::launchImpl(GenericDeviceTy &GenericDevice,
   // Protect from kernel preparation to submission as kernels are shared.
   KEnv.Lock.lock();
 
-  if (auto Err = setKernelGroups(l0Device, KEnv, NumThreads, NumBlocks))
-    return Err;
+  // With pointer-array arguments, zeCommandListAppendLaunchKernelWithArguments
+  // folds group-size, per-argument set, and launch into a single call.
+  const bool IsPtrArgs = KernelArgs.Flags.IsPtrArgs;
+  if (IsPtrArgs) {
+    if (KernelArgs.NumArgs != KernelPR.NumKernelArgs)
+      return Plugin::error(
+          ErrorCode::INVALID_ARGUMENT,
+          "Number of arguments (%u) does not match the number of arguments "
+          "expected by the kernel (%u)",
+          KernelArgs.NumArgs, KernelPR.NumKernelArgs);
+  } else {
+    if (auto Err = setKernelGroups(l0Device, KEnv, NumThreads, NumBlocks))
+      return Err;
 
-  // Set kernel arguments.
-  uint32_t NumKernelArgs = KernelPR.NumKernelArgs;
-  if (NumKernelArgs > 0) {
-    if (!KernelPR.ArgSizes)
-      return Plugin::error(ErrorCode::INVALID_ARGUMENT,
-                           "level zero plugin requires kernel argument sizes.");
-    // Use sizes from kernel properties.
-    // TODO: This is temporary workaround it will not work if there is
-    // padding/alignment between arguments.
-    char *Arg = static_cast<char *>(LaunchParams.Data);
-    for (uint32_t I = 0; I < NumKernelArgs; I++) {
-      uint32_t ArgSize = KernelPR.ArgSizes[I];
-      CALL_ZE_RET_ERROR(zeKernelSetArgumentValue, zeKernel, I, ArgSize, Arg);
+    // Set kernel arguments.
+    uint32_t NumKernelArgs = KernelPR.NumKernelArgs;
+    if (NumKernelArgs > 0) {
+      if (!KernelPR.ArgSizes)
+        return Plugin::error(
+            ErrorCode::INVALID_ARGUMENT,
+            "level zero plugin requires kernel argument sizes.");
+      // Use sizes from kernel properties.
+      // TODO: This is temporary workaround it will not work if there is
+      // padding/alignment between arguments.
+      char *Arg = static_cast<char *>(LaunchParams.Data);
+      for (uint32_t I = 0; I < NumKernelArgs; I++) {
+        uint32_t ArgSize = KernelPR.ArgSizes[I];
+        CALL_ZE_RET_ERROR(zeKernelSetArgumentValue, zeKernel, I, ArgSize, Arg);
 
-      INFO(OMP_INFOTYPE_PLUGIN_KERNEL, DeviceId,
-           "Kernel Pointer argument %" PRIu32 " (value: " DPxMOD
-           ") was set successfully for device %s.\n",
-           I, DPxPTR(Arg), IdStr);
-      Arg += ArgSize;
+        INFO(OMP_INFOTYPE_PLUGIN_KERNEL, DeviceId,
+             "Kernel Pointer argument %" PRIu32 " (value: " DPxMOD
+             ") was set successfully for device %s.\n",
+             I, DPxPTR(Arg), IdStr);
+        Arg += ArgSize;
+      }
     }
   }
 
   if (auto Err = setIndirectFlags(l0Device, KEnv))
     return Err;
 
+  auto AppendLaunch = [&](ze_command_list_handle_t CmdList,
+                          ze_event_handle_t Event, uint32_t NumWaitEvents,
+                          ze_event_handle_t *WaitEvents) -> Error {
+    if (IsPtrArgs) {
+      ze_group_count_t GroupCounts{NumBlocks[0], NumBlocks[1], NumBlocks[2]};
+
+      ze_group_size_t GroupSizes;
+      uint32_t MaxGroupSize = KEnv.KernelPR.MaxThreadGroupSize;
+      GroupSizes.groupSizeX = std::min<uint32_t>(MaxGroupSize, NumThreads[0]);
+      GroupSizes.groupSizeY = std::min<uint32_t>(MaxGroupSize, NumThreads[1]);
+      GroupSizes.groupSizeZ = std::min<uint32_t>(MaxGroupSize, NumThreads[2]);
+      INFO(OMP_INFOTYPE_PLUGIN_KERNEL, DeviceId,
+           "Team sizes = {%" PRIu32 ", %" PRIu32 ", %" PRIu32 "}\n",
+           GroupSizes.groupSizeX, GroupSizes.groupSizeY, GroupSizes.groupSizeZ);
+      INFO(OMP_INFOTYPE_PLUGIN_KERNEL, DeviceId,
+           "Number of teams = {%" PRIu32 ", %" PRIu32 ", %" PRIu32 "}\n",
+           GroupCounts.groupCountX, GroupCounts.groupCountY,
+           GroupCounts.groupCountZ);
+
+      CALL_ZE_RET_ERROR(zeCommandListAppendLaunchKernelWithArguments, CmdList,
+                        zeKernel, GroupCounts, GroupSizes, KernelArgs.ArgPtrs,
+                        nullptr, Event, NumWaitEvents, WaitEvents);
+    } else {
+      CALL_ZE_RET_ERROR(zeCommandListAppendLaunchKernel, CmdList, zeKernel,
+                        &KEnv.GroupCounts, Event, NumWaitEvents, WaitEvents);
+    }
+    return Plugin::success();
+  };
+
   // The next calls should unlock the KernelLock internally.
   const bool UseImmCmdList = l0Device.useImmForCompute();
   if (UseImmCmdList)
     return launchKernelWithImmCmdList(l0Device, zeKernel, KEnv,
-                                      Options.CommandMode);
+                                      Options.CommandMode, AppendLaunch);
 
-  return launchKernelWithCmdQueue(l0Device, zeKernel, KEnv);
+  return launchKernelWithCmdQueue(l0Device, zeKernel, KEnv, AppendLaunch);
 }
 
 } // namespace llvm::omp::target::plugin
