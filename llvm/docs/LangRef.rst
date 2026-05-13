@@ -28191,6 +28191,139 @@ Semantics:
 
 Follows the same semantics as :ref:`srem <i_srem>` with the exception that disabled lanes cannot produce undefined behaviour and always result in poison.
 
+Speculative Load Intrinsics
+---------------------------
+
+LLVM provides intrinsics for speculatively loading memory that may be
+out-of-bounds. These intrinsics enable optimizations like early-exit loop
+vectorization where the vectorized loop may read beyond the end of an array,
+provided the access is guaranteed to be valid by target-specific checks.
+
+.. _int_speculative_load:
+
+'``llvm.speculative.load``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      ; Direct form: number of accessible bytes given as i64
+      declare <4 x float>  @llvm.speculative.load.v4f32.p0(ptr <ptr>, i1 <from_end>, i64 <num_accessible_bytes>)
+      declare <8 x i32>    @llvm.speculative.load.v8i32.p0(ptr <ptr>, i1 <from_end>, i64 <num_accessible_bytes>)
+
+      ; Oracle form: accessible bytes computed by calling oracle_fn(args...)
+      declare <4 x float>  @llvm.speculative.load.v4f32.p0(ptr <ptr>, i1 <from_end>, ptr <oracle_fn>, ...)
+
+Overview:
+"""""""""
+
+The '``llvm.speculative.load``' intrinsic loads a value from memory. Unlike a
+regular load, the memory access may extend beyond the bounds of the allocated
+object, provided the pointer has been verified by
+:ref:`llvm.can.load.speculatively <int_can_load_speculatively>` to ensure the
+access is valid.
+
+Arguments:
+""""""""""
+
+The first argument is a pointer to the memory location to load from. The return
+type must be a vector type with a power-of-2 size in bytes. The second argument
+is an ``i1`` constant flag ``from_end`` that specifies whether the ``N``
+accessible bytes are counted from the start or the end of the loaded values (see
+Semantics). The remaining arguments determine the *number of accessible bytes*,
+denoted ``N`` below.
+
+In the **direct form**, the third argument is an ``i64`` specifying ``N``
+directly. In the **oracle form**, the third argument must be a direct
+reference to a function returning ``i64`` that may only read memory through its
+arguments (indirect function pointers are not permitted); the remaining
+arguments are forwarded to it, and its return value is ``N``.
+
+Semantics:
+""""""""""
+
+Let ``S`` denote the size of the return type in bytes. The intrinsic performs
+a load of ``S`` bytes starting from ``ptr``.
+
+When ``from_end`` is ``false``, the first ``N`` bytes (offsets ``[0, N)``)
+are the stored values read from memory. Bytes at offsets ``[N, S)`` are
+``poison``.
+
+When ``from_end`` is ``true``, the last ``N`` bytes (offsets ``[S - N, S)``)
+are the stored values read from memory. Bytes at offsets ``[0, S - N)`` are
+``poison``.
+
+In both cases, the ``N`` accessible bytes must lie within the bounds of an
+allocated object that ``ptr`` is :ref:`based <pointeraliasing>` on, and
+poison bytes are not considered accessed for the purposes of data races or
+``noalias`` constraints. The behavior is undefined if ``N`` exceeds ``S``.
+
+The behavior is undefined if the speculative load accesses memory that would
+fault (i.e., the oracle or ``llvm.can.load.speculatively`` would indicate the
+access is not safe).
+
+.. _int_can_load_speculatively:
+
+'``llvm.can.load.speculatively``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+This is an overloaded intrinsic.
+
+::
+
+      declare i1 @llvm.can.load.speculatively.p0(ptr <ptr>, i64 <num_bytes>)
+      declare i1 @llvm.can.load.speculatively.p1(ptr addrspace(1) <ptr>, i64 <num_bytes>)
+
+Overview:
+"""""""""
+
+The '``llvm.can.load.speculatively``' intrinsic returns true if it is safe
+to speculatively load ``num_bytes`` bytes starting from ``ptr``,
+even if the memory may be beyond the bounds of an allocated object.
+
+Arguments:
+""""""""""
+
+The first argument is a pointer to the memory location.
+
+The second argument is an i64 specifying the size in bytes of the load.
+The size must be a positive power of 2.  If the size is not a power-of-2, the
+result is ``poison``.
+
+Semantics:
+""""""""""
+
+This intrinsic has **target-dependent** semantics. It returns ``true`` if
+``num_bytes`` bytes starting at ``ptr + I * num_bytes``, for all non-negative
+integers ``I`` where the computed address does not wrap around the address
+space, can be loaded speculatively, even if the memory is beyond the bounds of
+an allocated object. It returns ``false`` otherwise.
+
+The specific conditions under which this intrinsic returns ``true`` are
+determined by the target. For example, a target may check whether the pointer
+alignment guarantees all such loads cannot cross a page boundary.
+
+.. code-block:: llvm
+
+    ; Check if we can safely load 16 bytes from %ptr
+    %can_load = call i1 @llvm.can.load.speculatively.p0(ptr %ptr, i64 16)
+    br i1 %can_load, label %speculative_path, label %safe_path
+
+    speculative_path:
+      ; Safe to speculatively load from %ptr
+      %vec = call <4 x i32> @llvm.speculative.load.v4i32.p0(ptr %ptr, i1 false, i64 16)
+      ...
+
+    safe_path:
+      ; Fall back to masked load or scalar operations
+      ...
+
+
 Memory Use Markers
 ------------------
 

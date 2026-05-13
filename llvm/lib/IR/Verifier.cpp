@@ -6868,6 +6868,70 @@ void Verifier::visitIntrinsicCall(Intrinsic::ID ID, CallBase &Call) {
           &Call);
     break;
   }
+  case Intrinsic::speculative_load: {
+    Type *LoadTy = Call.getType();
+    TypeSize Size = DL.getTypeStoreSize(LoadTy);
+    // For scalable vectors, check the known minimum size is a power of 2.
+    Check(Size.getKnownMinValue() > 0 && isPowerOf2_64(Size.getKnownMinValue()),
+          "llvm.speculative.load type must have a power-of-2 size", &Call);
+
+    unsigned NumArgs = Call.arg_size();
+    Check(NumArgs >= 3, "llvm.speculative.load requires at least 3 arguments",
+          &Call);
+
+    Value *PayloadArg = Call.getArgOperand(2);
+    if (PayloadArg->getType()->isIntegerTy(64)) {
+      // Direct form: (ptr, i1 from_end, i64 num_accessible_bytes)
+      Check(NumArgs == 3,
+            "llvm.speculative.load direct form has too many arguments", &Call);
+      if (auto *CI = dyn_cast<ConstantInt>(PayloadArg)) {
+        Check(Size.isScalable() || CI->getZExtValue() <= Size.getFixedValue(),
+              "llvm.speculative.load num_accessible_bytes must not exceed "
+              "the result size in bytes",
+              &Call);
+      }
+    } else {
+      // Oracle form: (ptr, i1 from_end, oracle_fn_ptr, args...)
+      auto *OracleFn = dyn_cast<Function>(PayloadArg);
+      Check(OracleFn,
+            "llvm.speculative.load third argument must be i64 or a direct "
+            "reference to an oracle function",
+            &Call);
+
+      Check(OracleFn->onlyReadsMemory() && OracleFn->onlyAccessesArgMemory(),
+            "llvm.speculative.load oracle function must not have side effects "
+            "and may only read memory through its arguments",
+            &Call);
+
+      FunctionType *FTy = OracleFn->getFunctionType();
+      Check(FTy->getReturnType()->isIntegerTy(64),
+            "llvm.speculative.load oracle function must return i64", &Call);
+
+      unsigned OracleArgsStart = 3;
+      unsigned NumOracleArgs = NumArgs - OracleArgsStart;
+      Check(FTy->isVarArg() ? NumOracleArgs >= FTy->getNumParams()
+                            : NumOracleArgs == FTy->getNumParams(),
+            "llvm.speculative.load oracle function argument count mismatch",
+            &Call);
+      for (unsigned I = 0, E = FTy->getNumParams(); I < E; ++I) {
+        Check(FTy->getParamType(I) ==
+                  Call.getArgOperand(I + OracleArgsStart)->getType(),
+              "llvm.speculative.load oracle function argument type mismatch",
+              &Call);
+      }
+    }
+    break;
+  }
+  case Intrinsic::can_load_speculatively: {
+    // If size is a constant, verify it's a positive power of 2.
+    if (auto *SizeCI = dyn_cast<ConstantInt>(Call.getArgOperand(1))) {
+      uint64_t Size = SizeCI->getZExtValue();
+      Check(Size > 0 && isPowerOf2_64(Size),
+            "llvm.can.load.speculatively size must be a positive power of 2",
+            &Call);
+    }
+    break;
+  }
   case Intrinsic::vector_insert: {
     Value *Vec = Call.getArgOperand(0);
     Value *SubVec = Call.getArgOperand(1);
