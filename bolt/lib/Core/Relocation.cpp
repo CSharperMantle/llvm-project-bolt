@@ -1328,7 +1328,7 @@ uint32_t Relocation::getPC64() {
   case Triple::riscv64:
     llvm_unreachable("not implemented");
   case Triple::loongarch64:
-    llvm_unreachable("not implemented");
+    return ELF::R_LARCH_64_PCREL;
   case Triple::x86_64:
     return ELF::R_X86_64_PC64;
   }
