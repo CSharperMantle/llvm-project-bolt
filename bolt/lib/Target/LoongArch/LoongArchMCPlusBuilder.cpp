@@ -289,31 +289,6 @@ public:
     return StringRef("\0\0\0\0", 4);
   }
 
-  bool createLoongArchCall(MCInst &InstA, MCInst &InstB, const MCSymbol *Target,
-                           MCContext *Ctx, bool isTailCall) override {
-    InstA.setOpcode(LoongArch::PCADDU18I);
-    InstA.clear();
-    if (isTailCall)
-      InstA.addOperand(MCOperand::createReg(LoongArch::R20));
-    else
-      InstA.addOperand(MCOperand::createReg(LoongArch::R1));
-    InstA.addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_CALL36, *Ctx)));
-
-    InstB.setOpcode(LoongArch::JIRL);
-    InstB.clear();
-    if (isTailCall) {
-      InstB.addOperand(MCOperand::createReg(LoongArch::R0));
-      InstB.addOperand(MCOperand::createReg(LoongArch::R20));
-    } else {
-      InstB.addOperand(MCOperand::createReg(LoongArch::R1));
-      InstB.addOperand(MCOperand::createReg(LoongArch::R1));
-    }
-    InstB.addOperand(MCOperand::createImm(0));
-
-    return true;
-  }
-
   const MCExpr *
   tryGetLoongArchRelaxedPCRel20SubExpr(const MCInst &Inst) const override {
     if (Inst.getOpcode() != LoongArch::PCADDI || Inst.getNumOperands() < 2 ||
@@ -368,13 +343,7 @@ public:
 
   void createLongTailCall(InstructionListType &Seq, const MCSymbol *Target,
                           MCContext *Ctx) override {
-    InstructionListType Insts(2);
-
-    bool succ = createLoongArchCall(Insts[0], Insts[1], Target, Ctx,
-                                    /*isTailCall*/ true);
-    assert(succ && "Failed to create long tail call.");
-
-    Seq.swap(Insts);
+    createShortJmp(Seq, Target, Ctx, /*IsTailCall*/ true);
   }
 
   bool analyzeBranch(InstructionIterator Begin, InstructionIterator End,
