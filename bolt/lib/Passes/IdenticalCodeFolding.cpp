@@ -439,9 +439,9 @@ void IdenticalCodeFolding::markFunctionsUnsafeToFold(BinaryContext &BC) {
   NamedRegionTimer MarkFunctionsUnsafeToFoldTimer(
       "markFunctionsUnsafeToFold", "markFunctionsUnsafeToFold", "ICF breakdown",
       "ICF breakdown", opts::TimeICF);
-  if (!BC.isX86() && !BC.isAArch64())
-    BC.outs()
-        << "BOLT-WARNING: safe ICF is only supported for x86 and AArch64\n";
+  if (!BC.isX86() && !BC.isAArch64() && !BC.isLoongArch())
+    BC.outs() << "BOLT-WARNING: safe ICF is only supported for x86, AArch64 "
+                 "and LoongArch\n";
   analyzeDataRelocations(BC);
   analyzeFunctions(BC);
 }
