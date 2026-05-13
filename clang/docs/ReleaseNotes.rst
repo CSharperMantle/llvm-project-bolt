@@ -688,6 +688,14 @@ Windows Support
 - ``-fmacro-prefix-map=`` (``-ffile-prefix-map=``) now affects an anonymous namespace hash generation
   for the MSVC targets and allows deterministic symbol mangling for reproducible builds.
 
+- In MSVC compatibility mode, scalar and vector deleting destructors now call
+  ``__global_delete`` instead of directly referencing ``::operator delete``.
+  This matches MSVC's behavior and fixes ``LNK2001`` linker errors in
+  environments (such as kernel mode) where no global ``::operator delete``
+  exists. When the translation unit contains a ``::delete`` expression, a
+  ``__global_delete`` forwarding body that calls ``::operator delete`` is
+  emitted automatically.
+
 LoongArch Support
 ^^^^^^^^^^^^^^^^^
 
