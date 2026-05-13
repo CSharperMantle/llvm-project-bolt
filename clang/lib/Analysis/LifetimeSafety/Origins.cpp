@@ -51,8 +51,7 @@ private:
   LifetimeSafetyStats &LSStats;
 };
 
-class LifetimeAnnotatedOriginTypeCollector
-    : public RecursiveASTVisitor<LifetimeAnnotatedOriginTypeCollector> {
+class PreScanCollector : public RecursiveASTVisitor<PreScanCollector> {
 public:
   bool VisitCallExpr(const CallExpr *CE) {
     // Indirect calls (e.g., function pointers) are skipped because lifetime
@@ -67,6 +66,12 @@ public:
     return true;
   }
 
+  bool VisitMemberExpr(const MemberExpr *ME) {
+    if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl()))
+      AccessedFields.insert(FD);
+    return true;
+  }
+
   bool shouldVisitLambdaBody() const { return false; }
   bool shouldVisitTemplateInstantiations() const { return true; }
 
@@ -74,8 +79,13 @@ public:
     return CollectedTypes;
   }
 
+  const llvm::SmallPtrSet<const FieldDecl *, 8> &getAccessedFields() const {
+    return AccessedFields;
+  }
+
 private:
   llvm::SmallVector<QualType> CollectedTypes;
+  llvm::SmallPtrSet<const FieldDecl *, 8> AccessedFields;
 
   void collect(const FunctionDecl *FD, QualType RetType) {
     if (!FD)
@@ -96,25 +106,6 @@ private:
       }
     }
   }
-};
-
-class AccessedFieldCollector
-    : public RecursiveASTVisitor<AccessedFieldCollector> {
-public:
-  bool VisitMemberExpr(const MemberExpr *ME) {
-    if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl()))
-      AccessedFields.insert(FD);
-    return true;
-  }
-
-  bool shouldVisitTemplateInstantiations() const { return true; }
-
-  const llvm::SmallPtrSet<const FieldDecl *, 8> &getAccessedFields() const {
-    return AccessedFields;
-  }
-
-private:
-  llvm::SmallPtrSet<const FieldDecl *, 8> AccessedFields;
 };
 
 } // namespace
@@ -191,8 +182,7 @@ bool doesDeclHaveStorage(const ValueDecl *D) {
 
 OriginManager::OriginManager(const AnalysisDeclContext &AC)
     : AST(AC.getASTContext()) {
-  collectLifetimeAnnotatedOriginTypes(AC);
-  collectAccessedFields(AC);
+  runPreScan(AC);
   initializeThisOrigins(AC.getDecl());
 }
 
@@ -419,27 +409,8 @@ void OriginManager::collectMissingOrigins(Stmt &FunctionBody,
   Collector.TraverseStmt(const_cast<Stmt *>(&FunctionBody));
 }
 
-void OriginManager::collectLifetimeAnnotatedOriginTypes(
-    const AnalysisDeclContext &AC) {
-  LifetimeAnnotatedOriginTypeCollector Collector;
-  if (Stmt *Body = AC.getBody())
-    Collector.TraverseStmt(Body);
-  if (const auto *CD = dyn_cast<CXXConstructorDecl>(AC.getDecl()))
-    for (const auto *Init : CD->inits())
-      Collector.TraverseStmt(Init->getInit());
-  for (QualType QT : Collector.getCollectedTypes())
-    registerLifetimeAnnotatedOriginType(QT);
-}
-
-void OriginManager::registerLifetimeAnnotatedOriginType(QualType QT) {
-  if (!QT->getAsCXXRecordDecl() || hasOrigins(QT))
-    return;
-
-  LifetimeAnnotatedOriginTypes.insert(QT.getCanonicalType().getTypePtr());
-}
-
-void OriginManager::collectAccessedFields(const AnalysisDeclContext &AC) {
-  AccessedFieldCollector Collector;
+void OriginManager::runPreScan(const AnalysisDeclContext &AC) {
+  PreScanCollector Collector;
   if (Stmt *Body = AC.getBody())
     Collector.TraverseStmt(Body);
   if (const auto *CD = dyn_cast<CXXConstructorDecl>(AC.getDecl()))
@@ -449,7 +420,16 @@ void OriginManager::collectAccessedFields(const AnalysisDeclContext &AC) {
       if (Expr *InitE = Init->getInit())
         Collector.TraverseStmt(InitE);
     }
+  for (QualType QT : Collector.getCollectedTypes())
+    registerLifetimeAnnotatedOriginType(QT);
   AccessedFields.insert_range(Collector.getAccessedFields());
+}
+
+void OriginManager::registerLifetimeAnnotatedOriginType(QualType QT) {
+  if (!QT->getAsCXXRecordDecl() || hasOrigins(QT))
+    return;
+
+  LifetimeAnnotatedOriginTypes.insert(QT.getCanonicalType().getTypePtr());
 }
 
 } // namespace clang::lifetimes::internal

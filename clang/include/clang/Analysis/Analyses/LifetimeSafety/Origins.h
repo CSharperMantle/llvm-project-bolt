@@ -229,15 +229,14 @@ private:
 
   void initializeThisOrigins(const Decl *D);
 
-  /// Pre-scans the function body (and constructor init lists) to discover
-  /// return types of lifetime-annotated calls (currently
-  /// [[clang::lifetimebound]]), registering them for origin tracking.
-  void collectLifetimeAnnotatedOriginTypes(const AnalysisDeclContext &AC);
+  /// Pre-scans the function body (and constructor init lists) to discover:
+  ///
+  /// 1. Return types of lifetime-annotated calls (currently
+  ///    [[clang::lifetimebound]]), registering them for origin tracking.
+  ///
+  /// 2. The fields it accesses; the rest are excluded from origin tracking.
+  void runPreScan(const AnalysisDeclContext &AC);
   void registerLifetimeAnnotatedOriginType(QualType QT);
-
-  /// Pre-scans the function body (and constructor init lists) to discover
-  /// the fields it accesses; the rest are excluded from origin tracking.
-  void collectAccessedFields(const AnalysisDeclContext &AC);
 
   ASTContext &AST;
   OriginID NextOriginID{0};
