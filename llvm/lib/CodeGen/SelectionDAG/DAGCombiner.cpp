@@ -7036,6 +7036,82 @@ static SDValue combineSelectAsExtAnd(SDValue Cond, SDValue T, SDValue F,
   return DAG.getNode(ISD::AND, DL, OpVT, CondMask, T.getOperand(0));
 }
 
+// Widen int vector is not power of 2 in length.
+static SDValue widenIntVectorSelect(SDNode *N, SelectionDAG &DAG,
+                                    const TargetLowering &TLI, SDValue Cond,
+                                    SDValue TrueVal, SDValue FalseVal) {
+  EVT ResultVT = N->getValueType(0);
+  if (ResultVT.isSimple() || ResultVT.isPow2VectorType() ||
+      TLI.getTypeAction(*DAG.getContext(), ResultVT) !=
+          TargetLowering::TypeWidenVector)
+    return SDValue();
+
+  EVT EltVT = ResultVT.getVectorElementType();
+  if (!EltVT.isInteger())
+    return SDValue();
+
+  SDValue WidenTrue = DAG.WidenVector(TrueVal, SDLoc(TrueVal));
+  SDValue WidenFalse = DAG.WidenVector(FalseVal, SDLoc(FalseVal));
+
+  EVT WidenVT = WidenTrue.getValueType();
+  SDValue WidenSelect =
+      DAG.getNode(ISD::SELECT, SDLoc(N), WidenVT, Cond, WidenTrue, WidenFalse);
+  return DAG.getExtractSubvector(SDLoc(N), ResultVT, WidenSelect, 0);
+}
+
+// Try to convert vXiY into vPiQ with:
+// 1. vXiY is not legal type
+// 2. vPiQ is legal type
+// 3. X * Y = P * Q
+// This prevent promotion of integer vectors like v32i4 to v32i16
+// which can create extra operations on type casting.
+static SDValue castIntVectorSelect(SDNode *N, SelectionDAG &DAG,
+                                   const TargetLowering &TLI, SDValue Cond,
+                                   SDValue TrueVal, SDValue FalseVal) {
+  EVT ResultVT = N->getValueType(0);
+  if (ResultVT.isScalableVector() ||
+      TLI.getTypeAction(*DAG.getContext(), ResultVT) ==
+          TargetLowering::TypeLegal)
+    return SDValue();
+
+  EVT EltVT = ResultVT.getVectorElementType();
+  if (!EltVT.isInteger())
+    return SDValue();
+
+  TypeSize NewEltBitSize = EltVT.getSizeInBits() * 2;
+  EVT NewVT = ResultVT.getIntegerVectorWithElementWidth(*DAG.getContext(),
+                                                        NewEltBitSize);
+
+  while (true) {
+    if (NewVT == EVT())
+      return SDValue();
+
+    EVT TransformVT = TLI.getLegalTypeToTransformTo(*DAG.getContext(), NewVT);
+    if (TransformVT == NewVT)
+      break;
+
+    if (TransformVT != EVT() &&
+        TransformVT.getSizeInBits() == ResultVT.getSizeInBits() &&
+        TLI.getOperationAction(N->getOpcode(), TransformVT) ==
+            TargetLoweringBase::Legal &&
+        TLI.getOperationAction(N->getOpcode(), NewVT) ==
+            TargetLoweringBase::Custom) {
+      NewVT = TransformVT;
+      break;
+    }
+
+    NewEltBitSize *= 2;
+    NewVT = ResultVT.getIntegerVectorWithElementWidth(*DAG.getContext(),
+                                                      NewEltBitSize);
+  }
+
+  SDValue NewTrue = DAG.getBitcast(NewVT, TrueVal);
+  SDValue NewFalse = DAG.getBitcast(NewVT, FalseVal);
+  SDValue NewSelect =
+      DAG.getNode(ISD::SELECT, SDLoc(N), NewVT, Cond, NewTrue, NewFalse);
+  return DAG.getBitcast(ResultVT, NewSelect);
+}
+
 /// This contains all DAGCombine rules which reduce two values combined by
 /// an And operation to a single value. This makes them reusable in the context
 /// of visitSELECT(). Rules involving constants are not included as
@@ -13156,6 +13232,15 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
 
   if (SDValue R = combineSelectAsExtAnd(N0, N1, N2, DL, DAG))
     return R;
+
+  EVT ResultVT = N->getValueType(0);
+  if (ResultVT.isVector()) {
+    if (SDValue R = widenIntVectorSelect(N, DAG, TLI, N0, N1, N2))
+      return R;
+
+    if (SDValue R = castIntVectorSelect(N, DAG, TLI, N0, N1, N2))
+      return R;
+  }
 
   return SDValue();
 }
