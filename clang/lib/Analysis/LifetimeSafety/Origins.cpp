@@ -98,6 +98,25 @@ private:
   }
 };
 
+class AccessedFieldCollector
+    : public RecursiveASTVisitor<AccessedFieldCollector> {
+public:
+  bool VisitMemberExpr(const MemberExpr *ME) {
+    if (const auto *FD = dyn_cast<FieldDecl>(ME->getMemberDecl()))
+      AccessedFields.insert(FD);
+    return true;
+  }
+
+  bool shouldVisitTemplateInstantiations() const { return true; }
+
+  const llvm::SmallPtrSet<const FieldDecl *, 8> &getAccessedFields() const {
+    return AccessedFields;
+  }
+
+private:
+  llvm::SmallPtrSet<const FieldDecl *, 8> AccessedFields;
+};
+
 } // namespace
 
 bool OriginManager::hasOrigins(QualType QT) const {
@@ -124,14 +143,15 @@ bool OriginManager::hasOrigins(QualType QT) const {
   if (RD->isUnion())
     return false;
   for (const auto *FD : RD->fields())
-    if (isTrackedField(RD, FD))
+    if (FD->getAccess() == AS_public && hasOrigins(FD->getType()))
       return true;
   return false;
 }
 
 bool OriginManager::isTrackedField(const CXXRecordDecl *RD,
                                    const FieldDecl *FD) const {
-  return FD->getAccess() == AS_public && hasOrigins(FD->getType());
+  return FD->getAccess() == AS_public && hasOrigins(FD->getType()) &&
+         isAccessedField(FD);
 }
 
 /// Determines if an expression has origins that need to be tracked.
@@ -172,6 +192,7 @@ bool doesDeclHaveStorage(const ValueDecl *D) {
 OriginManager::OriginManager(const AnalysisDeclContext &AC)
     : AST(AC.getASTContext()) {
   collectLifetimeAnnotatedOriginTypes(AC);
+  collectAccessedFields(AC);
   initializeThisOrigins(AC.getDecl());
 }
 
@@ -415,6 +436,20 @@ void OriginManager::registerLifetimeAnnotatedOriginType(QualType QT) {
     return;
 
   LifetimeAnnotatedOriginTypes.insert(QT.getCanonicalType().getTypePtr());
+}
+
+void OriginManager::collectAccessedFields(const AnalysisDeclContext &AC) {
+  AccessedFieldCollector Collector;
+  if (Stmt *Body = AC.getBody())
+    Collector.TraverseStmt(Body);
+  if (const auto *CD = dyn_cast<CXXConstructorDecl>(AC.getDecl()))
+    for (const auto *Init : CD->inits()) {
+      if (const FieldDecl *FD = Init->getAnyMember())
+        AccessedFields.insert(FD);
+      if (Expr *InitE = Init->getInit())
+        Collector.TraverseStmt(InitE);
+    }
+  AccessedFields.insert_range(Collector.getAccessedFields());
 }
 
 } // namespace clang::lifetimes::internal

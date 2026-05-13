@@ -895,9 +895,10 @@ void FactsGenerator::handleImplicitObjectFieldUses(const Expr *Call,
 
   const auto UseFields = [&](const CXXRecordDecl *RD) {
     for (const auto *Field : RD->fields())
-      if (auto *FieldNode = getOriginNode(*Field))
-        CurrentBlockFacts.push_back(
-            FactMgr.createFact<UseFact>(Call, FieldNode));
+      if (FactMgr.getOriginMgr().isAccessedField(Field))
+        if (auto *FieldNode = getOriginNode(*Field))
+          CurrentBlockFacts.push_back(
+              FactMgr.createFact<UseFact>(Call, FieldNode));
   };
 
   UseFields(ClassDecl);

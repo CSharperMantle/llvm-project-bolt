@@ -197,6 +197,10 @@ public:
   bool hasOrigins(QualType QT) const;
   bool hasOrigins(const Expr *E) const;
 
+  bool isAccessedField(const FieldDecl *FD) const {
+    return AccessedFields.contains(FD);
+  }
+
   void dump(OriginID OID, llvm::raw_ostream &OS) const;
 
   /// Collects statistics about expressions that lack associated origins.
@@ -231,6 +235,10 @@ private:
   void collectLifetimeAnnotatedOriginTypes(const AnalysisDeclContext &AC);
   void registerLifetimeAnnotatedOriginType(QualType QT);
 
+  /// Pre-scans the function body (and constructor init lists) to discover
+  /// the fields it accesses; the rest are excluded from origin tracking.
+  void collectAccessedFields(const AnalysisDeclContext &AC);
+
   ASTContext &AST;
   OriginID NextOriginID{0};
   /// TODO(opt): Profile and evaluate the usefulness of small buffer
@@ -244,6 +252,9 @@ private:
   /// because of lifetime annotations (currently [[clang::lifetimebound]]) on
   /// functions that return them.
   llvm::DenseSet<const Type *> LifetimeAnnotatedOriginTypes;
+  /// Fields accessed in the function body (or constructor init lists).
+  /// Fields outside this set are excluded from origin tracking.
+  llvm::SmallPtrSet<const FieldDecl *, 8> AccessedFields;
 
   /// Field-edge depth limit when building origin trees for record types:
   ///   - `std::nullopt`: no limit (full field tree).
