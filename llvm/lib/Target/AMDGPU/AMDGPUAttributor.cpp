@@ -16,6 +16,7 @@
 #include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/IntrinsicsR600.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/Attributor.h"
 #include <cstdint>
@@ -1590,7 +1591,6 @@ static bool runImpl(SetVector<Function *> &Functions, bool IsModulePass,
                     bool DeleteFns, Module &M, AnalysisGetter &AG,
                     TargetMachine &TM, AMDGPUAttributorOptions Options,
                     ThinOrFullLTOPhase LTOPhase) {
-
   CallGraphUpdater CGUpdater;
   BumpPtrAllocator Allocator;
   AMDGPUInformationCache InfoCache(M, AG, Allocator, nullptr, TM);
@@ -1660,10 +1660,9 @@ static bool runImpl(SetVector<Function *> &Functions, bool IsModulePass,
       if (Ptr) {
         A.getOrCreateAAFor<AAAddressSpace>(IRPosition::value(*Ptr));
         A.getOrCreateAAFor<AANoAliasAddrSpace>(IRPosition::value(*Ptr));
-        if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(Ptr)) {
-          if (II->getIntrinsicID() == Intrinsic::amdgcn_make_buffer_rsrc)
-            A.getOrCreateAAFor<AAAlign>(IRPosition::value(*Ptr));
-        }
+        if (PatternMatch::match(Ptr, PatternMatch::m_Intrinsic<
+                                         Intrinsic::amdgcn_make_buffer_rsrc>()))
+          A.getOrCreateAAFor<AAAlign>(IRPosition::value(*Ptr));
       }
     }
   }
