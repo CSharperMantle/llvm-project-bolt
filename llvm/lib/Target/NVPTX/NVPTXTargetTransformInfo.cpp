@@ -652,7 +652,32 @@ unsigned NVPTXTTIImpl::getAssumedAddrSpace(const Value *V) const {
         return ADDRESS_SPACE_LOCAL;
     }
   }
+  if (int AS = getPointerLoadAddressSpace(V); AS != -1) {
+    return AS;
+  }
+  return -1;
+}
 
+/* 
+ * geparg = getelementptr T, ptr %arg, i32 0, i32 0
+ * ptr a = load ptr %geparg
+ * we can expect AS of a to be global
+ */
+int NVPTXTTIImpl::getPointerLoadAddressSpace(const Value *V) const {
+  auto *Load = dyn_cast<LoadInst>(V);
+  if (!Load)
+    return -1;
+  auto *Ptr = Load->getPointerOperand();
+  if (!Ptr)
+    return -1;
+  // if it is argument, return GM AS
+  if (const auto *Arg = dyn_cast<Argument>(Ptr)) {
+    if (isKernelFunction(*Arg->getParent()))
+      return ADDRESS_SPACE_GLOBAL;
+  }
+  if (auto *GEP = dyn_cast<GetElementPtrInst>(Ptr)) {
+    return getAssumedAddrSpace(GEP->getPointerOperand());
+  }
   return -1;
 }
 
