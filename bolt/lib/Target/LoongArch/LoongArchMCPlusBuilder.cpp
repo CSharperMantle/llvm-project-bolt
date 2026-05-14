@@ -14,6 +14,7 @@
 #include "MCTargetDesc/LoongArchFixupKinds.h"
 #include "MCTargetDesc/LoongArchMCAsmInfo.h"
 #include "MCTargetDesc/LoongArchMCTargetDesc.h"
+#include "bolt/Core/BinaryBasicBlock.h"
 #include "bolt/Core/MCPlusBuilder.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCContext.h"
@@ -283,6 +284,39 @@ public:
       setTailCall(Insts[4]);
 
     Seq.swap(Insts);
+  }
+
+  void createStackPointerIncrement(
+      MCInst &Inst, int Size = 8,
+      bool NoFlagsClobber = false /* unused */) const override {
+    Inst.setOpcode(LoongArch::ADDI_D);
+    Inst.clear();
+    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
+    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
+    Inst.addOperand(MCOperand::createImm(-Size));
+  }
+
+  void createStackPointerDecrement(
+      MCInst &Inst, int Size = 8,
+      bool NoFlagsClobber = false /* unused */) const override {
+    Inst.setOpcode(LoongArch::ADDI_D);
+    Inst.clear();
+    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
+    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
+    Inst.addOperand(MCOperand::createImm(Size));
+  }
+
+  bool isEpilogue(const BinaryBasicBlock &BB) const override {
+    if (BB.succ_size())
+      return false;
+
+    for (auto It = BB.rbegin(); It != BB.rend(); ++It) {
+      const MCInst &Instr = *It;
+      if (isCFI(Instr) || isPseudo(Instr))
+        continue;
+      return isReturn(Instr);
+    }
+    return false;
   }
 
   void createTrap(MCInst &Inst) const override {
@@ -679,6 +713,10 @@ public:
       unsetConditionalTailCall(Inst);
     return true;
   }
+
+  MCPhysReg getStackPointer() const override { return LoongArch::R3; }
+
+  MCPhysReg getFramePointer() const override { return LoongArch::R22; }
 
   uint16_t getMinFunctionAlignment() const override { return 4; }
 
