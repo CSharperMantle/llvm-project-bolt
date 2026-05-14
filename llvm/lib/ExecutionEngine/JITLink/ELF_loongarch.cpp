@@ -671,6 +671,8 @@ private:
       return Pointer32;
     case ELF::R_LARCH_32_PCREL:
       return Delta32;
+    case ELF::R_LARCH_64_PCREL:
+      return Delta64;
     case ELF::R_LARCH_B16:
       return Branch16PCRel;
     case ELF::R_LARCH_B21:
