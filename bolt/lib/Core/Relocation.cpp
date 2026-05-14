@@ -753,7 +753,8 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
   case ELF::R_LARCH_TLS_GD_PC_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_HI20: {
     Contents &= ~0xfffffffffe00001fULL;
-    Contents = static_cast<int64_t>(PC) + SignExtend64<32>(Contents << 7);
+    Contents =
+        static_cast<int64_t>(PC & ~0xfffULL) + SignExtend64<32>(Contents << 7);
     Contents &= ~0xfffULL;
     return Contents;
   }
