@@ -261,7 +261,8 @@ Expected<std::unique_ptr<BinaryContext>> BinaryContext::createBinaryContext(
   Ctx->setObjectFileInfo(MOFI.get());
   // We do not support X86 Large code model. Change this in the future.
   bool Large = false;
-  if (TheTriple.getArch() == llvm::Triple::aarch64)
+  if (TheTriple.getArch() == llvm::Triple::aarch64 ||
+      TheTriple.getArch() == llvm::Triple::loongarch64)
     Large = true;
   unsigned LSDAEncoding =
       Large ? dwarf::DW_EH_PE_absptr : dwarf::DW_EH_PE_udata4;
