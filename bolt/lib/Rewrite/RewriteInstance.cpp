@@ -3060,7 +3060,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
 
   const bool IsToCode = ReferencedSection && ReferencedSection->isText();
 
-  // Special handling of PC-relative relocations.
+  // Special handling of x86 PC-relative relocations.
   if (IsX86 && Relocation::isPCRelative(RType)) {
     if (!IsFromCode && IsToCode) {
       // PC-relative relocations from data to code are tricky since the
@@ -3091,6 +3091,18 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
     }
 
     return;
+  }
+
+  // Special handling of LoongArch PC-relative relocations.
+  if (IsLoongArch && Relocation::isPCRelative(RType)) {
+    // For the reason stated above, we only register the fact that there is a
+    // PC-relative relocation at a given address against the code.
+    if (!IsFromCode && IsToCode) {
+      BC->addPCRelativeDataRelocation(Rel.getOffset());
+      return;
+    }
+    // For LoongArch only the data-to-code case are consumed. Other PC-relative
+    // relocations (e.g. TLS) fall through to the normal path below.
   }
 
   bool ForceRelocation = BC->forceSymbolRelocations(SymbolName);
