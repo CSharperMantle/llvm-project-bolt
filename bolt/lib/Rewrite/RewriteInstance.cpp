@@ -3313,8 +3313,8 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
 
   if ((ReferencedSection && refersToReorderedSection(ReferencedSection)) ||
       (opts::ForceToDataRelocations && checkMaxDataRelocations()) ||
-      // RISC-V has ADD/SUB data-to-data relocations
-      IsRISCV)
+      // RISC-V and LoongArch have ADD/SUB data-to-data relocations
+      IsRISCV || IsLoongArch)
     ForceRelocation = true;
 
   if (IsFromCode)
