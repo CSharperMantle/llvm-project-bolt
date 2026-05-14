@@ -31,6 +31,102 @@ using namespace bolt;
 
 namespace {
 
+// ── Instruction pattern matchers for dispatch reconstruction ──
+
+static bool matchPcaddi(const MCInst &Inst, MCRegister Rd) {
+  return Inst.getOpcode() == LoongArch::PCADDI && Inst.getNumOperands() >= 2 &&
+         Inst.getOperand(0).isReg() && Inst.getOperand(0).getReg() == Rd &&
+         Inst.getOperand(1).isExpr();
+}
+
+static bool matchAddiD(const MCInst &Inst, MCRegister Rd, MCRegister &RsOut) {
+  if (Inst.getOpcode() != LoongArch::ADDI_D || Inst.getNumOperands() < 3)
+    return false;
+  if (!Inst.getOperand(0).isReg() || Inst.getOperand(0).getReg() != Rd)
+    return false;
+  if (!Inst.getOperand(1).isReg())
+    return false;
+  RsOut = Inst.getOperand(1).getReg();
+  return true;
+}
+
+static bool matchPcalau12i(const MCInst &Inst, MCRegister Rd) {
+  return Inst.getOpcode() == LoongArch::PCALAU12I &&
+         Inst.getNumOperands() >= 2 && Inst.getOperand(0).isReg() &&
+         Inst.getOperand(0).getReg() == Rd && Inst.getOperand(1).isExpr();
+}
+
+static bool matchSlliD(const MCInst &Inst, MCRegister Rd, unsigned Shift,
+                       MCRegister &RsOut) {
+  if (Inst.getOpcode() != LoongArch::SLLI_D || Inst.getNumOperands() < 3)
+    return false;
+  if (!Inst.getOperand(0).isReg() || Inst.getOperand(0).getReg() != Rd)
+    return false;
+  if (!Inst.getOperand(1).isReg())
+    return false;
+  if (!Inst.getOperand(2).isImm() || Inst.getOperand(2).getImm() != Shift)
+    return false;
+  RsOut = Inst.getOperand(1).getReg();
+  return true;
+}
+
+static bool matchLdxD(const MCInst &Inst, MCRegister &RjOut,
+                      MCRegister &RkOut) {
+  if (Inst.getOpcode() != LoongArch::LDX_D || Inst.getNumOperands() < 3)
+    return false;
+  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
+    return false;
+  RjOut = Inst.getOperand(1).getReg();
+  RkOut = Inst.getOperand(2).getReg();
+  return true;
+}
+
+static bool matchLdxW(const MCInst &Inst, MCRegister &RjOut,
+                      MCRegister &RkOut) {
+  if (Inst.getOpcode() != LoongArch::LDX_W || Inst.getNumOperands() < 3)
+    return false;
+  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
+    return false;
+  RjOut = Inst.getOperand(1).getReg();
+  RkOut = Inst.getOperand(2).getReg();
+  return true;
+}
+
+static bool matchLd(const MCInst &Inst, MCRegister &RjOut) {
+  unsigned Opc = Inst.getOpcode();
+  if (Opc != LoongArch::LDPTR_D && Opc != LoongArch::LD_D)
+    return false;
+  if (!Inst.getOperand(1).isReg())
+    return false;
+  RjOut = Inst.getOperand(1).getReg();
+  return true;
+}
+
+static bool matchAlslD(const MCInst &Inst, unsigned Shift, MCRegister &RjOut,
+                       MCRegister &RkOut) {
+  if (Inst.getOpcode() != LoongArch::ALSL_D || Inst.getNumOperands() < 4)
+    return false;
+  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg() ||
+      !Inst.getOperand(3).isImm())
+    return false;
+  if (Inst.getOperand(3).getImm() != Shift)
+    return false;
+  RjOut = Inst.getOperand(1).getReg();
+  RkOut = Inst.getOperand(2).getReg();
+  return true;
+}
+
+static bool matchAddD(const MCInst &Inst, MCRegister &RjOut,
+                      MCRegister &RkOut) {
+  if (Inst.getOpcode() != LoongArch::ADD_D || Inst.getNumOperands() < 3)
+    return false;
+  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
+    return false;
+  RjOut = Inst.getOperand(1).getReg();
+  RkOut = Inst.getOperand(2).getReg();
+  return true;
+}
+
 class LoongArchMCPlusBuilder : public MCPlusBuilder {
 public:
   using MCPlusBuilder::MCPlusBuilder;
@@ -154,23 +250,269 @@ public:
     PCRelBaseOut = nullptr;
     FixedEntryLoadInst = nullptr;
 
-    // Check for the following long tail call sequence:
+    if (Instruction.getOpcode() != LoongArch::JIRL ||
+        Instruction.getNumOperands() < 3 ||
+        !Instruction.getOperand(0).isReg() ||
+        !Instruction.getOperand(1).isReg())
+      return IndirectBranchType::UNKNOWN;
+
+    const MCRegister JirlRd = Instruction.getOperand(0).getReg();
+    const MCRegister JirlRj = Instruction.getOperand(1).getReg();
+
+    // Filter out returns.
+    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
+      return IndirectBranchType::UNKNOWN;
+
+    // Check for long tail call:
     //   pcaddu18i  $rj, ?
     //   jirl       $r0, $rj, 0
-    if (Instruction.getOpcode() == LoongArch::JIRL &&
-        Instruction.getNumOperands() >= 2 &&
-        Instruction.getOperand(0).isReg() &&
-        Instruction.getOperand(0).getReg() == LoongArch::R0 &&
-        Instruction.getOperand(1).isReg() && Begin != End) {
-      const MCRegister Rj = Instruction.getOperand(1).getReg();
+    if (Begin != End) {
       MCInst &PrevInst = *std::prev(End);
       if (PrevInst.getOpcode() == LoongArch::PCADDU18I &&
           PrevInst.getNumOperands() >= 1 && PrevInst.getOperand(0).isReg() &&
-          PrevInst.getOperand(0).getReg() == Rj)
+          PrevInst.getOperand(0).getReg() == JirlRj)
         return IndirectBranchType::POSSIBLE_TAIL_CALL;
     }
 
+    // Helper: find the most recent instruction before Start (but at or after
+    // Begin) that writes Reg.  Returns Start if no definition is found.
+    const auto findRegDef = [&](MCRegister Reg, InstructionIterator Start) {
+      InstructionIterator I = Start;
+      while (I != Begin) {
+        --I;
+        MCInst &Cur = *I;
+        if (&Cur == &Instruction || isPseudo(Cur) || isCFI(Cur))
+          continue;
+        BitVector WRegs(RegInfo->getNumRegs(), false);
+        getWrittenRegs(Cur, WRegs);
+        if (WRegs[Reg])
+          return I;
+      }
+      return Start;
+    };
+
+    // Resolve PC-relative base materialization for JT dispatch:
+    //    pcaddi    $Reg, %pcrel_20(label)
+    //    # --- or ---
+    //    pcalau12i $Reg, %pc_hi20(label)
+    //    addi.d    $Reg, $Reg, %pc_lo12(label)
+    const auto resolvePcRelBase =
+        [&](InstructionIterator Def, MCRegister TargetReg,
+            const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut) -> bool {
+      if (matchPcaddi(*Def, TargetReg)) {
+        PCRelBaseOut = &*Def;
+        DispExprOut = Def->getOperand(1).getExpr();
+        return true;
+      }
+      MCRegister AddiSrc;
+      if (matchAddiD(*Def, TargetReg, AddiSrc)) {
+        InstructionIterator PcalauIt = findRegDef(AddiSrc, Def);
+        if (PcalauIt != Def && matchPcalau12i(*PcalauIt, AddiSrc)) {
+          PCRelBaseOut = &*PcalauIt;
+          DispExprOut = PcalauIt->getOperand(1).getExpr();
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Path 1: LLVM Clang non-PIE jump table
+    //
+    // Base       pcaddi      $LdxBase, .LJTI
+    //            # --- or ---
+    //            pcalau12i   $LdxBase, %pc_hi20(.LJTI)
+    //            addi.d      $LdxBase, $LdxBase, %pc_lo12(.LJTI)
+    // Index      slli.d      $LdxIndex, $IndexSrc, 3
+    // Load       ldx.d       $JirlRj, $LdxBase, $LdxIndex
+    //            jr          $JirlRj
+    //
+    // Entries: 8-byte absolute in .rodata (R_LARCH_64) -> JTT_NORMAL
+    //
+    // Cf.
+    //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
+    //     case ISD::BR_JT:
+    do {
+      auto LdxDIt = findRegDef(JirlRj, End);
+      if (LdxDIt == End)
+        // Can't even find the instruction defining JirlRj.
+        break;
+
+      MCRegister LdxBase;
+      MCRegister LdxIndex;
+      if (!matchLdxD(*LdxDIt, LdxBase, LdxIndex))
+        // Insn defining JirlRj is not an ldx.d.
+        break;
+
+      auto BaseDefIt = findRegDef(LdxBase, LdxDIt);
+      if (BaseDefIt == LdxDIt)
+        // Can't even find the defn site of LdxBase.
+        break;
+
+      if (!resolvePcRelBase(BaseDefIt, LdxBase, DispExpr, PCRelBaseOut))
+        // Can't resolve LdxBase loading sequence.
+        break;
+
+      auto SlliIt = findRegDef(LdxIndex, LdxDIt);
+      if (SlliIt == LdxDIt)
+        // Can't even find the defn site of LdxIndex.
+        break;
+
+      MCRegister IndexSrc;
+      if (!matchSlliD(*SlliIt, LdxIndex, 3, IndexSrc))
+        // Can't resolve IndexSrc.
+        break;
+
+      MemLocInstr = &*LdxDIt;
+      BaseRegNum = LdxBase;
+      IndexRegNum = IndexSrc;
+      return IndirectBranchType::POSSIBLE_JUMP_TABLE;
+    } while (0);
+
+    // Path 2: LLVM Clang PIE jump table
+    //
+    // Base       pcaddi      $AddBase, .LJTI
+    //            # --- or ---
+    //            pcalau12i   $AddBase, %pc_hi20(.LJTI)
+    //            addi.d      $AddBase, $AddBase, %pc_lo12(.LJTI)
+    // Index      slli.d      $LdxIndex, $IndexSrc, 2
+    // Load       ldx.w       $LdxRd, $LdxBase, $LdxIndex
+    // Add        add.d       $JirlRj, $LdxRd, $AddBase
+    //            jr          $JirlRj
+    //
+    // Entries: 4-byte PC-relative in .rodata (R_LARCH_32_PCREL) -> JTT_PIC
+    //
+    // Cf.
+    //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
+    //     "// For PIC, the sequence is:"
+    do {
+      auto AddDIt = findRegDef(JirlRj, End);
+      if (AddDIt == End)
+        break;
+
+      MCRegister AddOp1;
+      MCRegister AddOp2;
+      if (!matchAddD(*AddDIt, AddOp1, AddOp2))
+        break;
+
+      // One ADD operand is defined by LDX_W (loaded entry), the other by
+      // base materialization (table address).  Try both orderings.
+      MCRegister LdxBase;
+      MCRegister LdxIndex;
+      auto LdxWIt = findRegDef(AddOp1, AddDIt);
+      if (!matchLdxW(*LdxWIt, LdxBase, LdxIndex)) {
+        LdxWIt = findRegDef(AddOp2, AddDIt);
+        if (!matchLdxW(*LdxWIt, LdxBase, LdxIndex))
+          // Neither worked.
+          break;
+      }
+
+      MCRegister LdxRd = LdxWIt->getOperand(0).getReg();
+      MCRegister AddBase = (AddOp1 == LdxRd) ? AddOp2 : AddOp1;
+
+      auto BaseDefIt = findRegDef(AddBase, AddDIt);
+      if (BaseDefIt == AddDIt)
+        break;
+
+      if (!resolvePcRelBase(BaseDefIt, AddBase, DispExpr, PCRelBaseOut))
+        break;
+
+      MCRegister IndexSrc;
+      auto SlliIt = findRegDef(LdxIndex, LdxWIt);
+      if (SlliIt == LdxWIt || !matchSlliD(*SlliIt, LdxIndex, 2, IndexSrc))
+        break;
+
+      MemLocInstr = &*LdxWIt;
+      BaseRegNum = AddBase;
+      IndexRegNum = IndexSrc;
+      return IndirectBranchType::POSSIBLE_PIC_JUMP_TABLE;
+    } while (0);
+
+    // Path 3: GCC non-PIE jump table
+    //
+    // Base       pcaddi      $BaseReg, .LJTI
+    //            # --- or ---
+    //            pcalau12i   $BaseReg, %pc_hi20(.LJTI)
+    //            addi.d      $BaseReg, $BaseReg, %pc_lo12(.LJTI)
+    // Addr       alsl.d      $AddrReg, $IdxReg, $BaseReg, 3
+    //            # --- or ---
+    //            slli.d      $temp, $IdxReg, 3
+    //            add.d       $AddrReg, $BaseReg, $temp
+    // Load       ldptr.d     $JirlRj, $AddrReg, 0
+    //            # --- or ---
+    //            ld.d        $JirlRj, $AddrReg, 0
+    //            jr          $JirlRj
+    //
+    // Entries: 8-byte absolute in .rodata (R_LARCH_64) -> JTT_NORMAL
+    //
+    // Cf.
+    //   gcc/config/loongarch/loongarch.md
+    //     gen_tablejump
+    //     define_expand "tablejump"
+    do {
+      auto LoadIt = findRegDef(JirlRj, End);
+      if (LoadIt == End)
+        break;
+
+      MCRegister AddrReg;
+      if (!matchLd(*LoadIt, AddrReg))
+        break;
+
+      auto AddrDefIt = findRegDef(AddrReg, LoadIt);
+      if (AddrDefIt == LoadIt)
+        break;
+
+      const unsigned ExpectedShift = Log2_32(PtrSize);
+
+      MCRegister BaseReg;
+      MCRegister IdxReg;
+      if (!matchAlslD(*AddrDefIt, ExpectedShift, IdxReg, BaseReg)) {
+        MCRegister AddOp1, AddOp2;
+        if (!matchAddD(*AddrDefIt, AddOp1, AddOp2))
+          break;
+
+        // slli.d + add.d
+        auto Def1 = findRegDef(AddOp1, AddrDefIt);
+        auto Def2 = findRegDef(AddOp2, AddrDefIt);
+        MCRegister Tmp;
+        const bool Op1IsSlli =
+            Def1 != AddrDefIt && matchSlliD(*Def1, AddOp1, ExpectedShift, Tmp);
+        const bool Op2IsSlli =
+            Def2 != AddrDefIt && matchSlliD(*Def2, AddOp2, ExpectedShift, Tmp);
+
+        if (Op1IsSlli && !Op2IsSlli) {
+          IdxReg = Tmp;
+          BaseReg = AddOp2;
+        } else if (!Op1IsSlli && Op2IsSlli) {
+          IdxReg = Tmp;
+          BaseReg = AddOp1;
+        } else {
+          // No slli.d found.
+          break;
+        }
+      }
+
+      auto BaseDefIt = findRegDef(BaseReg, AddrDefIt);
+      if (BaseDefIt == AddrDefIt)
+        break;
+
+      if (!resolvePcRelBase(BaseDefIt, BaseReg, DispExpr, PCRelBaseOut))
+        break;
+
+      MemLocInstr = &*LoadIt;
+      BaseRegNum = BaseReg;
+      IndexRegNum = IdxReg;
+      return IndirectBranchType::POSSIBLE_JUMP_TABLE;
+    } while (0);
+
     return IndirectBranchType::UNKNOWN;
+  }
+
+  std::pair<const MCSymbol *, uint64_t>
+  getTargetSymbolInfo(const MCExpr *Expr) const override {
+    // Unwrap LoongArchMCExpr (e.g., %pc_hi20(sym), %pc_lo12(sym))
+    if (const auto *LAExpr = dyn_cast<LoongArchMCExpr>(Expr))
+      return getTargetSymbolInfo(LAExpr->getSubExpr());
+    return MCPlusBuilder::getTargetSymbolInfo(Expr);
   }
 
   MCInst::iterator getMemOperandDisp(MCInst &Inst) const override {
