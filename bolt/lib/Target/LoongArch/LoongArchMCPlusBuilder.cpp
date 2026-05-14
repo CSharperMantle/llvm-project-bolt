@@ -154,6 +154,23 @@ public:
     DispExpr = nullptr;
     PCRelBaseOut = nullptr;
     FixedEntryLoadInst = nullptr;
+
+    // Check for the following long tail call sequence:
+    //   pcaddu18i  $rj, ?
+    //   jirl       $r0, $rj, 0
+    if (Instruction.getOpcode() == LoongArch::JIRL &&
+        Instruction.getNumOperands() >= 2 &&
+        Instruction.getOperand(0).isReg() &&
+        Instruction.getOperand(0).getReg() == LoongArch::R0 &&
+        Instruction.getOperand(1).isReg() && Begin != End) {
+      const MCRegister Rj = Instruction.getOperand(1).getReg();
+      MCInst &PrevInst = *std::prev(End);
+      if (PrevInst.getOpcode() == LoongArch::PCADDU18I &&
+          PrevInst.getNumOperands() >= 1 && PrevInst.getOperand(0).isReg() &&
+          PrevInst.getOperand(0).getReg() == Rj)
+        return IndirectBranchType::POSSIBLE_TAIL_CALL;
+    }
+
     return IndirectBranchType::UNKNOWN;
   }
 
