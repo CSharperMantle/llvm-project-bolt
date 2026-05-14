@@ -19,6 +19,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -604,12 +605,10 @@ public:
         MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_CALL36, *Ctx)));
 
     // jirl $r0, $r21, 0
-    Insts[1].setOpcode(LoongArch::JIRL);
-    Insts[1].clear();
-    Insts[1].addOperand(MCOperand::createReg(LoongArch::R0));
-    Insts[1].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[1].addOperand(MCOperand::createImm(0));
-
+    Insts[1] = MCInstBuilder(LoongArch::JIRL)
+                   .addReg(LoongArch::R0)
+                   .addReg(LoongArch::R21)
+                   .addImm(0);
     if (IsTailCall)
       setTailCall(Insts[1]);
 
@@ -652,12 +651,10 @@ public:
         MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS64_HI12, *Ctx)));
 
     // jirl     $r0, $r21, 0
-    Insts[4].setOpcode(LoongArch::JIRL);
-    Insts[4].clear();
-    Insts[4].addOperand(MCOperand::createReg(LoongArch::R0));
-    Insts[4].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[4].addOperand(MCOperand::createImm(0));
-
+    Insts[4] = MCInstBuilder(LoongArch::JIRL)
+                   .addReg(LoongArch::R0)
+                   .addReg(LoongArch::R21)
+                   .addImm(0);
     if (IsTailCall)
       setTailCall(Insts[4]);
 
@@ -1183,7 +1180,195 @@ public:
                                  *LoongArchExprB.getSubExpr(), Comp);
   }
 
-protected:
+  InstructionListType createInstrIncMemory(const MCSymbol *Target,
+                                           MCContext *Ctx, bool IsLeaf,
+                                           unsigned CodePointerSize) override {
+    // addi.d     $sp, $sp, -16
+    // st.d       $a0, $sp, 0
+    // st.d       $a1, $sp, 8
+    // pcalau12i  $a0, %pc_hi20(Target)
+    // addi.d     $a0, $a0, %pc_lo12(Target)
+    // addi.d     $a1, $r0, 1
+    // amadd.d    $r0, $a1, $a0
+    // ld.d       $a0, $sp, 0
+    // ld.d       $a1, $sp, 8
+    // addi.d     $sp, $sp, 16
+    InstructionListType Insts;
+
+    spillRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    InstructionListType Addr = materializeAddress(Target, Ctx, LoongArch::R4);
+    Insts.insert(Insts.end(), Addr.begin(), Addr.end());
+    InstructionListType IncInsts =
+        createIncMemory(LoongArch::R4, LoongArch::R5, LoongArch::R0);
+    Insts.insert(Insts.end(), IncInsts.begin(), IncInsts.end());
+    reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+
+    return Insts;
+  }
+
+  void convertIndirectCallToLoad(MCInst &Inst, MCPhysReg Reg) override {
+    bool IsTC = isTailCall(Inst);
+    if (IsTC)
+      removeAnnotation(Inst, MCPlus::MCAnnotation::kTailCall);
+    // Convert jirl $rd, $rj, offset -> or $reg, $r0, original_rj
+    // (The original rj register value is the indirect call target.)
+    const MCPhysReg TargetReg = Inst.getOperand(1).getReg();
+    Inst.setOpcode(LoongArch::OR);
+    Inst.insert(Inst.begin(), MCOperand::createReg(Reg));
+    Inst.insert(Inst.begin() + 1, MCOperand::createReg(LoongArch::R0));
+    Inst.insert(Inst.begin() + 2, MCOperand::createReg(TargetReg));
+  }
+
+  InstructionListType createLoadImmediate(const MCPhysReg Dest,
+                                          uint64_t Imm) const override {
+    // lu12i.w  $rd, (Imm >> 12) & 0xFFFFF      // rd[31:12] = Imm[31:12]
+    // ori      $rd, $rd, Imm & 0xFFF           // rd[11:0]  = Imm[11:0]
+    // lu32i.d  $rd, $rd, (Imm >> 32) & 0xFFFFF // rd[51:32] = Imm[51:32]
+    // lu52i.d  $rd, $rd, (Imm >> 52) & 0xFFF   // rd[63:52] = Imm[63:52]
+    InstructionListType Insts(4);
+
+    Insts[0] = MCInstBuilder(LoongArch::LU12I_W)
+                   .addReg(Dest)
+                   .addImm((Imm >> 12) & 0xFFFFF);
+    Insts[1] = MCInstBuilder(LoongArch::ORI)
+                   .addReg(Dest)
+                   .addReg(Dest)
+                   .addImm(Imm & 0xFFF);
+    Insts[2] = MCInstBuilder(LoongArch::LU32I_D)
+                   .addReg(Dest)
+                   .addReg(Dest)
+                   .addImm((Imm >> 32) & 0xFFFFF);
+    Insts[3] = MCInstBuilder(LoongArch::LU52I_D)
+                   .addReg(Dest)
+                   .addReg(Dest)
+                   .addImm((Imm >> 52) & 0xFFF);
+
+    return Insts;
+  }
+
+  InstructionListType createInstrumentedIndirectCall(MCInst &&CallInst,
+                                                     MCSymbol *HandlerFuncAddr,
+                                                     int CallSiteID,
+                                                     MCContext *Ctx) override {
+    // spill      $a0, $a1                  (save args)
+    // convert call to or $a0, $r0, rj      (pass original target in a0)
+    // createLoadImmediate $a1, CallSiteID  (pass callsite id in a1)
+    // spill      $a0, $a1                  (save the prepared args for the
+    // handler) pcalau12i  $t0, Handler              (load handler address)
+    // addi.d     $t0, $t0, ...
+    // jirl       $ra, $t0, 0               (call handler)
+    // carry over annotations
+    InstructionListType Insts;
+
+    spillRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    Insts.emplace_back(CallInst);
+    convertIndirectCallToLoad(Insts.back(), LoongArch::R4);
+    InstructionListType LoadImm =
+        createLoadImmediate(LoongArch::R5, CallSiteID);
+    Insts.insert(Insts.end(), LoadImm.begin(), LoadImm.end());
+    spillRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    InstructionListType Addr =
+        materializeAddress(HandlerFuncAddr, Ctx, LoongArch::R13);
+    Insts.insert(Insts.end(), Addr.begin(), Addr.end());
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), isTailCall(CallInst), LoongArch::R13,
+                           0);
+    stripAnnotations(Insts.back());
+    moveAnnotations(std::move(CallInst), Insts.back());
+
+    return Insts;
+  }
+
+private:
+  /// Load a register from a stack slot.
+  void loadReg(MCInst &Inst, MCPhysReg To, MCPhysReg From,
+               int64_t Offset) const {
+    Inst =
+        MCInstBuilder(LoongArch::LD_D).addReg(To).addReg(From).addImm(Offset);
+  }
+
+  /// Store a register to a stack slot.
+  void storeReg(MCInst &Inst, MCPhysReg From, MCPhysReg To,
+                int64_t Offset) const {
+    Inst =
+        MCInstBuilder(LoongArch::ST_D).addReg(From).addReg(To).addImm(Offset);
+  }
+
+  /// Spill callee-saved registers used during instrumentation.
+  void spillRegs(InstructionListType &Insts,
+                 const SmallVector<unsigned> &Regs) const {
+    Insts.emplace_back();
+    createStackPointerIncrement(Insts.back(), Regs.size() * 8);
+
+    int64_t Offset = 0;
+    for (auto Reg : Regs) {
+      Insts.emplace_back();
+      storeReg(Insts.back(), Reg, LoongArch::R3, Offset);
+      Offset += 8;
+    }
+  }
+
+  /// Reload callee-saved registers after instrumentation.
+  void reloadRegs(InstructionListType &Insts,
+                  const SmallVector<unsigned> &Regs) const {
+    int64_t Offset = 0;
+    for (auto Reg : Regs) {
+      Insts.emplace_back();
+      loadReg(Insts.back(), Reg, LoongArch::R3, Offset);
+      Offset += 8;
+    }
+
+    Insts.emplace_back();
+    createStackPointerDecrement(Insts.back(), Regs.size() * 8);
+  }
+
+  /// Atomically add \p Rk to memory at [ \p Rj ].  \p Rd receives the old
+  /// memory value.
+  void atomicAdd(MCInst &Inst, MCPhysReg Rd, MCPhysReg Rj, MCPhysReg Rk) const {
+    Inst = MCInstBuilder(LoongArch::AMADD_D).addReg(Rd).addReg(Rk).addReg(Rj);
+  }
+
+  /// Compare register against zero and branch to \p Target if equal.
+  void createRegCmpJZ(MCInst &Inst, MCPhysReg Reg, const MCSymbol *Target,
+                      MCContext *Ctx) const {
+    Inst = MCInstBuilder(LoongArch::BEQZ)
+               .addReg(Reg)
+               .addExpr(MCSymbolRefExpr::create(Target, *Ctx));
+  }
+
+  /// Emit a getter function that loads a pointer from a symbol.
+  InstructionListType createGetter(MCContext *Ctx, const char *Name) const {
+    InstructionListType Insts(4);
+    MCSymbol *Locs = Ctx->getOrCreateSymbol(Name);
+    InstructionListType Addr = materializeAddress(Locs, Ctx, LoongArch::R4);
+    std::copy(Addr.begin(), Addr.end(), Insts.begin());
+    loadReg(Insts[2], LoongArch::R4, LoongArch::R4, 0);
+    createReturn(Insts[3]);
+    return Insts;
+  }
+
+  /// Emit an atomic memory increment by 1 at [ \p Rj ].
+  InstructionListType createIncMemory(MCPhysReg Rj, MCPhysReg Rk,
+                                      MCPhysReg Rd) const {
+    InstructionListType Insts(2);
+
+    Insts[0] = MCInstBuilder(LoongArch::ADDI_D).addReg(Rk).addReg(Rd).addImm(1);
+    atomicAdd(Insts[1], Rd, Rj, Rk);
+
+    return Insts;
+  }
+
+  /// Emit an indirect call or tail call via register.
+  void createIndirectCallInst(MCInst &Inst, bool IsTailCall, MCPhysReg Reg,
+                              int64_t Offset) const {
+    Inst = MCInstBuilder(LoongArch::JIRL)
+               .addReg(IsTailCall ? LoongArch::R0 : LoongArch::R1)
+               .addReg(Reg)
+               .addImm(Offset);
+    if (IsTailCall)
+      setTailCall(Inst);
+  }
+
   const MCExpr *tryGetPCRel20SubExpr(const MCExpr *Expr,
                                   MCContext *Ctx = nullptr) const {
     if (const auto *E = dyn_cast<LoongArchMCExpr>(Expr)) {
