@@ -160,6 +160,8 @@ FunctionImportGlobalProcessing::getPromotedName(const GlobalValue *SGV) {
       ImportIndex.getModuleHash(SGV->getParent()->getModuleIdentifier()));
 }
 
+
+
 GlobalValue::LinkageTypes
 FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
                                            bool DoPromote) {
@@ -185,7 +187,7 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV,
     // and/or optimization, but are turned into declarations later
     // during the EliminateAvailableExternally pass.
     if (doImportAsDefinition(SGV) && !isa<GlobalAlias>(SGV))
-      return SymbolsToMove.contains(SGV->getGUID())
+      return SymbolsToMove.contains(SGV->getGUIDOrFallback())
                  ? GlobalValue::ExternalLinkage
                  : GlobalValue::AvailableExternallyLinkage;
     // An imported external declaration stays external.
@@ -261,7 +263,7 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
 
   ValueInfo VI;
   if (GV.hasName())
-    VI = ImportIndex.getValueInfo(GV.getGUID());
+    VI = ImportIndex.getValueInfo(GV.getGUIDOrFallback());
 
   // We should always have a ValueInfo (i.e. GV in index) for definitions when
   // we are exporting, and also when importing that value.
