@@ -2931,6 +2931,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
                                        const RelocationRef &Rel) {
   const bool IsAArch64 = BC->isAArch64();
   const bool IsX86 = BC->isX86();
+  const bool IsRISCV = BC->isRISCV();
   const bool IsLoongArch = BC->isLoongArch();
   const bool IsFromCode = RelocatedSection.isText();
   const bool IsWritable = BinarySection(*BC, RelocatedSection).isWritable();
@@ -3051,7 +3052,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
       Expected<StringRef> SectionName = Section->getName();
       if (SectionName && !SectionName->empty())
         ReferencedSection = BC->getUniqueSectionByName(*SectionName);
-    } else if (BC->isRISCV() && ReferencedSymbol && ContainingBF &&
+    } else if (IsRISCV && ReferencedSymbol && ContainingBF &&
                (cantFail(Symbol.getFlags()) & SymbolRef::SF_Absolute)) {
       // This might be a relocation for an ABS symbols like __global_pointer$ on
       // RISC-V
@@ -3101,7 +3102,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
   }
 
   bool ForceRelocation = BC->forceSymbolRelocations(SymbolName);
-  if ((BC->isAArch64() || BC->isRISCV() || IsLoongArch) &&
+  if ((IsAArch64 || IsRISCV || IsLoongArch) &&
       Relocation::isGOT(RType))
     ForceRelocation = true;
 
@@ -3250,7 +3251,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
       // creation of sections and whose symbol address is not really what should
       // be encoded in the instruction). So we essentially disabled this check
       // for AArch64 and live with bogus names for objects.
-      assert((IsAArch64 || BC->isRISCV() || IsSectionRelocation ||
+      assert((IsAArch64 || IsRISCV || IsSectionRelocation ||
               BD->nameStartsWith(SymbolName) ||
               BD->nameStartsWith("PG" + SymbolName) ||
               (BD->nameStartsWith("ANONYMOUS") &&
@@ -3270,7 +3271,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
       // These are mostly local data symbols but undefined symbols
       // in relocation sections can get through here too, from .plt.
       assert(
-          (IsAArch64 || BC->isRISCV() || IsLoongArch || IsSectionRelocation ||
+          (IsAArch64 || IsRISCV || IsLoongArch || IsSectionRelocation ||
            BC->getSectionNameForAddress(SymbolAddress)->starts_with(".plt")) &&
           "known symbols should not resolve to anonymous locals");
 
@@ -3320,8 +3321,8 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
 
   if ((ReferencedSection && refersToReorderedSection(ReferencedSection)) ||
       (opts::ForceToDataRelocations && checkMaxDataRelocations()) ||
-      // RISC-V has ADD/SUB data-to-data relocations
-      BC->isRISCV())
+      // RISC-V and LoongArch have ADD/SUB data-to-data relocations
+      IsRISCV || IsLoongArch)
     ForceRelocation = true;
 
   if (IsFromCode)
