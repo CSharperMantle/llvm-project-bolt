@@ -4258,6 +4258,21 @@ bool Compiler<Emitter>::VisitObjCArrayLiteral(const ObjCArrayLiteral *E) {
 }
 
 template <class Emitter>
+bool Compiler<Emitter>::VisitCXXReflectExpr(const CXXReflectExpr *E) {
+  if (DiscardResult)
+    return true;
+
+  switch (E->getKind()) {
+    case ReflectionKind::Type: {
+      APValue Result(ReflectionKind::Type, E->getOpaqueValue());
+      return this->emitReflectValue(E->getKind(), E->getOpaqueValue(), E);
+    }
+  }
+
+  return false;
+}
+
+template <class Emitter>
 bool Compiler<Emitter>::VisitExpressionTraitExpr(const ExpressionTraitExpr *E) {
   assert(Ctx.getLangOpts().CPlusPlus);
   return this->emitConstBool(E->getValue(), E);
@@ -4759,6 +4774,8 @@ bool Compiler<Emitter>::visitZeroInitializer(PrimType T, QualType QT,
     auto Sem = Ctx.getASTContext().getFixedPointSemantics(QT);
     return this->emitConstFixedPoint(FixedPoint::zero(Sem), E);
   }
+  case PT_Reflect:
+    return this->emitReflectValue(ReflectionKind::Type, nullptr, E);
   }
   llvm_unreachable("unknown primitive type");
 }
@@ -4970,6 +4987,7 @@ bool Compiler<Emitter>::emitConst(T Value, PrimType Ty, const Expr *E) {
   case PT_IntAP:
   case PT_IntAPS:
   case PT_FixedPoint:
+  case PT_Reflect:
     llvm_unreachable("Invalid integral type");
     break;
   }

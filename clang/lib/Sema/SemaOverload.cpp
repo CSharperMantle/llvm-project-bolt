@@ -9091,6 +9091,10 @@ class BuiltinCandidateTypeSet  {
   /// candidate set.
   bool HasNullPtrType;
 
+  /// A flag indicating whether the reflection type was present in the
+  /// candidate set.
+  bool HasReflectionType;
+
   /// Sema - The semantic analysis instance where we are building the
   /// candidate type set.
   Sema &SemaRef;
@@ -9110,6 +9114,7 @@ public:
     : HasNonRecordTypes(false),
       HasArithmeticOrEnumeralTypes(false),
       HasNullPtrType(false),
+      HasReflectionType(false),
       SemaRef(SemaRef),
       Context(SemaRef.Context) { }
 
@@ -9134,6 +9139,7 @@ public:
   bool hasNonRecordTypes() { return HasNonRecordTypes; }
   bool hasArithmeticOrEnumeralTypes() { return HasArithmeticOrEnumeralTypes; }
   bool hasNullPtrType() const { return HasNullPtrType; }
+  bool hasReflectionType() const { return HasReflectionType; }
 };
 
 } // end anonymous namespace
@@ -9315,6 +9321,8 @@ BuiltinCandidateTypeSet::AddTypesConvertedFrom(QualType Ty,
     MatrixTypes.insert(Ty);
   } else if (Ty->isNullPtrType()) {
     HasNullPtrType = true;
+  } else if (Ty->isMetaInfoType()) {
+    HasReflectionType = true;
   } else if (AllowUserConversions && TyIsRec) {
     // No conversion functions in incomplete types.
     if (!SemaRef.isCompleteType(Loc, Ty))
@@ -9791,6 +9799,14 @@ public:
         CanQualType NullPtrTy = S.Context.getCanonicalType(S.Context.NullPtrTy);
         if (AddedTypes.insert(NullPtrTy).second) {
           QualType ParamTypes[2] = { NullPtrTy, NullPtrTy };
+          S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet);
+        }
+      }
+
+      if (CandidateTypes[ArgIdx].hasReflectionType()) {
+        CanQualType InfoTy = S.Context.getCanonicalType(S.Context.MetaInfoTy);
+        if (AddedTypes.insert(InfoTy).second) {
+          QualType ParamTypes[2] = { InfoTy, InfoTy };
           S.AddBuiltinCandidate(ParamTypes, Args, CandidateSet);
         }
       }

@@ -16,6 +16,7 @@
 #include "../ExprConstShared.h"
 #include "BitcastBuffer.h"
 #include "Boolean.h"
+#include "Reflect.h"
 #include "Char.h"
 #include "DynamicAllocator.h"
 #include "FixedPoint.h"
@@ -3982,6 +3983,11 @@ bool DiagTypeid(InterpState &S, CodePtr OpPC);
 inline bool CheckDestruction(InterpState &S, CodePtr OpPC) {
   const auto &Ptr = S.Stk.peek<Pointer>();
   return CheckDestructor(S, OpPC, Ptr);
+}
+
+inline bool ReflectValue(InterpState &S, CodePtr OpPC, ReflectionKind Kind, const void *Operand) {
+  S.Stk.push<Reflect>(Kind, Operand);
+  return true;
 }
 
 //===----------------------------------------------------------------------===//

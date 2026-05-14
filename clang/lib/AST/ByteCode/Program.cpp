@@ -12,6 +12,7 @@
 #include "Function.h"
 #include "Integral.h"
 #include "PrimType.h"
+#include "Reflect.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
@@ -426,17 +427,17 @@ Descriptor *Program::createDescriptor(const DeclTy &D, const Type *Ty,
         return allocateDescriptor(D, *T, MDSize, NumElems, IsConst, IsTemporary,
                                   IsMutable);
       }
-        // Arrays of composites. In this case, the array is a list of pointers,
-        // followed by the actual elements.
-        const Descriptor *ElemDesc = createDescriptor(
-            D, ElemTy.getTypePtr(), std::nullopt, IsConst, IsTemporary);
-        if (!ElemDesc)
-          return nullptr;
-        unsigned ElemSize = ElemDesc->getAllocSize() + sizeof(InlineDescriptor);
-        if (std::numeric_limits<unsigned>::max() / ElemSize <= NumElems)
-          return nullptr;
-        return allocateDescriptor(D, Ty, ElemDesc, MDSize, NumElems, IsConst,
-                                  IsTemporary, IsMutable);
+      // Arrays of composites. In this case, the array is a list of pointers,
+      // followed by the actual elements.
+      const Descriptor *ElemDesc = createDescriptor(
+          D, ElemTy.getTypePtr(), std::nullopt, IsConst, IsTemporary);
+      if (!ElemDesc)
+        return nullptr;
+      unsigned ElemSize = ElemDesc->getAllocSize() + sizeof(InlineDescriptor);
+      if (std::numeric_limits<unsigned>::max() / ElemSize <= NumElems)
+        return nullptr;
+      return allocateDescriptor(D, Ty, ElemDesc, MDSize, NumElems, IsConst,
+                                IsTemporary, IsMutable);
     }
 
     // Array of unknown bounds - cannot be accessed and pointer arithmetic
@@ -447,12 +448,12 @@ Descriptor *Program::createDescriptor(const DeclTy &D, const Type *Ty,
         return allocateDescriptor(D, *T, MDSize, IsConst, IsTemporary,
                                   Descriptor::UnknownSize{});
       }
-        const Descriptor *Desc = createDescriptor(
-            D, ElemTy.getTypePtr(), std::nullopt, IsConst, IsTemporary);
-        if (!Desc)
-          return nullptr;
-        return allocateDescriptor(D, Desc, MDSize, IsTemporary,
-                                  Descriptor::UnknownSize{});
+      const Descriptor *Desc = createDescriptor(
+          D, ElemTy.getTypePtr(), std::nullopt, IsConst, IsTemporary);
+      if (!Desc)
+        return nullptr;
+      return allocateDescriptor(D, Desc, MDSize, IsTemporary,
+                                Descriptor::UnknownSize{});
     }
   }
 
