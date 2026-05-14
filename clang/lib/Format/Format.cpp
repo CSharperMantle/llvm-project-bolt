@@ -370,6 +370,7 @@ template <>
 struct ScalarEnumerationTraits<FormatStyle::BreakInheritanceListStyle> {
   static void enumeration(IO &IO,
                           FormatStyle::BreakInheritanceListStyle &Value) {
+    IO.enumCase(Value, "No", FormatStyle::BILS_No);
     IO.enumCase(Value, "BeforeColon", FormatStyle::BILS_BeforeColon);
     IO.enumCase(Value, "BeforeComma", FormatStyle::BILS_BeforeComma);
     IO.enumCase(Value, "AfterColon", FormatStyle::BILS_AfterColon);
