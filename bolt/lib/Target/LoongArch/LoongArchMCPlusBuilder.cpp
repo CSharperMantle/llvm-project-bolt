@@ -173,6 +173,26 @@ public:
     return IndirectBranchType::UNKNOWN;
   }
 
+  MCInst::iterator getMemOperandDisp(MCInst &Inst) const override {
+    switch (Inst.getOpcode()) {
+    default:
+      return Inst.end();
+    case LoongArch::ADDI_D: // addi.d $rd, $rj, imm
+      return Inst.getNumOperands() >= 3 ? (Inst.begin() + 2) : Inst.end();
+    case LoongArch::PCALAU12I: // pcalau12i $rd, imm
+    case LoongArch::PCADDI:    // pcaddi $rd, imm
+      return Inst.getNumOperands() >= 2 ? (Inst.begin() + 1) : Inst.end();
+    }
+  }
+
+  bool replaceMemOperandDisp(MCInst &Inst, MCOperand Operand) const override {
+    MCOperand *OI = getMemOperandDisp(Inst);
+    if (OI == Inst.end())
+      return false;
+    *OI = Operand;
+    return true;
+  }
+
   bool convertJmpToTailCall(MCInst &Inst) override {
     if (isTailCall(Inst))
       return false;
@@ -652,6 +672,19 @@ public:
     switch (RelType) {
     default:
       return Expr;
+    case 0:
+      // When called with RelType=0 from replaceMemOperandDisp for JT labeling,
+      // wrap in the appropriate expression for instruction encoding.
+      switch (Inst.getOpcode()) {
+      case LoongArch::PCALAU12I:
+        return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_HI20, Ctx);
+      case LoongArch::PCADDI:
+        return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCREL20_S2, Ctx);
+      case LoongArch::ADDI_D:
+        return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCALA_LO12, Ctx);
+      default:
+        return Expr;
+      }
     case ELF::R_LARCH_B16:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_B16, Ctx);
     case ELF::R_LARCH_B21:
