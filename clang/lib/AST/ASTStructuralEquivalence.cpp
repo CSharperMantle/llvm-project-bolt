@@ -2279,7 +2279,8 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
       return false;
   }
 
-  return true;
+  return IsStructurallyEquivalent(Context, Params1->getRequiresClause(),
+                                  Params2->getRequiresClause());
 }
 
 static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
@@ -2427,6 +2428,35 @@ static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
   if (D1->getFriendDecl() && D2->getFriendDecl())
     return IsStructurallyEquivalent(Context, D1->getFriendDecl(),
                                     D2->getFriendDecl());
+  return false;
+}
+
+static bool IsStructurallyEquivalent(StructuralEquivalenceContext &Context,
+                                     FriendTemplateDecl *FTD1,
+                                     FriendTemplateDecl *FTD2) {
+  ArrayRef<TemplateParameterList *> TPL1 =
+      FTD1->getFriendTypeTemplateParameterLists();
+  ArrayRef<TemplateParameterList *> TPL2 =
+      FTD2->getFriendTypeTemplateParameterLists();
+  if (TPL1.size() != TPL2.size())
+    return false;
+
+  for (unsigned I = 0, N = TPL1.size(); I != N; ++I)
+    if (!Context.IsEquivalent(TPL1[I], TPL2[I]))
+      return false;
+
+  if ((FTD1->getFriendType() && FTD2->getFriendDecl()) ||
+      (FTD1->getFriendDecl() && FTD2->getFriendType()))
+    return false;
+
+  if (FTD1->getFriendDecl() && FTD2->getFriendDecl())
+    return IsStructurallyEquivalent(Context, FTD1->getFriendDecl(),
+                                    FTD2->getFriendDecl());
+
+  if (FTD1->getFriendType() && FTD2->getFriendType())
+    return IsStructurallyEquivalent(Context, FTD1->getFriendType()->getType(),
+                                    FTD2->getFriendType()->getType());
+
   return false;
 }
 
@@ -2767,6 +2797,22 @@ bool StructuralEquivalenceContext::CheckCommonEquivalence(Decl *D1, Decl *D2) {
   // FIXME: Move check for identifier names into this function.
 
   return true;
+}
+
+bool StructuralEquivalenceContext::IsEquivalent(TemplateParameterList *TPL1,
+                                                TemplateParameterList *TPL2) {
+  if (TPL1 == TPL2)
+    return true;
+
+  if (!TPL1 || !TPL2 || TPL1->size() != TPL2->size())
+    return false;
+
+  for (unsigned I = 0, N = TPL1->size(); I != N; ++I) {
+    if (!IsEquivalent(TPL1->getParam(I), TPL2->getParam(I)))
+      return false;
+  }
+
+  return IsEquivalent(TPL1->getRequiresClause(), TPL2->getRequiresClause());
 }
 
 bool StructuralEquivalenceContext::CheckKindSpecificEquivalence(

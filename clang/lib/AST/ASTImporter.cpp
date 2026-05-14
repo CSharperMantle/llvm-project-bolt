@@ -537,6 +537,7 @@ namespace clang {
     ExpectedDecl VisitFieldDecl(FieldDecl *D);
     ExpectedDecl VisitIndirectFieldDecl(IndirectFieldDecl *D);
     ExpectedDecl VisitFriendDecl(FriendDecl *D);
+    ExpectedDecl VisitFriendTemplateDecl(FriendTemplateDecl *D);
     ExpectedDecl VisitObjCIvarDecl(ObjCIvarDecl *D);
     ExpectedDecl VisitVarDecl(VarDecl *D);
     ExpectedDecl VisitImplicitParamDecl(ImplicitParamDecl *D);
@@ -4542,8 +4543,38 @@ static bool IsEquivalentFriend(ASTImporter &Importer, FriendDecl *FD1,
       Importer.getToContext().getLangOpts(), FD1->getASTContext(),
       FD2->getASTContext(), NonEquivalentDecls,
       StructuralEquivalenceKind::Default,
-      /* StrictTypeSpelling = */ false, /* Complain = */ false);
+      /*StrictTypeSpelling=*/false, /*Complain=*/false);
   return Ctx.IsEquivalent(FD1, FD2);
+}
+
+static bool IsEquivalentFriend(ASTImporter &Importer, FriendTemplateDecl *FTD1,
+                               FriendTemplateDecl *FTD2) {
+  ArrayRef<TemplateParameterList *> TPL1 =
+      FTD1->getFriendTypeTemplateParameterLists();
+  ArrayRef<TemplateParameterList *> TPL2 =
+      FTD2->getFriendTypeTemplateParameterLists();
+  if (TPL1.size() != TPL2.size())
+    return false;
+
+  ASTImporter::NonEquivalentDeclSet NonEquivalentDecls;
+  StructuralEquivalenceContext Ctx(
+      Importer.getToContext().getLangOpts(), FTD1->getASTContext(),
+      FTD2->getASTContext(), NonEquivalentDecls,
+      StructuralEquivalenceKind::Default, /*StrictTypeSpelling=*/false,
+      /*Complain=*/false);
+
+  for (unsigned I = 0, N = TPL1.size(); I != N; ++I)
+    if (!Ctx.IsEquivalent(TPL1[I], TPL2[I]))
+      return false;
+
+  if ((!FTD1->getFriendType()) != (!FTD2->getFriendType()))
+    return false;
+
+  if (const TypeSourceInfo *TSI = FTD1->getFriendType())
+    return Importer.IsStructurallyEquivalent(
+        TSI->getType(), FTD2->getFriendType()->getType(), /*Complain=*/false);
+
+  return Ctx.IsEquivalent(FTD1, FTD2);
 }
 
 static FriendCountAndPosition getFriendCountAndPosition(ASTImporter &Importer,
@@ -4562,7 +4593,6 @@ static FriendCountAndPosition getFriendCountAndPosition(ASTImporter &Importer,
   }
 
   assert(FriendPosition && "Friend decl not found in own parent.");
-
   return {FriendCount, *FriendPosition};
 }
 
@@ -4577,9 +4607,11 @@ ExpectedDecl ASTNodeImporter::VisitFriendDecl(FriendDecl *D) {
   // We try to maintain order and count of redundant friend declarations.
   const auto *RD = cast<CXXRecordDecl>(DC);
   SmallVector<FriendDecl *, 2> ImportedEquivalentFriends;
-  for (FriendDecl *ImportedFriend : RD->friends())
-    if (IsEquivalentFriend(Importer, D, ImportedFriend))
+  for (FriendDecl *ImportedFriend : RD->friends()) {
+    if (ImportedFriend->getKind() == Decl::Friend &&
+        IsEquivalentFriend(Importer, D, ImportedFriend))
       ImportedEquivalentFriends.push_back(ImportedFriend);
+  }
 
   FriendCountAndPosition CountAndPosition =
       getFriendCountAndPosition(Importer, D);
@@ -4610,15 +4642,6 @@ ExpectedDecl ASTNodeImporter::VisitFriendDecl(FriendDecl *D) {
       return TSIOrErr.takeError();
   }
 
-  SmallVector<TemplateParameterList *, 1> ToTPLists(D->NumTPLists);
-  auto **FromTPLists = D->getTrailingObjects();
-  for (unsigned I = 0; I < D->NumTPLists; I++) {
-    if (auto ListOrErr = import(FromTPLists[I]))
-      ToTPLists[I] = *ListOrErr;
-    else
-      return ListOrErr.takeError();
-  }
-
   auto LocationOrErr = import(D->getLocation());
   if (!LocationOrErr)
     return LocationOrErr.takeError();
@@ -4632,13 +4655,83 @@ ExpectedDecl ASTNodeImporter::VisitFriendDecl(FriendDecl *D) {
   FriendDecl *FrD;
   if (GetImportedOrCreateDecl(FrD, D, Importer.getToContext(), DC,
                               *LocationOrErr, ToFU, *FriendLocOrErr,
-                              *EllipsisLocOrErr, ToTPLists))
+                              *EllipsisLocOrErr))
     return FrD;
 
   FrD->setAccess(D->getAccess());
   FrD->setLexicalDeclContext(LexicalDC);
   LexicalDC->addDeclInternal(FrD);
   return FrD;
+}
+
+ExpectedDecl ASTNodeImporter::VisitFriendTemplateDecl(FriendTemplateDecl *D) {
+  DeclContext *DC, *LexicalDC;
+  if (Error Err = ImportDeclContext(D, DC, LexicalDC))
+    return std::move(Err);
+
+  const auto *RD = cast<CXXRecordDecl>(DC);
+  SmallVector<FriendTemplateDecl *, 2> ImportedEquivalentFriends;
+  for (FriendDecl *ImportedFriend : RD->friends()) {
+    auto *ImportedFriendTemplate = dyn_cast<FriendTemplateDecl>(ImportedFriend);
+    if (ImportedFriendTemplate &&
+        IsEquivalentFriend(Importer, D, ImportedFriendTemplate))
+      ImportedEquivalentFriends.push_back(ImportedFriendTemplate);
+  }
+
+  FriendCountAndPosition CountAndPosition =
+      getFriendCountAndPosition(Importer, D);
+  assert(ImportedEquivalentFriends.size() <= CountAndPosition.TotalCount &&
+         "Class with non-matching friends is imported, ODR check wrong?");
+
+  if (ImportedEquivalentFriends.size() == CountAndPosition.TotalCount)
+    return Importer.MapImported(
+        D, ImportedEquivalentFriends[CountAndPosition.IndexOfDecl]);
+
+  FriendTemplateDecl::FriendUnion ToFU;
+  if (NamedDecl *FriendD = D->getFriendDecl()) {
+    NamedDecl *ToFriendD;
+    if (Error Err = importInto(ToFriendD, FriendD))
+      return std::move(Err);
+    ToFU = ToFriendD;
+  } else {
+    if (auto TSIOrErr = import(D->getFriendType()))
+      ToFU = *TSIOrErr;
+    else
+      return TSIOrErr.takeError();
+  }
+
+  ArrayRef<TemplateParameterList *> TPLs =
+      D->getFriendTypeTemplateParameterLists();
+  SmallVector<TemplateParameterList *, 1> ToParams(TPLs.size());
+  for (unsigned I = 0, N = TPLs.size(); I != N; ++I) {
+    if (auto ParamsOrErr = import(TPLs[I]))
+      ToParams[I] = *ParamsOrErr;
+    else
+      return ParamsOrErr.takeError();
+  }
+
+  auto LocationOrErr = import(D->getLocation());
+  if (!LocationOrErr)
+    return LocationOrErr.takeError();
+
+  auto FriendLocOrErr = import(D->getFriendLoc());
+  if (!FriendLocOrErr)
+    return FriendLocOrErr.takeError();
+
+  auto EllipsisLocOrErr = import(D->getEllipsisLoc());
+  if (!EllipsisLocOrErr)
+    return EllipsisLocOrErr.takeError();
+
+  FriendTemplateDecl *FTD;
+  if (GetImportedOrCreateDecl(FTD, D, Importer.getToContext(), DC,
+                              *LocationOrErr, ToFU, *FriendLocOrErr, ToParams,
+                              *EllipsisLocOrErr))
+    return FTD;
+
+  FTD->setAccess(D->getAccess());
+  FTD->setLexicalDeclContext(LexicalDC);
+  LexicalDC->addDeclInternal(FTD);
+  return FTD;
 }
 
 ExpectedDecl ASTNodeImporter::VisitObjCIvarDecl(ObjCIvarDecl *D) {

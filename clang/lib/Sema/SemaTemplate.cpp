@@ -1964,14 +1964,9 @@ DeclResult Sema::CheckClassTemplate(
   if (SS.isNotEmpty() && !SS.isInvalid()) {
     SemanticContext = computeDeclContext(SS, true);
     if (!SemanticContext) {
-      // FIXME: Horrible, horrible hack! We can't currently represent this
-      // in the AST, and historically we have just ignored such friend
-      // class templates, so don't complain here.
-      Diag(NameLoc, TUK == TagUseKind::Friend
-                        ? diag::warn_template_qualified_friend_ignored
-                        : diag::err_template_qualified_declarator_no_match)
+      Diag(NameLoc, diag::err_template_qualified_declarator_no_match)
           << SS.getScopeRep() << SS.getRange();
-      return TUK != TagUseKind::Friend;
+      return true;
     }
 
     if (RequireCompleteDeclContext(SS, SemanticContext))
@@ -11380,14 +11375,11 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
   return T;
 }
 
-/// Build the type that describes a C++ typename specifier,
-/// e.g., "typename T::type".
-QualType
-Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
-                        SourceLocation KeywordLoc,
-                        NestedNameSpecifierLoc QualifierLoc,
-                        const IdentifierInfo &II,
-                        SourceLocation IILoc, bool DeducedTSTContext) {
+QualType Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
+                                 SourceLocation KeywordLoc,
+                                 NestedNameSpecifierLoc QualifierLoc,
+                                 const IdentifierInfo &II, SourceLocation IILoc,
+                                 bool DeducedTSTContext) {
   assert((Keyword != ElaboratedTypeKeyword::None) == KeywordLoc.isValid());
 
   CXXScopeSpec SS;
@@ -11421,6 +11413,7 @@ Sema::CheckTypenameType(ElaboratedTypeKeyword Keyword,
     LookupQualifiedName(Result, Ctx, SS);
   else
     LookupName(Result, CurScope);
+
   unsigned DiagID = 0;
   Decl *Referenced = nullptr;
   switch (Result.getResultKind()) {
