@@ -10,6 +10,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Analysis/Analyses/LifetimeSafety/Loans.h"
+#include "clang/Analysis/Analyses/LifetimeSafety/OriginFlowChain.h"
 #include "clang/Testing/TestAST.h"
 #include "llvm/ADT/StringMap.h"
 #include "gmock/gmock.h"
@@ -202,6 +203,25 @@ public:
 
   llvm::ArrayRef<const Fact *> getBlockContaining(ProgramPoint P) {
     return Runner.getAnalysis().getFactManager().getBlockContaining(P);
+  }
+
+  llvm::SmallVector<OriginID>
+  buildOriginFlowChainInOneBlock(llvm::StringRef StartOriginVar,
+                                 llvm::StringRef EndLoanVar,
+                                 llvm::StringRef Annotation) {
+    std::optional<OriginID> StartOriginID = getOriginForDecl(StartOriginVar);
+    std::vector<LoanID> EndLoanIDs = getLoansForVar(EndLoanVar);
+
+    for (const LoanID &LID : EndLoanIDs) {
+      const llvm::SmallVector<OriginID> OriginFlowChain = buildOriginFlowChain(
+          Runner.getAnalysis().getFactManager(),
+          Runner.getAnalysis().getLoanPropagation(),
+          getProgramPoint(Annotation), *StartOriginID, LID);
+      if (!OriginFlowChain.empty())
+        return OriginFlowChain;
+    }
+
+    return {};
   }
 
 private:
@@ -1950,6 +1970,34 @@ TEST_F(LifetimeAnalysisTest, LambdaInitCaptureViewByValue) {
     }
   )");
   EXPECT_THAT(Origin("lambda"), HasLoansTo({"obj"}, "after_lambda"));
+}
+
+// ========================================================================= //
+//                    Tests for trackAssignmentHistory
+// ========================================================================= //
+
+TEST_F(LifetimeAnalysisTest, BuildLinearOriginFlowChainInOneBlock) {
+  SetupTest(R"(
+    void target() {
+      int *s;
+      {
+        int tgt = 2;
+        int *a = &tgt;
+        int *c = a;
+        int *b = a;
+        int *e = b;
+        s = e;
+      }
+      (void)s;
+      POINT(after_use);
+    }
+  )");
+
+  const llvm::SmallVector<OriginID> OriginFlowChain =
+      Helper->buildOriginFlowChainInOneBlock("s", "tgt", "after_use");
+
+  // 8 == 2 * (e + b + a + tgt)
+  EXPECT_EQ(8u, OriginFlowChain.size());
 }
 } // anonymous namespace
 } // namespace clang::lifetimes::internal
