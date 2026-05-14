@@ -432,6 +432,31 @@ public:
     return Insts;
   }
 
+  InstructionListType materializeAddress(const MCSymbol *Target, MCContext *Ctx,
+                                         MCPhysReg RegName,
+                                         int64_t Addend = 0) const override {
+    InstructionListType Insts(2);
+
+    // pcalau12i $RegName, %pc_hi20(Target + Addend)
+    Insts[0].setOpcode(LoongArch::PCALAU12I);
+    Insts[0].clear();
+    Insts[0].addOperand(MCOperand::createReg(RegName));
+    Insts[0].addOperand(MCOperand::createImm(0));
+    setOperandToSymbolRef(Insts[0], /* OpNum */ 1, Target, Addend, Ctx,
+                          ELF::R_LARCH_PCALA_HI20);
+
+    // addi.d $RegName, $RegName, %pc_lo12(Target + Addend)
+    Insts[1].setOpcode(LoongArch::ADDI_D);
+    Insts[1].clear();
+    Insts[1].addOperand(MCOperand::createReg(RegName));
+    Insts[1].addOperand(MCOperand::createReg(RegName));
+    Insts[1].addOperand(MCOperand::createImm(0));
+    setOperandToSymbolRef(Insts[1], /* OpNum */ 2, Target, Addend, Ctx,
+                          ELF::R_LARCH_PCALA_LO12);
+
+    return Insts;
+  }
+
   bool analyzeBranch(InstructionIterator Begin, InstructionIterator End,
                      const MCSymbol *&TBB, const MCSymbol *&FBB,
                      MCInst *&CondBranch,
