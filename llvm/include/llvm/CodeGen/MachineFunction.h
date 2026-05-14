@@ -129,6 +129,16 @@ struct LLVM_ABI MachineFunctionInfo {
       const {
     return nullptr;
   }
+
+  // Placeholder for deserialization of the VirtRegMap object.
+  // This gets populated by the MIRParser when the information is present
+  // and is used in VirtRegMap::init() to initialize its state.
+  struct PendingVRegMapping {
+    Register VReg;
+    Register SplitFrom;      // NoReg if absent.
+    MCRegister AssignedPhys; // NoReg if absent.
+  };
+  SmallVector<PendingVRegMapping, 0> PendingVRegMappings;
 };
 
 /// Properties which a MachineFunction may have at a given point in time.
