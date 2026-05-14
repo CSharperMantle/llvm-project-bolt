@@ -340,6 +340,23 @@ RISCVTTIImpl::getPopcntSupport(unsigned TyWidth) const {
   return ST->hasCPOPLike() ? TTI::PSK_FastHardware : TTI::PSK_Software;
 }
 
+std::optional<ElementCount>
+RISCVTTIImpl::getMaxScalableVF(unsigned MaxWidthInBits) const {
+  if (MaxWidthInBits > ST->getELen() ||
+      (ST->getRealMinVLen() < RISCV::RVVBitsPerBlock))
+    return ElementCount::get(0, false);
+
+  MaxWidthInBits = std::max(8U, MaxWidthInBits);
+  unsigned LMULMax =
+      llvm::bit_floor(std::clamp<unsigned>(RVVRegisterWidthLMUL, 1, 8));
+
+  if (!RVVRegisterWidthLMUL.getNumOccurrences())
+    return std::nullopt;
+
+  return ElementCount::getScalable(LMULMax * RISCV::RVVBitsPerBlock /
+                                   MaxWidthInBits);
+}
+
 InstructionCost RISCVTTIImpl::getPartialReductionCost(
     unsigned Opcode, Type *InputTypeA, Type *InputTypeB, Type *AccumType,
     ElementCount VF, TTI::PartialReductionExtendKind OpAExtend,
