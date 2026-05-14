@@ -910,7 +910,8 @@ BinaryFunction::processIndirectBranch(MCInst &Instruction, unsigned Size,
     ArrayStart = static_cast<uint64_t>(DispValue);
   }
 
-  if (BaseRegNum == BC.MRI->getProgramCounter())
+  if (BaseRegNum != BC.MIB->getNoRegister() &&
+      BaseRegNum == BC.MRI->getProgramCounter())
     ArrayStart += getAddress() + Offset + Size;
 
   if (FixedEntryLoadInstr) {
