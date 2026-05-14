@@ -574,7 +574,7 @@ MCSymbol *BinaryContext::handleExternalBranchTarget(uint64_t Address,
 
 MemoryContentsType BinaryContext::analyzeMemoryAt(uint64_t Address,
                                                   BinaryFunction &BF) {
-  if (!isX86())
+  if (!isX86() && !isLoongArch())
     return MemoryContentsType::UNKNOWN;
 
   ErrorOr<BinarySection &> Section = getSectionForAddress(Address);
