@@ -2974,7 +2974,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
     return;
   }
 
-  if (!IsFromCode && !IsWritable && (IsX86 || IsAArch64) &&
+  if (!IsFromCode && !IsWritable && (IsX86 || IsAArch64 || IsLoongArch) &&
       Relocation::isPCRelative(RType)) {
     BinaryData *BD = BC->getBinaryDataContainingAddress(Rel.getOffset());
     if (BD && (BD->nameStartsWith("_ZTV") ||   // vtable
