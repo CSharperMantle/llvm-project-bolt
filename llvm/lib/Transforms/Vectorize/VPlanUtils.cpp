@@ -784,6 +784,8 @@ VPInstruction *vputils::findComputeReductionResult(VPReductionPHIRecipe *PhiR) {
   VPRecipeBase *SelR = vputils::findUserOf(
       BackedgeVal, m_Select(m_VPValue(), m_VPValue(), m_VPValue()));
   if (!SelR)
+    SelR = dyn_cast_or_null<VPBlendRecipe>(BackedgeVal->getDefiningRecipe());
+  if (!SelR)
     return nullptr;
   return vputils::findUserOf<VPInstruction::ComputeReductionResult>(
       cast<VPSingleDefRecipe>(SelR));
