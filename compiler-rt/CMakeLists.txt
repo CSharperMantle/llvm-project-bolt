@@ -540,6 +540,13 @@ elseif(COMPILER_RT_HAS_G_FLAG)
   list(APPEND SANITIZER_COMMON_CFLAGS -g)
 endif()
 
+if(SANITIZER_AMDGPU)
+  list(APPEND SANITIZER_COMMON_CFLAGS -DSANITIZER_AMDGPU=1)
+  include(CompilerRTAMDGPUUtils)
+  compiler_rt_find_amdgpu_runtime_headers()
+  include_directories(${HSA_INCLUDE_DIR} ${AMDComgr_INCLUDE_DIR})
+endif()
+
 if(LLVM_ENABLE_MODULES)
   # Sanitizers cannot be built with -fmodules. The interceptors intentionally
   # don't include system headers, which is incompatible with modules.
