@@ -20,7 +20,7 @@
 #include "test_macros.h"
 
 template <typename C>
-void test(C c) {
+TEST_CONSTEXPR_CXX26 void test(C c) {
   typename C::iterator it1 = c.begin();
   typename C::iterator it2 = c.end() - 2;
 
@@ -37,16 +37,35 @@ void test(C c) {
   LIBCPP_ASSERT(is_double_ended_contiguous_container_asan_correct(c));
 }
 
-int main(int, char**) {
+TEST_CONSTEXPR_CXX26 bool tests() {
   std::deque<int> queue;
   for (int i = 0; i < 4098; ++i)
     queue.push_back(i);
 
   while (queue.size() > 1) {
-    test(queue);
+#if TEST_STD_VER >= 26
+    if ([dq_size = queue.size()] {
+          if consteval {
+            return (dq_size & (dq_size - 1)) == 0;
+          } else {
+            return true;
+          }
+        }())
+#endif
+    {
+      test(queue);
+    }
     queue.pop_back();
     LIBCPP_ASSERT(is_double_ended_contiguous_container_asan_correct(queue));
   }
+  return true;
+}
+
+int main(int, char**) {
+  tests();
+#if TEST_STD_VER >= 26
+  static_assert(tests());
+#endif
 
   return 0;
 }

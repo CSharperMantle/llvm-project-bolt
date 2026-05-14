@@ -18,7 +18,7 @@
 #include "min_allocator.h"
 
 template <class C>
-C make(int size, int start = 0) {
+TEST_CONSTEXPR_CXX26 C make(int size, int start = 0) {
   const int b = 4096 / sizeof(int);
   int init    = 0;
   if (start > 0) {
@@ -37,7 +37,7 @@ C make(int size, int start = 0) {
 }
 
 template <class C>
-void test(C& c1) {
+TEST_CONSTEXPR_CXX26 void test(C& c1) {
   C s = c1;
   c1.shrink_to_fit();
   assert(c1 == s);
@@ -45,12 +45,28 @@ void test(C& c1) {
 }
 
 template <class C>
-void testN(int start, int N) {
+TEST_CONSTEXPR_CXX26 void testN(int start, int N) {
   C c1 = make<C>(N, start);
   test(c1);
 }
 
-int main(int, char**) {
+TEST_CONSTEXPR_CXX26 bool test() {
+#if TEST_STD_VER >= 26
+  if consteval {
+    constexpr int is[]{0, 15, 33};
+    constexpr int js[]{0, 15, 33};
+
+    for (int i : is) {
+      for (int j : js) {
+        testN<std::deque<int>>(i, j);
+        testN<std::deque<int, min_allocator<int>>>(i, j);
+        testN<std::deque<int, safe_allocator<int>>>(i, j);
+      }
+    }
+
+    return true;
+  }
+#endif
   {
     int rng[]   = {0, 1, 2, 3, 1023, 1024, 1025, 2047, 2048, 2049};
     const int N = sizeof(rng) / sizeof(rng[0]);
@@ -73,6 +89,14 @@ int main(int, char**) {
       for (int j = 0; j < N; ++j)
         testN<std::deque<int, safe_allocator<int>> >(rng[i], rng[j]);
   }
+#endif
+  return true;
+}
+
+int main(int, char**) {
+  test();
+#if TEST_STD_VER >= 26
+  static_assert(test());
 #endif
 
   return 0;

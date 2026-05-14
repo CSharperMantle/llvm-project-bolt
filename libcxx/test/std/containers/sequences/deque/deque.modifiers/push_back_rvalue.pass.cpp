@@ -23,7 +23,7 @@
 #include "min_allocator.h"
 
 template <class C>
-C make(int size, int start = 0) {
+TEST_CONSTEXPR_CXX26 C make(int size, int start = 0) {
   const int b = 4096 / sizeof(int);
   int init    = 0;
   if (start > 0) {
@@ -42,7 +42,22 @@ C make(int size, int start = 0) {
 }
 
 template <class C>
-void test(int size) {
+TEST_CONSTEXPR_CXX26 void test(int size) {
+#if TEST_STD_VER >= 26
+  if consteval {
+    constexpr int js[]{0, 129, 257};
+
+    for (int j : js) {
+      C c     = make<C>(size, j);
+      auto it = c.cbegin();
+      LIBCPP_ASSERT(is_double_ended_contiguous_container_asan_correct(c));
+      for (int i = 0; i < size; ++i, (void)++it)
+        assert(*it == MoveOnly(i));
+    }
+
+    return;
+  }
+#endif
   int rng[]   = {0, 1, 2, 3, 1023, 1024, 1025, 2046, 2047, 2048, 2049};
   const int N = sizeof(rng) / sizeof(rng[0]);
   for (int j = 0; j < N; ++j) {
@@ -54,7 +69,19 @@ void test(int size) {
   }
 }
 
-int main(int, char**) {
+TEST_CONSTEXPR_CXX26 bool tests() {
+#if TEST_STD_VER >= 26
+  if consteval {
+    constexpr int is[]{0, 15, 33};
+    for (int i : is) {
+      test<std::deque<MoveOnly>>(i);
+      test<std::deque<MoveOnly, min_allocator<MoveOnly>>>(i);
+      test<std::deque<MoveOnly, safe_allocator<MoveOnly>>>(i);
+    }
+
+    return true;
+  }
+#endif
   {
     int rng[]   = {0, 1, 2, 3, 1023, 1024, 1025, 2046, 2047, 2048, 2049, 4094, 4095, 4096};
     const int N = sizeof(rng) / sizeof(rng[0]);
@@ -73,6 +100,14 @@ int main(int, char**) {
     for (int j = 0; j < N; ++j)
       test<std::deque<MoveOnly, safe_allocator<MoveOnly>> >(rng[j]);
   }
+  return true;
+}
+
+int main(int, char**) {
+  tests();
+#if TEST_STD_VER >= 26
+  static_assert(tests());
+#endif
 
   return 0;
 }
