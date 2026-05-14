@@ -545,26 +545,23 @@ public:
   }
 
   void createReturn(MCInst &Inst) const override {
-    Inst.setOpcode(LoongArch::JIRL);
-    Inst.clear();
-    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
-    Inst.addOperand(MCOperand::createReg(LoongArch::R1));
-    Inst.addOperand(MCOperand::createImm(0));
+    Inst = MCInstBuilder(LoongArch::JIRL)
+               .addReg(LoongArch::R0)
+               .addReg(LoongArch::R1)
+               .addImm(0);
   }
 
   void createNoop(MCInst &Inst) const override {
-    Inst.setOpcode(LoongArch::ANDI);
-    Inst.clear();
-    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
-    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
-    Inst.addOperand(MCOperand::createImm(0));
+    Inst = MCInstBuilder(LoongArch::ANDI)
+               .addReg(LoongArch::R0)
+               .addReg(LoongArch::R0)
+               .addImm(0);
   }
 
   void createUncondBranch(MCInst &Inst, const MCSymbol *TBB,
                           MCContext *Ctx) const override {
-    Inst.setOpcode(LoongArch::B);
-    Inst.clear();
-    Inst.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(TBB, *Ctx)));
+    Inst =
+        MCInstBuilder(LoongArch::B).addExpr(MCSymbolRefExpr::create(TBB, *Ctx));
   }
 
   int getPCRelEncodingSize(const MCInst &Inst) const override {
@@ -598,11 +595,11 @@ public:
     InstructionListType Insts(2);
 
     // pcaddu18i $r21, %call36(target)
-    Insts[0].setOpcode(LoongArch::PCADDU18I);
-    Insts[0].clear();
-    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[0].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_CALL36, *Ctx)));
+    Insts[0] = MCInstBuilder(LoongArch::PCADDU18I)
+                   .addReg(LoongArch::R21)
+                   .addExpr(LoongArchMCExpr::create(
+                       MCSymbolRefExpr::create(Target, *Ctx),
+                       ELF::R_LARCH_CALL36, *Ctx));
 
     // jirl $r0, $r21, 0
     Insts[1] = MCInstBuilder(LoongArch::JIRL)
@@ -620,35 +617,35 @@ public:
     InstructionListType Insts(5);
 
     // lu12i.w  $r21, %abs_hi20(target)           # bits 31-12
-    Insts[0].setOpcode(LoongArch::LU12I_W);
-    Insts[0].clear();
-    Insts[0].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[0].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS_HI20, *Ctx)));
+    Insts[0] = MCInstBuilder(LoongArch::LU12I_W)
+                   .addReg(LoongArch::R21)
+                   .addExpr(LoongArchMCExpr::create(
+                       MCSymbolRefExpr::create(Target, *Ctx),
+                       ELF::R_LARCH_ABS_HI20, *Ctx));
 
     // ori      $r21, $r21, %abs_lo12(target)     # bits 11-0
-    Insts[1].setOpcode(LoongArch::ORI);
-    Insts[1].clear();
-    Insts[1].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[1].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[1].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS_LO12, *Ctx)));
+    Insts[1] = MCInstBuilder(LoongArch::ORI)
+                   .addReg(LoongArch::R21)
+                   .addReg(LoongArch::R21)
+                   .addExpr(LoongArchMCExpr::create(
+                       MCSymbolRefExpr::create(Target, *Ctx),
+                       ELF::R_LARCH_ABS_LO12, *Ctx));
 
     // lu32i.d  $r21, %abs64_lo20(target)         # bits 51-32
-    Insts[2].setOpcode(LoongArch::LU32I_D);
-    Insts[2].clear();
-    Insts[2].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[2].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[2].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS64_LO20, *Ctx)));
+    Insts[2] = MCInstBuilder(LoongArch::LU32I_D)
+                   .addReg(LoongArch::R21)
+                   .addReg(LoongArch::R21)
+                   .addExpr(LoongArchMCExpr::create(
+                       MCSymbolRefExpr::create(Target, *Ctx),
+                       ELF::R_LARCH_ABS64_LO20, *Ctx));
 
     // lu52i.d  $r21, $r21, %abs64_hi12(target)   # bits 63-52
-    Insts[3].setOpcode(LoongArch::LU52I_D);
-    Insts[3].clear();
-    Insts[3].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[3].addOperand(MCOperand::createReg(LoongArch::R21));
-    Insts[3].addOperand(MCOperand::createExpr(LoongArchMCExpr::create(
-        MCSymbolRefExpr::create(Target, *Ctx), ELF::R_LARCH_ABS64_HI12, *Ctx)));
+    Insts[3] = MCInstBuilder(LoongArch::LU52I_D)
+                   .addReg(LoongArch::R21)
+                   .addReg(LoongArch::R21)
+                   .addExpr(LoongArchMCExpr::create(
+                       MCSymbolRefExpr::create(Target, *Ctx),
+                       ELF::R_LARCH_ABS64_HI12, *Ctx));
 
     // jirl     $r0, $r21, 0
     Insts[4] = MCInstBuilder(LoongArch::JIRL)
@@ -664,21 +661,19 @@ public:
   void createStackPointerIncrement(
       MCInst &Inst, int Size = 8,
       bool NoFlagsClobber = false /* unused */) const override {
-    Inst.setOpcode(LoongArch::ADDI_D);
-    Inst.clear();
-    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
-    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
-    Inst.addOperand(MCOperand::createImm(-Size));
+    Inst = MCInstBuilder(LoongArch::ADDI_D)
+               .addReg(LoongArch::R3)
+               .addReg(LoongArch::R3)
+               .addImm(-Size);
   }
 
   void createStackPointerDecrement(
       MCInst &Inst, int Size = 8,
       bool NoFlagsClobber = false /* unused */) const override {
-    Inst.setOpcode(LoongArch::ADDI_D);
-    Inst.clear();
-    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
-    Inst.addOperand(MCOperand::createReg(LoongArch::R3));
-    Inst.addOperand(MCOperand::createImm(Size));
+    Inst = MCInstBuilder(LoongArch::ADDI_D)
+               .addReg(LoongArch::R3)
+               .addReg(LoongArch::R3)
+               .addImm(Size);
   }
 
   bool isEpilogue(const BinaryBasicBlock &BB) const override {
@@ -695,9 +690,7 @@ public:
   }
 
   void createTrap(MCInst &Inst) const override {
-    Inst.clear();
-    Inst.setOpcode(LoongArch::BREAK);
-    Inst.addOperand(MCOperand::createImm(0));
+    Inst = MCInstBuilder(LoongArch::BREAK).addImm(0);
   }
 
   bool isTrap(const MCInst &Inst) const override {
@@ -730,28 +723,25 @@ public:
     assert(SubExpr && "missing PCADDI target expression");
 
     InstructionListType Insts(2);
-    Insts[0].setOpcode(LoongArch::PCALAU12I);
-    Insts[0].clear();
-    Insts[0].addOperand(MCOperand::createReg(Reg));
-    Insts[0].addOperand(MCOperand::createExpr(
-        LoongArchMCExpr::create(SubExpr, ELF::R_LARCH_PCALA_HI20, *Ctx)));
 
-    Insts[1].setOpcode(LoongArch::ADDI_D);
-    Insts[1].clear();
-    Insts[1].addOperand(MCOperand::createReg(Reg));
-    Insts[1].addOperand(MCOperand::createReg(Reg));
-    Insts[1].addOperand(MCOperand::createExpr(
-        LoongArchMCExpr::create(SubExpr, ELF::R_LARCH_PCALA_LO12, *Ctx)));
+    Insts[0] = MCInstBuilder(LoongArch::PCALAU12I)
+                   .addReg(Reg)
+                   .addExpr(LoongArchMCExpr::create(
+                       SubExpr, ELF::R_LARCH_PCALA_HI20, *Ctx));
+
+    Insts[1] = MCInstBuilder(LoongArch::ADDI_D)
+                   .addReg(Reg)
+                   .addReg(Reg)
+                   .addExpr(LoongArchMCExpr::create(
+                       SubExpr, ELF::R_LARCH_PCALA_LO12, *Ctx));
 
     return Insts;
   }
 
   void createDirectCall(MCInst &Inst, const MCSymbol *Target, MCContext *Ctx,
                         bool IsTailCall) override {
-    Inst.clear();
-    Inst.setOpcode(IsTailCall ? LoongArch::B : LoongArch::BL);
-    Inst.addOperand(
-        MCOperand::createExpr(MCSymbolRefExpr::create(Target, *Ctx)));
+    Inst = MCInstBuilder(IsTailCall ? LoongArch::B : LoongArch::BL)
+               .addExpr(MCSymbolRefExpr::create(Target, *Ctx));
     if (IsTailCall)
       setTailCall(Inst);
   }
@@ -796,12 +786,10 @@ public:
     // jirl $r1, $r20, 0
     // # or
     // jirl $r0, $r20, 0 (tail)
-    Insts[2].setOpcode(LoongArch::JIRL);
-    Insts[2].clear();
-    Insts[2].addOperand(
-        MCOperand::createReg(IsTailCall ? LoongArch::R0 : LoongArch::R1));
-    Insts[2].addOperand(MCOperand::createReg(LoongArch::R20));
-    Insts[2].addOperand(MCOperand::createImm(0));
+    Insts[2] = MCInstBuilder(LoongArch::JIRL)
+                   .addReg(IsTailCall ? LoongArch::R0 : LoongArch::R1)
+                   .addReg(LoongArch::R20)
+                   .addImm(0);
     moveAnnotations(std::move(DirectCall), Insts[2]);
 
     return Insts;
@@ -1370,7 +1358,7 @@ private:
   }
 
   const MCExpr *tryGetPCRel20SubExpr(const MCExpr *Expr,
-                                  MCContext *Ctx = nullptr) const {
+                                     MCContext *Ctx = nullptr) const {
     if (const auto *E = dyn_cast<LoongArchMCExpr>(Expr)) {
       if (E->getSpecifier() == ELF::R_LARCH_PCREL20_S2)
         return E->getSubExpr();
