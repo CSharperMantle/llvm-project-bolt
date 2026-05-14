@@ -1267,6 +1267,94 @@ public:
     return Insts;
   }
 
+  InstructionListType
+  createInstrumentedIndCallHandlerEntryBB(const MCSymbol *InstrTrampoline,
+                                          const MCSymbol *IndCallHandler,
+                                          MCContext *Ctx) override {
+    // Check whether InstrTrampoline was initialized and call it if so,
+    // then jump to IndCallHandler.
+    //
+    // spill      $a0, $zero
+    // pcalau12i  $a0, %pc_hi20(InstrTrampoline)
+    // addi.d     $a0, $a0, %pc_lo12(InstrTrampoline)
+    // ld.d       $a0, $a0, 0
+    // beqz       $a0, IndCallHandler
+    // addi.d     $sp, $sp, -16
+    // st.d       $ra, $sp, 0
+    // jirl       $ra, $a0, 0
+    // ld.d       $ra, $sp, 0
+    // addi.d     $sp, $sp, 16
+    // b          IndCallHandler
+    InstructionListType Insts;
+
+    spillRegs(Insts, {LoongArch::R4, LoongArch::R0});
+    InstructionListType Addr =
+        materializeAddress(InstrTrampoline, Ctx, LoongArch::R4);
+    Insts.insert(Insts.end(), Addr.begin(), Addr.end());
+    Insts.emplace_back();
+    loadReg(Insts.back(), LoongArch::R4, LoongArch::R4, 0);
+    Insts.emplace_back();
+    createRegCmpJZ(Insts.back(), LoongArch::R4, IndCallHandler, Ctx);
+    Insts.emplace_back();
+    createStackPointerIncrement(Insts.back(), 16);
+    Insts.emplace_back();
+    storeReg(Insts.back(), LoongArch::R1, LoongArch::R3, 0);
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), false, LoongArch::R4, 0);
+    Insts.emplace_back();
+    loadReg(Insts.back(), LoongArch::R1, LoongArch::R3, 0);
+    Insts.emplace_back();
+    createStackPointerDecrement(Insts.back(), 16);
+    Insts.emplace_back();
+    createDirectCall(Insts.back(), IndCallHandler, Ctx, true);
+
+    return Insts;
+  }
+
+  InstructionListType createInstrumentedIndCallHandlerExitBB() const override {
+    InstructionListType Insts;
+
+    reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    Insts.emplace_back();
+    loadReg(Insts.back(), LoongArch::R12, LoongArch::R3, 0);
+    Insts.emplace_back();
+    createStackPointerDecrement(Insts.back(), 16);
+    reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), true, LoongArch::R12, 0);
+
+    return Insts;
+  }
+
+  InstructionListType
+  createInstrumentedIndTailCallHandlerExitBB() const override {
+    return createInstrumentedIndCallHandlerExitBB();
+  }
+
+  InstructionListType createSymbolTrampoline(const MCSymbol *TgtSym,
+                                             MCContext *Ctx) override {
+    InstructionListType Insts;
+    createShortJmp(Insts, TgtSym, Ctx, true);
+    return Insts;
+  }
+
+  InstructionListType createNumCountersGetter(MCContext *Ctx) const override {
+    return createGetter(Ctx, "__bolt_num_counters");
+  }
+
+  InstructionListType
+  createInstrLocationsGetter(MCContext *Ctx) const override {
+    return createGetter(Ctx, "__bolt_instr_locations");
+  }
+
+  InstructionListType createInstrTablesGetter(MCContext *Ctx) const override {
+    return createGetter(Ctx, "__bolt_instr_tables");
+  }
+
+  InstructionListType createInstrNumFuncsGetter(MCContext *Ctx) const override {
+    return createGetter(Ctx, "__bolt_instr_num_funcs");
+  }
+
 private:
   /// Load a register from a stack slot.
   void loadReg(MCInst &Inst, MCPhysReg To, MCPhysReg From,
