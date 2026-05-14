@@ -73,7 +73,7 @@ ABI computeTargetABI(const Triple &TT, const FeatureBitset &FeatureBits,
               "target-abi)\n";
     TargetABI = ABI_Unknown;
   } else if (!IsRV64 && IsRVE && TargetABI != ABI_ILP32E &&
-             TargetABI != ABI_Unknown) {
+             TargetABI != ABI_CHERIOT && TargetABI != ABI_Unknown) {
     // TODO: move this checking to RISCVTargetLowering and RISCVAsmParser
     errs()
         << "Only the ilp32e ABI is supported for RV32E (ignoring target-abi)\n";
@@ -111,6 +111,7 @@ ABI getTargetABI(StringRef ABIName) {
                        .Case("lp64f", ABI_LP64F)
                        .Case("lp64d", ABI_LP64D)
                        .Case("lp64e", ABI_LP64E)
+                       .Case("cheriot", ABI_CHERIOT)
                        .Default(ABI_Unknown);
   return TargetABI;
 }
