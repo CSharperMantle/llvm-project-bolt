@@ -1,0 +1,15 @@
+// From bolt/test/AArch64/plt-call.test
+
+RUN: %clang %cflags -fpic -shared -xc /dev/null -o %t.so
+RUN: %clang %cflags -Wl,-z,undefs %p/../Inputs/plt-tailcall.c %t.so -o %t -Wl,-q
+RUN: llvm-bolt %t -o %t.bolt --plt=all --print-plt  --print-only=foo | FileCheck %s
+
+// Call to printf
+CHECK: pcalau12i	$t8, %pc_hi20(printf@GOT)
+CHECK: ld.d	$t8, $t8, %pc_lo12(printf@GOT)
+CHECK: jirl	$ra, $t8, 0 # PLTCall: 1
+
+// Call to puts, that was tail-call optimized
+CHECK: pcalau12i	$t8, %pc_hi20(puts@GOT)
+CHECK: ld.d	$t8, $t8, %pc_lo12(puts@GOT)
+CHECK: jr	$t8 # TAILCALL  # PLTCall: 1

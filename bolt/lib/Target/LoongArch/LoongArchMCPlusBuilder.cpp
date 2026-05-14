@@ -356,6 +356,47 @@ public:
     createShortJmp(Seq, Target, Ctx, /*IsTailCall*/ true);
   }
 
+  InstructionListType createIndirectPLTCall(MCInst &&DirectCall,
+                                            const MCSymbol *TargetLocation,
+                                            MCContext *Ctx) override {
+    const bool IsTailCall = isTailCall(DirectCall);
+    assert((DirectCall.getOpcode() == LoongArch::BL ||
+            (DirectCall.getOpcode() == LoongArch::B && IsTailCall)) &&
+           "64-bit direct (tail) call instruction expected");
+
+    InstructionListType Insts(3);
+
+    // pcalau12i $r20, %pc_hi20(TargetLocation)
+    Insts[0].setOpcode(LoongArch::PCALAU12I);
+    Insts[0].clear();
+    Insts[0].addOperand(MCOperand::createReg(LoongArch::R20));
+    Insts[0].addOperand(MCOperand::createImm(0));
+    setOperandToSymbolRef(Insts[0], /* OpNum */ 1, TargetLocation,
+                          /* Addend */ 0, Ctx, ELF::R_LARCH_PCALA_HI20);
+
+    // ld.d $r20, $r20, %pc_lo12(TargetLocation)
+    Insts[1].setOpcode(LoongArch::LD_D);
+    Insts[1].clear();
+    Insts[1].addOperand(MCOperand::createReg(LoongArch::R20));
+    Insts[1].addOperand(MCOperand::createReg(LoongArch::R20));
+    Insts[1].addOperand(MCOperand::createImm(0));
+    setOperandToSymbolRef(Insts[1], /* OpNum */ 2, TargetLocation,
+                          /* Addend */ 0, Ctx, ELF::R_LARCH_PCALA_LO12);
+
+    // jirl $r1, $r20, 0
+    // # or
+    // jirl $r0, $r20, 0 (tail)
+    Insts[2].setOpcode(LoongArch::JIRL);
+    Insts[2].clear();
+    Insts[2].addOperand(
+        MCOperand::createReg(IsTailCall ? LoongArch::R0 : LoongArch::R1));
+    Insts[2].addOperand(MCOperand::createReg(LoongArch::R20));
+    Insts[2].addOperand(MCOperand::createImm(0));
+    moveAnnotations(std::move(DirectCall), Insts[2]);
+
+    return Insts;
+  }
+
   bool analyzeBranch(InstructionIterator Begin, InstructionIterator End,
                      const MCSymbol *&TBB, const MCSymbol *&FBB,
                      MCInst *&CondBranch,
@@ -662,10 +703,14 @@ public:
     const uint64_t RelOffset = Fixup.getOffset();
 
     uint32_t RelType;
-    if (Fixup.getKind() == MCFixupKind(LoongArch::fixup_loongarch_b26))
-      RelType = ELF::R_LARCH_B26;
-    else // TODO: Need more consideration. Refs to x86 or AArch64.
+    switch (Fixup.getKind()) {
+    default:
+      // TODO: Need more consideration. Refs to x86 or AArch64.
       return std::nullopt;
+    case MCFixupKind(LoongArch::fixup_loongarch_b26):
+      RelType = ELF::R_LARCH_B26;
+      break;
+    }
 
     auto [RelSymbol, RelAddend] = extractFixupExpr(Fixup);
 
