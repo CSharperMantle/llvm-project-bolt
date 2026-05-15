@@ -479,6 +479,11 @@ static uint64_t canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
+  case ELF::R_LARCH_32:
+  case ELF::R_LARCH_64:
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_64_PCREL:
+    return true;
   }
 }
 
@@ -487,6 +492,13 @@ static uint64_t encodeValueLoongArch(uint32_t Type, uint64_t Value,
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
+  case ELF::R_LARCH_32:
+  case ELF::R_LARCH_64:
+    break;
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_64_PCREL:
+    Value -= PC;
+    break;
   }
   return Value;
 }
