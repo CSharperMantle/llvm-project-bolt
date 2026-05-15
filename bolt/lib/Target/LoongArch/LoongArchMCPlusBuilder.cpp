@@ -1119,6 +1119,8 @@ public:
 
   MCPhysReg getFramePointer() const override { return LoongArch::R22; }
 
+  MCPhysReg getFlagsReg() const override { return LoongArch::NoRegister; }
+
   MCPhysReg getIntArgRegister(unsigned ArgNo) const override {
     if (ArgNo < 8)
       return LoongArch::R4 + ArgNo;
