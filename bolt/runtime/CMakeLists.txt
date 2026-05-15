@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.20.0)
-include(CheckCXXCompilerFlag)
-include(CheckIncludeFiles)
-include(GNUInstallDirs)
+project(libbolt_rt_project)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)
 
-project(libbolt_rt_project)
+include(CheckCXXCompilerFlag)
+include(CheckIncludeFiles)
+include(GNUInstallDirs)
 
 check_include_files(elf.h HAVE_ELF_H)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in
