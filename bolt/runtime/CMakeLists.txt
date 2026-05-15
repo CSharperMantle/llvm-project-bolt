@@ -49,6 +49,11 @@ endif()
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
   set(BOLT_RT_FLAGS ${BOLT_RT_FLAGS})
 endif()
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
+  set(BOLT_RT_FLAGS ${BOLT_RT_FLAGS}
+    -mno-lasx
+    -mno-lsx)
+endif()
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
   check_cxx_compiler_flag("-mno-outline-atomics" CXX_SUPPORTS_OUTLINE_ATOMICS)
   if (CXX_SUPPORTS_OUTLINE_ATOMICS)

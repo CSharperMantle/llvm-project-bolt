@@ -155,10 +155,12 @@ struct timespec {
 #include "sys_aarch64.h"
 #elif defined(__riscv)
 #include "sys_riscv64.h"
+#elif defined(__loongarch__)
+#include "sys_loongarch64.h"
 #elif defined(__x86_64__)
 #include "sys_x86_64.h"
 #else
-#error "For AArch64/ARM64,X86_64 AND RISCV64 only."
+#error "For AArch64/ARM64, X86_64, RISCV64 and LoongArch64 only."
 #endif
 
 constexpr uint32_t BufSize = 10240;

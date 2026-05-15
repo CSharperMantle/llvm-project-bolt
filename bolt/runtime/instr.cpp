@@ -1715,6 +1715,25 @@ extern "C" __attribute((naked)) void __bolt_instr_indirect_call()
                       "ret\n"
                       :::);
   // clang-format on
+#elif defined(__loongarch__)
+  // clang-format off
+  // Shape of stack upon entry:
+  //        (+)
+  //         8       0
+  // |  ...  |  ...  |
+  // |  $a1  |  $a0  |
+  // |  arg1 |  arg0 | <- $sp @ end of createInstrumentedIndirectCall()
+  // |  $a1  |  $a0  |
+  // |   -   |  $ra  | <- $sp @ end of `jirl $ra, $a0, 0` in createInstrumentedIndCallHandlerEntryBB()
+  //        (-)                 aka here
+  __asm__ __volatile__(
+                      SAVE_ALL
+                      "ld.d   $a0, $sp, (256+8*4+0)   \n"
+                      "ld.d   $a1, $sp, (256+8*4+8)   \n"
+                      "bl     instrumentIndirectCall  \n"
+                      RESTORE_ALL
+                      "jr     $ra                     \n");
+  // clang-format on
 #else
   // clang-format off
   __asm__ __volatile__(SAVE_ALL
@@ -1750,6 +1769,17 @@ extern "C" __attribute((naked)) void __bolt_instr_indirect_tailcall()
                       RESTORE_ALL
                       "ret\n"
                       :::);
+  // clang-format on
+#elif defined(__loongarch__)
+  // clang-format off
+  // See __bolt_instr_indirect_call() above.
+  __asm__ __volatile__(
+                      SAVE_ALL
+                      "ld.d   $a0, $sp, (256+8*4+0)   \n"
+                      "ld.d   $a1, $sp, (256+8*4+8)   \n"
+                      "bl     instrumentIndirectCall  \n"
+                      RESTORE_ALL
+                      "ret                            \n");
   // clang-format on
 #else
   // clang-format off
@@ -1789,6 +1819,16 @@ extern "C" __attribute((naked)) void __bolt_instr_start()
                       "jr x5\n"
                       :::);
   // clang-format on
+#elif defined(__loongarch__)
+  // clang-format off
+  __asm__ __volatile__(
+                      SAVE_ALL
+                      "bl         __bolt_instr_setup                          \n"
+                      RESTORE_ALL
+                      "pcalau12i  $t0, %pc_hi20(__bolt_start_trampoline)      \n"
+                      "addi.d     $t0, $t0, %pc_lo12(__bolt_start_trampoline) \n"
+                      "jr         $t0                                         \n");
+  // clang-format on
 #else
   // clang-format off
   __asm__ __volatile__(SAVE_ALL
@@ -1821,6 +1861,16 @@ extern "C" void __bolt_instr_fini() {
                       "jalr x1, 0(x5)\n"
                       RESTORE_ALL
                       :::);
+  // clang-format on
+#elif defined(__loongarch__)
+  // clang-format off
+  __asm__ __volatile__(
+                      SAVE_ALL
+                      "pcalau12i  $t0, %%pc_hi20(__bolt_fini_trampoline)      \n"
+                      "addi.d     $t0, $t0, %%pc_lo12(__bolt_fini_trampoline) \n"
+                      "jirl       $ra, $t0, 0                                 \n"
+                      RESTORE_ALL
+                      ::: "$ra", "$t0", "memory");
   // clang-format on
 #else
   __asm__ __volatile__("call __bolt_fini_trampoline\n" :::);

@@ -6,7 +6,8 @@
 //
 //===---------------------------------------------------------------------===//
 
-#if (defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__)) &&     \
+#if (defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__) ||      \
+     (defined(__loongarch__) && (__loongarch_grlen == 64))) &&                 \
     !defined(__APPLE__)
 
 #include "common.h"
@@ -181,6 +182,14 @@ extern "C" __attribute((naked)) void __bolt_hugify_self() {
                                 "add x16, x16, #:lo12:__bolt_hugify_start_program\n"
                                 "br x16\n"
                                 :::);
+#elif defined(__loongarch__) && (__loongarch_grlen == 64)
+  __asm__ __volatile__(
+    SAVE_ALL
+    "bl         __bolt_hugify_self_impl                         \n"
+    RESTORE_ALL
+    "pcalau12i  $t0, %pc_hi20(__bolt_hugify_start_program)      \n"
+    "addi.d     $t0, $t0, %pc_lo12(__bolt_hugify_start_program) \n"
+    "jr         $t0                                             \n");
 #else
   __exit(1);
 #endif
