@@ -155,7 +155,9 @@ BinaryContext::BinaryContext(std::unique_ptr<MCContext> Ctx,
       STI(std::move(STI)), InstPrinter(std::move(InstPrinter)),
       MIA(std::move(MIA)), MIB(std::move(MIB)), MRI(std::move(MRI)),
       DisAsm(std::move(DisAsm)), Logger(Logger), InitialDynoStats(isAArch64()) {
-  RegularPageSize = isAArch64() ? RegularPageSizeAArch64 : RegularPageSizeX86;
+  RegularPageSize = isAArch64()     ? RegularPageSizeAArch64
+                    : isLoongArch() ? RegularPageSizeLoongArch
+                                    : RegularPageSizeX86;
   PageAlign = opts::NoHugePages ? RegularPageSize : HugePageSize;
 }
 
