@@ -40,6 +40,12 @@ static bool matchPcaddi(const MCInst &Inst, MCRegister Rd) {
          Inst.getOperand(1).isExpr();
 }
 
+static bool matchPcaddu18i(const MCInst &Inst, MCRegister Rd) {
+  return Inst.getOpcode() == LoongArch::PCADDU18I &&
+         Inst.getNumOperands() >= 2 && Inst.getOperand(0).isReg() &&
+         Inst.getOperand(0).getReg() == Rd && Inst.getOperand(1).isExpr();
+}
+
 static bool matchAddiD(const MCInst &Inst, MCRegister Rd, MCRegister &RsOut) {
   if (Inst.getOpcode() != LoongArch::ADDI_D || Inst.getNumOperands() < 3)
     return false;
@@ -263,17 +269,6 @@ public:
     // Filter out returns.
     if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
       return IndirectBranchType::UNKNOWN;
-
-    // Check for long tail call:
-    //   pcaddu18i  $rj, ?
-    //   jirl       $r0, $rj, 0
-    if (Begin != End) {
-      MCInst &PrevInst = *std::prev(End);
-      if (PrevInst.getOpcode() == LoongArch::PCADDU18I &&
-          PrevInst.getNumOperands() >= 1 && PrevInst.getOperand(0).isReg() &&
-          PrevInst.getOperand(0).getReg() == JirlRj)
-        return IndirectBranchType::POSSIBLE_TAIL_CALL;
-    }
 
     // Helper: find the most recent instruction before Start (but at or after
     // Begin) that writes Reg.  Returns Start if no definition is found.
@@ -503,6 +498,40 @@ public:
       BaseRegNum = BaseReg;
       IndexRegNum = IdxReg;
       return IndirectBranchType::POSSIBLE_JUMP_TABLE;
+    } while (0);
+
+    // Tail call detection
+    //
+    // Target     pcaddi    $JirlRj, ...
+    //            # --- or ---
+    //            pcaddu18i $JirlRj, ...
+    //            # --- or ---
+    //            pcalau12i $JirlRj, ...
+    //            addi.d    $JirlRj, $JirlRj, ...
+    //            jr        $JirlRj
+    //
+    // Cf.
+    //   <https://reviews.llvm.org/D137889>
+    do {
+      if (JirlRd != LoongArch::R0)
+        break;
+
+      InstructionIterator Def = findRegDef(JirlRj, End);
+      if (Def == End)
+        break;
+
+      if (matchPcaddi(*Def, JirlRj) || matchPcaddu18i(*Def, JirlRj))
+        return IndirectBranchType::POSSIBLE_TAIL_CALL;
+
+      MCRegister AddiSrc;
+      if (!matchAddiD(*Def, JirlRj, AddiSrc))
+        break;
+
+      InstructionIterator BaseDef = findRegDef(AddiSrc, Def);
+      if (BaseDef == Def || !matchPcalau12i(*BaseDef, AddiSrc))
+        break;
+
+      return IndirectBranchType::POSSIBLE_TAIL_CALL;
     } while (0);
 
     return IndirectBranchType::UNKNOWN;
