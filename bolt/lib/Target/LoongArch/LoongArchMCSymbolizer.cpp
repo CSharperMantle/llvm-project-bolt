@@ -23,6 +23,28 @@ namespace bolt {
 
 LoongArchMCSymbolizer::~LoongArchMCSymbolizer() {}
 
+static bool isSImm12AddLikeOpcode(unsigned Opcode) {
+  switch (Opcode) {
+  default:
+    return false;
+  case LoongArch::ORI:
+  case LoongArch::ADDI_D:
+  case LoongArch::ADDI_W:
+  case LoongArch::LD_B:
+  case LoongArch::LD_BU:
+  case LoongArch::LD_D:
+  case LoongArch::LD_H:
+  case LoongArch::LD_HU:
+  case LoongArch::LD_W:
+  case LoongArch::LD_WU:
+  case LoongArch::ST_B:
+  case LoongArch::ST_D:
+  case LoongArch::ST_H:
+  case LoongArch::ST_W:
+    return true;
+  }
+}
+
 bool LoongArchMCSymbolizer::tryAddingSymbolicOperand(
     MCInst &Inst, raw_ostream &CStream, int64_t Value, uint64_t InstAddress,
     bool IsBranch, uint64_t ImmOffset, uint64_t ImmSize, uint64_t InstSize) {
@@ -95,6 +117,122 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
   BinaryContext &BC = Function.getBinaryContext();
   Relocation AdjustedRel = Rel;
 
+  // Some linker (erroneously) don't adjust relocations after performing
+  // relaxation, for example, mold before rui314/mold#1585.
+  if (Rel.Type == ELF::R_LARCH_B16) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::BEQ:
+    case LoongArch::BNE:
+    case LoongArch::BLT:
+    case LoongArch::BGE:
+    case LoongArch::BLTU:
+    case LoongArch::BGEU:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_B21) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::BEQZ:
+    case LoongArch::BNEZ:
+    case LoongArch::BCEQZ:
+    case LoongArch::BCNEZ:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_B26) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::B:
+    case LoongArch::BL:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCALA_HI20 ||
+      Rel.Type == ELF::R_LARCH_GOT_PC_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_LD_PC_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_GD_PC_HI20) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::PCALAU12I:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCALA_LO12 ||
+      Rel.Type == ELF::R_LARCH_GOT_PC_LO12) {
+    if (Rel.Type == ELF::R_LARCH_PCALA_LO12 &&
+        !(isSImm12AddLikeOpcode(Inst.getOpcode()) ||
+          Inst.getOpcode() == LoongArch::JIRL))
+      return std::nullopt;
+
+    if (Rel.Type == ELF::R_LARCH_GOT_PC_LO12 &&
+        !isSImm12AddLikeOpcode(Inst.getOpcode()))
+      return std::nullopt;
+  }
+  if (Rel.Type == ELF::R_LARCH_PCALA64_LO20 ||
+      Rel.Type == ELF::R_LARCH_GOT64_PC_LO20) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::LU32I_D:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCALA64_HI12 ||
+      Rel.Type == ELF::R_LARCH_GOT64_PC_HI12) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::LU52I_D:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_CALL36) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::PCADDU18I:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCREL20_S2 ||
+      Rel.Type == ELF::R_LARCH_TLS_LD_PCREL20_S2 ||
+      Rel.Type == ELF::R_LARCH_TLS_GD_PCREL20_S2) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::PCADDI:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCADD_HI20 ||
+      Rel.Type == ELF::R_LARCH_GOT_PCADD_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_IE_PCADD_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_LD_PCADD_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_GD_PCADD_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_DESC_PCADD_HI20) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::PCADDU12I:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_PCADD_LO12 ||
+      Rel.Type == ELF::R_LARCH_GOT_PCADD_LO12 ||
+      Rel.Type == ELF::R_LARCH_TLS_IE_PCADD_LO12 ||
+      Rel.Type == ELF::R_LARCH_TLS_LD_PCADD_LO12 ||
+      Rel.Type == ELF::R_LARCH_TLS_GD_PCADD_LO12 ||
+      Rel.Type == ELF::R_LARCH_TLS_DESC_PCADD_LO12) {
+    if (!isSImm12AddLikeOpcode(Inst.getOpcode()))
+      return std::nullopt;
+  }
+
   // The linker might perform TLS relocations relaxations, thus changing the
   // instructions. The static relocations might be invalid at this point and we
   // don't have to process these relocations anymore. More information could be
@@ -109,13 +247,8 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
   }
   // Relaxed by lld's LoongArch::tlsIeToLe (R_RELAX_TLS_GD_TO_LE).
   if (Rel.Type == ELF::R_LARCH_TLS_IE_PC_LO12) {
-    switch (Inst.getOpcode()) {
-    default:
+    if (!isSImm12AddLikeOpcode(Inst.getOpcode()))
       return std::nullopt; // May be relaxed, can't adjust anyway
-    case LoongArch::LD_D:
-    case LoongArch::LD_W:
-      break;
-    }
   }
   // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
   if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_HI20) {
@@ -128,13 +261,8 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
   }
   // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
   if (Rel.Type == ELF::R_LARCH_TLS_DESC_PC_LO12) {
-    switch (Inst.getOpcode()) {
-    default:
+    if (!isSImm12AddLikeOpcode(Inst.getOpcode()))
       return std::nullopt; // May be relaxed, can't adjust anyway
-    case LoongArch::ADDI_D:
-    case LoongArch::ADDI_W:
-      break;
-    }
   }
   // Relaxed by lld's LoongArch::tlsdescToIe / tlsdescToLe.
   if (Rel.Type == ELF::R_LARCH_TLS_DESC_PCREL20_S2) {

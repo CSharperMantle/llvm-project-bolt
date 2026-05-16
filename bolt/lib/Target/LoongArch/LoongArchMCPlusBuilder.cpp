@@ -1168,9 +1168,17 @@ public:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCREL20_S2, Ctx);
     case ELF::R_LARCH_PCADD_HI20:
     case ELF::R_LARCH_GOT_PCADD_HI20:
+    case ELF::R_LARCH_TLS_IE_PCADD_HI20:
+    case ELF::R_LARCH_TLS_LD_PCADD_HI20:
+    case ELF::R_LARCH_TLS_GD_PCADD_HI20:
+    case ELF::R_LARCH_TLS_DESC_PCADD_HI20:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCADD_HI20, Ctx);
     case ELF::R_LARCH_PCADD_LO12:
     case ELF::R_LARCH_GOT_PCADD_LO12:
+    case ELF::R_LARCH_TLS_IE_PCADD_LO12:
+    case ELF::R_LARCH_TLS_LD_PCADD_LO12:
+    case ELF::R_LARCH_TLS_GD_PCADD_LO12:
+    case ELF::R_LARCH_TLS_DESC_PCADD_LO12:
       return LoongArchMCExpr::create(Expr, ELF::R_LARCH_PCADD_LO12, Ctx);
     }
   }

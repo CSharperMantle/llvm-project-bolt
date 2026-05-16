@@ -7,7 +7,7 @@
 // CHECK-LABEL: Binary Function "tls_ie" after building cfg {
 // CHECK-LABEL: .LBB00
 // CHECK:      nop # NOP: 1
-// CHECK-NEXT: ori $a0, $zero, 0
+// CHECK-NEXT: ori $a0, $zero, %pc_lo12(__BOLT_got_zero)
 // OBJDUMP:      0000000000400000 <tls_ie>:
 // OBJDUMP-NEXT:     nop
 // OBJDUMP-NEXT:     ori $a0, $zero, 0
