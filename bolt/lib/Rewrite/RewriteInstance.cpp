@@ -2545,9 +2545,18 @@ bool RewriteInstance::analyzeRelocation(
 
   const size_t RelSize = Relocation::getSizeForType(RType);
 
-  ErrorOr<uint64_t> Value =
+  const ErrorOr<uint64_t> Value =
       BC->getUnsignedValueAtAddress(Rel.getOffset(), RelSize);
-  assert(Value && "failed to extract relocated value");
+  if (!Value) {
+    LLVM_DEBUG({
+      SmallString<16> TypeName;
+      Rel.getTypeName(TypeName);
+      dbgs() << "BOLT-DEBUG: ignoring relocation outside relocated section @ "
+             << formatv("offset = {0:x}; type name = {1}\n", Rel.getOffset(),
+                        TypeName);
+    });
+    return false;
+  }
 
   ExtractedValue = Relocation::extractValue(RType, *Value, Rel.getOffset());
   Addend = getRelocationAddend(InputFile, Rel);
