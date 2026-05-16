@@ -1277,6 +1277,83 @@ public:
     return Insts;
   }
 
+  BlocksVectorTy indirectCallPromotion(
+      const MCInst &CallInst,
+      const std::vector<std::pair<MCSymbol *, uint64_t>> &Targets,
+      const std::vector<std::pair<MCSymbol *, uint64_t>> &VtableSyms,
+      const std::vector<MCInst *> &MethodFetchInsns,
+      const bool MinimizeCodeSize, MCContext *Ctx) override {
+    (void)MinimizeCodeSize;
+
+    if (CallInst.getOpcode() != LoongArch::JIRL ||
+        CallInst.getNumOperands() < 2 || !CallInst.getOperand(1).isReg() ||
+        !VtableSyms.empty() || getJumpTable(CallInst))
+      return BlocksVectorTy();
+
+    const bool IsTailCall = isTailCall(CallInst);
+    const MCPhysReg TargetReg = CallInst.getOperand(1).getReg();
+    const MCPhysReg TmpReg =
+        TargetReg == LoongArch::R20 ? LoongArch::R21 : LoongArch::R20;
+    BlocksVectorTy Results;
+    MCSymbol *NextTarget = nullptr;
+    MCSymbol *MergeBlock = nullptr;
+
+    const auto appendBranchToMerge = [&](InstructionListType &NewCall) {
+      assert(MergeBlock);
+      NewCall.emplace_back();
+      createUncondBranch(NewCall.back(), MergeBlock, Ctx);
+    };
+
+    for (unsigned I = 0; I < Targets.size(); ++I) {
+      Results.emplace_back(NextTarget, InstructionListType());
+      InstructionListType *NewCall = &Results.back().second;
+
+      InstructionListType Addr =
+          Targets[I].first
+              ? materializeAddress(Targets[I].first, Ctx, TmpReg)
+              : createLoadImmediate(TmpReg, Targets[I].second);
+      NewCall->insert(NewCall->end(), Addr.begin(), Addr.end());
+
+      NextTarget = Ctx->createNamedTempSymbol();
+      NewCall->push_back(MCInstBuilder(LoongArch::BNE)
+                             .addReg(TargetReg)
+                             .addReg(TmpReg)
+                             .addExpr(MCSymbolRefExpr::create(NextTarget, *Ctx)));
+
+      Results.emplace_back(Ctx->createNamedTempSymbol(), InstructionListType());
+      NewCall = &Results.back().second;
+      NewCall->emplace_back();
+      if (Targets[I].first)
+        createDirectCall(NewCall->back(), Targets[I].first, Ctx, IsTailCall);
+      else
+        createIndirectCallInst(NewCall->back(), IsTailCall, TmpReg, 0);
+
+      if (std::optional<uint32_t> Offset = getOffset(CallInst))
+        setOffset(NewCall->back(), *Offset);
+
+      if (!IsTailCall) {
+        if (I == 0)
+          MergeBlock = Ctx->createNamedTempSymbol();
+        else
+          appendBranchToMerge(*NewCall);
+      }
+    }
+
+    Results.emplace_back(NextTarget, InstructionListType());
+    InstructionListType &NewCall = Results.back().second;
+    for (const MCInst *Inst : MethodFetchInsns)
+      if (Inst != &CallInst)
+        NewCall.push_back(*Inst);
+    NewCall.push_back(CallInst);
+
+    if (!IsTailCall) {
+      appendBranchToMerge(NewCall);
+      Results.emplace_back(MergeBlock, InstructionListType());
+    }
+
+    return Results;
+  }
+
   InstructionListType createInstrumentedIndirectCall(MCInst &&CallInst,
                                                      MCSymbol *HandlerFuncAddr,
                                                      int CallSiteID,
