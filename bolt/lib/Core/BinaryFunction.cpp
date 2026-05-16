@@ -888,19 +888,30 @@ BinaryFunction::processIndirectBranch(MCInst &Instruction, unsigned Size,
     return IndirectBranchType::UNKNOWN;
   }
 
-  auto getExprValue = [&](const MCExpr *Expr) {
+  const auto tryGetExprValue =
+      [&](const MCExpr *Expr) -> std::optional<uint64_t> {
     const MCSymbol *TargetSym;
     uint64_t TargetOffset;
     std::tie(TargetSym, TargetOffset) = BC.MIB->getTargetSymbolInfo(Expr);
-    ErrorOr<uint64_t> SymValueOrError = BC.getSymbolValue(*TargetSym);
-    assert(SymValueOrError && "Global symbol needs a value");
-    return *SymValueOrError + TargetOffset;
+    // Try global symbols first
+    const ErrorOr<uint64_t> SymValueOrError = BC.getSymbolValue(*TargetSym);
+    if (SymValueOrError)
+      return *SymValueOrError + TargetOffset;
+    // Try local labels next
+    for (const auto &Elmt : Labels)
+      if (Elmt.second == TargetSym)
+        return getAddress() + Elmt.first + TargetOffset;
+    // No luck.
+    return std::nullopt;
   };
 
   // RIP-relative addressing should be converted to symbol form by now
   // in processed instructions (but not in jump).
   if (DispExpr) {
-    ArrayStart = getExprValue(DispExpr);
+    const std::optional<uint64_t> Value = tryGetExprValue(DispExpr);
+    if (!Value)
+      return IndirectBranchType::UNKNOWN;
+    ArrayStart = *Value;
     BaseRegNum = BC.MIB->getNoRegister();
     if (BC.isAArch64()) {
       ArrayStart &= ~0xFFFULL;
@@ -922,7 +933,11 @@ BinaryFunction::processIndirectBranch(MCInst &Instruction, unsigned Size,
     assert(FixedEntryDispOperand != FixedEntryLoadInstr->end() &&
            "Invalid memory instruction");
     const MCExpr *FixedEntryDispExpr = FixedEntryDispOperand->getExpr();
-    const uint64_t EntryAddress = getExprValue(FixedEntryDispExpr);
+    const std::optional<uint64_t> EntryAddressOrNone =
+        tryGetExprValue(FixedEntryDispExpr);
+    if (!EntryAddressOrNone)
+      return IndirectBranchType::UNKNOWN;
+    const uint64_t EntryAddress = *EntryAddressOrNone;
     uint64_t EntrySize = BC.getJumpTableEntrySize(JumpTable::JTT_PIC);
     ErrorOr<int64_t> Value =
         BC.getSignedValueAtAddress(EntryAddress, EntrySize);
