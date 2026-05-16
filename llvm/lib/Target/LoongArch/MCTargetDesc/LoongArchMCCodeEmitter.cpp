@@ -129,7 +129,10 @@ unsigned
 LoongArchMCCodeEmitter::getImmOpValueSub1(const MCInst &MI, unsigned OpNo,
                                           SmallVectorImpl<MCFixup> &Fixups,
                                           const MCSubtargetInfo &STI) const {
-  return MI.getOperand(OpNo).getImm() - 1;
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (MO.isImm())
+    return MO.getImm() - 1;
+  return getExprOpValue(MI, MO, Fixups, STI);
 }
 
 unsigned
