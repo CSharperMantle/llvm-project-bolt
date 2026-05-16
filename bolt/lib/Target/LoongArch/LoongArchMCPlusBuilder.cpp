@@ -958,46 +958,119 @@ public:
   }
 
   ///  Matches PLT entry pattern and returns the associated GOT entry address.
-  ///  Typical PLT entry looks like the following:
-  ///
-  ///    pcaddu12i    t3, 8(0x8)
-  ///    ld.d         t3, t3, offset
-  ///    jirl         t1, t3, 0
-  ///    nop
-  ///
   uint64_t analyzePLTEntry(MCInst &Instruction, InstructionIterator Begin,
                            InstructionIterator End,
                            uint64_t BeginPC) const override {
-    auto I = Begin;
 
-    assert(I != End);
-    auto &PCADD = *I++;
-    assert(PCADD.getOpcode() == LoongArch::PCADDU12I);
-    assert(PCADD.getOperand(0).getReg() == LoongArch::R15);
+#define CHECK_(cond_)                                                          \
+  if (!(cond_)) {                                                              \
+    break;                                                                     \
+  }                                                                            \
+  do {                                                                         \
+  } while (0)
 
-    assert(I != End);
-    auto &LD = *I++;
-    assert(LD.getOpcode() == LoongArch::LD_D);
-    assert(LD.getOperand(0).getReg() == LoongArch::R15);
-    assert(LD.getOperand(1).getReg() == LoongArch::R15);
+    // lld PLT sequence
+    //
+    // Target   pcaddu12i   $t3, PCRelOffset
+    //          ld.[wd]     $t3, $t3, LdOffset
+    // Jump     jirl        $t1, $t3, 0
+    //          nop
+    //
+    // Cf.
+    //   lld/ELF/Arch/LoongArch.cpp
+    //     LoongArch::writePlt()
+    do {
+      int64_t PCRelOffset;
+      int64_t LdOffset;
+      auto I = Begin;
 
-    assert(I != End);
-    auto &JIRL = *I++;
-    (void)JIRL;
-    assert(JIRL.getOpcode() == LoongArch::JIRL);
-    assert(JIRL.getOperand(0).getReg() == LoongArch::R13);
-    assert(JIRL.getOperand(1).getReg() == LoongArch::R15);
+      CHECK_(I != End);
+      const auto &PCRelInst = *I++;
+      CHECK_(PCRelInst.getOpcode() == LoongArch::PCADDU12I);
+      CHECK_(PCRelInst.getOperand(0).isReg() &&
+             PCRelInst.getOperand(0).getReg() == LoongArch::R15);
+      CHECK_(PCRelInst.getOperand(1).isImm());
+      PCRelOffset = BeginPC + (PCRelInst.getOperand(1).getImm() << 12);
 
-    assert(I != End);
-    auto &NOP = *I++;
-    (void)NOP;
-    assert(isNoop(NOP));
+      CHECK_(I != End);
+      const auto &LdInst = *I++;
+      CHECK_(LdInst.getOpcode() == LoongArch::LD_D ||
+             LdInst.getOpcode() == LoongArch::LD_W);
+      CHECK_(LdInst.getOperand(0).isReg() &&
+             LdInst.getOperand(0).getReg() == LoongArch::R15);
+      CHECK_(LdInst.getOperand(1).isReg() &&
+             LdInst.getOperand(1).getReg() == LoongArch::R15);
+      LdOffset = LdInst.getOperand(2).getImm();
 
-    assert(I == End);
+      CHECK_(I != End);
+      const auto &JirlInst = *I++;
+      CHECK_(JirlInst.getOpcode() == LoongArch::JIRL);
+      CHECK_(JirlInst.getOperand(0).isReg() &&
+             JirlInst.getOperand(0).getReg() == LoongArch::R13);
+      CHECK_(JirlInst.getOperand(1).isReg() &&
+             JirlInst.getOperand(1).getReg() == LoongArch::R15);
 
-    auto PCADDOffset = PCADD.getOperand(1).getImm() << 12;
-    auto LDOffset = LD.getOperand(2).getImm();
-    return BeginPC + PCADDOffset + LDOffset;
+      CHECK_(I != End);
+      const auto &NopInst = *I++;
+      CHECK_(isNoop(NopInst));
+
+      CHECK_(I == End);
+      return PCRelOffset + LdOffset;
+    } while (0);
+
+    // mold PLT sequence
+    //
+    // Target   pcalau12i   $t3, PCRelOffset
+    //          ld.[wd]     $t3, $t3, LdOffset
+    // Jump     jirl        $t1, $t3, 0
+    //          break
+    //
+    // Cf.
+    //   https://github.com/rui314/mold/blob/45970e661d462fd664e7249a4bfc20ca4d0c6f39/src/arch-loongarch.cc#L187
+    do {
+      int64_t PCRelOffset;
+      int64_t LdOffset;
+      auto I = Begin;
+
+      CHECK_(I != End);
+      const auto &PCRelInst = *I++;
+      CHECK_(PCRelInst.getOpcode() == LoongArch::PCALAU12I);
+      CHECK_(PCRelInst.getOperand(0).isReg() &&
+             PCRelInst.getOperand(0).getReg() == LoongArch::R15);
+      CHECK_(PCRelInst.getOperand(1).isImm());
+      PCRelOffset =
+          (BeginPC + (PCRelInst.getOperand(1).getImm() << 12)) & ~0xfffULL;
+
+      CHECK_(I != End);
+      const auto &LdInst = *I++;
+      CHECK_(LdInst.getOpcode() == LoongArch::LD_D ||
+             LdInst.getOpcode() == LoongArch::LD_W);
+      CHECK_(LdInst.getOperand(0).isReg() &&
+             LdInst.getOperand(0).getReg() == LoongArch::R15);
+      CHECK_(LdInst.getOperand(1).isReg() &&
+             LdInst.getOperand(1).getReg() == LoongArch::R15);
+      LdOffset = LdInst.getOperand(2).getImm();
+
+      CHECK_(I != End);
+      const auto &JirlInst = *I++;
+      CHECK_(JirlInst.getOpcode() == LoongArch::JIRL);
+      CHECK_(JirlInst.getOperand(0).isReg() &&
+             JirlInst.getOperand(0).getReg() == LoongArch::R13);
+      CHECK_(JirlInst.getOperand(1).isReg() &&
+             JirlInst.getOperand(1).getReg() == LoongArch::R15);
+
+      CHECK_(I != End);
+      const auto &BreakInst = *I++;
+      CHECK_(BreakInst.getOpcode() == LoongArch::BREAK);
+
+      CHECK_(I == End);
+      return PCRelOffset + LdOffset;
+    } while (0);
+
+    // No patterns matched
+    return 0;
+
+#undef CHECK_
   }
 
   bool replaceImmWithSymbolRef(MCInst &Inst, const MCSymbol *Symbol,
