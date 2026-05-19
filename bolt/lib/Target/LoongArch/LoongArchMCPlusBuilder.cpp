@@ -99,7 +99,7 @@ static bool matchLdxW(const MCInst &Inst, MCRegister &RjOut,
   return true;
 }
 
-static bool matchLd(const MCInst &Inst, MCRegister &RjOut) {
+static bool matchLdD(const MCInst &Inst, MCRegister &RjOut) {
   unsigned Opc = Inst.getOpcode();
   if (Opc != LoongArch::LDPTR_D && Opc != LoongArch::LD_D)
     return false;
@@ -269,7 +269,7 @@ public:
     if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
       return IndirectBranchType::UNKNOWN;
 
-    // Helper: find the most recent instruction before Start (but at or after
+    // Helper: Find the most recent instruction before Start (but at or after
     // Begin) that writes Reg.  Returns Start if no definition is found.
     const auto findRegDef = [&](MCRegister Reg, InstructionIterator Start) {
       InstructionIterator I = Start;
@@ -286,12 +286,36 @@ public:
       return Start;
     };
 
-    // Resolve PC-relative base materialization for JT dispatch:
+    // Helper: For a provided `ld.d TargetReg, $sp, StackOffset`, find its
+    // matching `st.d ???, $sp, StackOffset`.
+    const auto findStackStoreForLoad = [&](InstructionIterator LoadIt,
+                                           MCRegister TargetReg)
+        -> std::optional<std::pair<InstructionIterator, MCRegister>> {
+      if (!isStackPtrLoad(*LoadIt) || LoadIt->getNumOperands() < 3 ||
+          !LoadIt->getOperand(0).isReg() ||
+          LoadIt->getOperand(0).getReg() != TargetReg ||
+          !LoadIt->getOperand(2).isImm())
+        return std::nullopt;
+
+      const int64_t StackOffset = LoadIt->getOperand(2).getImm();
+      InstructionIterator StoreIt = LoadIt;
+      while (StoreIt != Begin) {
+        --StoreIt;
+        if (!isStackPtrStore(*StoreIt) || StoreIt->getNumOperands() < 3 ||
+            !StoreIt->getOperand(2).isImm() ||
+            StoreIt->getOperand(2).getImm() != StackOffset)
+          continue;
+        return std::make_pair(StoreIt, StoreIt->getOperand(0).getReg());
+      }
+      return std::nullopt;
+    };
+
+    // Helper: Resolve simple PC-relative base materialization for JT dispatch:
     //    pcaddi    $Reg, %pcrel_20(label)
     //    # --- or ---
     //    pcalau12i $Reg, %pc_hi20(label)
     //    addi.d    $Reg, $Reg, %pc_lo12(label)
-    const auto resolvePcRelBase =
+    const auto resolveDirectPcRelBase =
         [&](InstructionIterator Def, MCRegister TargetReg,
             const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut) -> bool {
       if (matchPcaddi(*Def, TargetReg)) {
@@ -308,6 +332,26 @@ public:
           return true;
         }
       }
+      return false;
+    };
+
+    // Helper: Resolve both simple and spilled PC-relative base materialization for JT dispatch.
+    const auto resolvePcRelBase =
+        [&](InstructionIterator Def, MCRegister TargetReg,
+            const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut) -> bool {
+      if (resolveDirectPcRelBase(Def, TargetReg, DispExprOut, PCRelBaseOut))
+        return true;
+
+      if (std::optional<std::pair<InstructionIterator, MCRegister>> Store =
+              findStackStoreForLoad(Def, TargetReg)) {
+        InstructionIterator StoredRegDefIt = findRegDef(Store->second,
+                                                        Store->first);
+        if (StoredRegDefIt == Store->first)
+          return false;
+        return resolveDirectPcRelBase(StoredRegDefIt, Store->second,
+                                      DispExprOut, PCRelBaseOut);
+      }
+
       return false;
     };
 
@@ -384,6 +428,14 @@ public:
       if (AddDIt == End)
         break;
 
+      // JirlRj spilled to stack?
+      if (std::optional<std::pair<InstructionIterator, MCRegister>> Store =
+              findStackStoreForLoad(AddDIt, JirlRj)) {
+        AddDIt = findRegDef(Store->second, Store->first);
+        if (AddDIt == Store->first)
+          break;
+      }
+
       MCRegister AddOp1;
       MCRegister AddOp2;
       if (!matchAddD(*AddDIt, AddOp1, AddOp2))
@@ -413,8 +465,18 @@ public:
 
       MCRegister IndexSrc;
       auto SlliIt = findRegDef(LdxIndex, LdxWIt);
-      if (SlliIt == LdxWIt || !matchSlliD(*SlliIt, LdxIndex, 2, IndexSrc))
+      if (SlliIt == LdxWIt)
         break;
+      if (!matchSlliD(*SlliIt, LdxIndex, 2, IndexSrc)) {
+        // Can this be a spill?
+        if (!isStackPtrLoad(*SlliIt) || SlliIt->getNumOperands() < 3 ||
+            !SlliIt->getOperand(0).isReg() ||
+            SlliIt->getOperand(0).getReg() != LdxIndex ||
+            !SlliIt->getOperand(2).isImm())
+          break;
+        // Yes it is!
+        IndexSrc = LdxIndex;
+      }
 
       MemLocInstr = &*LdxWIt;
       BaseRegNum = AddBase;
@@ -449,7 +511,7 @@ public:
         break;
 
       MCRegister AddrReg;
-      if (!matchLd(*LoadIt, AddrReg))
+      if (!matchLdD(*LoadIt, AddrReg))
         break;
 
       auto AddrDefIt = findRegDef(AddrReg, LoadIt);
@@ -1556,6 +1618,22 @@ public:
   }
 
 private:
+  bool isStackPtrLoad(const MCInst &Inst) const {
+    const unsigned Opc = Inst.getOpcode();
+    if (Opc != LoongArch::LDPTR_D && Opc != LoongArch::LD_D)
+      return false;
+    return Inst.getNumOperands() >= 2 && Inst.getOperand(1).isReg() &&
+           Inst.getOperand(1).getReg() == LoongArch::R3;
+  }
+
+  bool isStackPtrStore(const MCInst &Inst) const {
+    const unsigned Opc = Inst.getOpcode();
+    if (Opc != LoongArch::STPTR_D && Opc != LoongArch::ST_D)
+      return false;
+    return Inst.getNumOperands() >= 2 && Inst.getOperand(1).isReg() &&
+           Inst.getOperand(1).getReg() == LoongArch::R3;
+  }
+
   /// Load a register from a stack slot.
   void loadReg(MCInst &Inst, MCPhysReg To, MCPhysReg From,
                int64_t Offset) const {
