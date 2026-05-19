@@ -1292,6 +1292,21 @@ public:
 
   MCPhysReg getFlagsReg() const override { return LoongArch::NoRegister; }
 
+  bool isCleanRegXOR(const MCInst &Inst) const override {
+    switch (Inst.getOpcode()) {
+    default:
+      return false;
+    case LoongArch::XOR:
+      break;
+    }
+    if (!(Inst.getNumOperands() >= 3 && Inst.getOperand(0).isReg() &&
+          Inst.getOperand(1).isReg() && Inst.getOperand(2).isReg()))
+      return false;
+    const MCRegister Rd = Inst.getOperand(0).getReg();
+    return Inst.getOperand(1).getReg() == Rd &&
+           Inst.getOperand(2).getReg() == Rd;
+  }
+
   MCPhysReg getIntArgRegister(unsigned ArgNo) const override {
     if (ArgNo < 8)
       return LoongArch::R4 + ArgNo;
