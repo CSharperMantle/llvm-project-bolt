@@ -1442,17 +1442,25 @@ public:
       const bool MinimizeCodeSize, MCContext *Ctx) override {
     (void)MinimizeCodeSize;
 
+    BlocksVectorTy Results;
+
     if (CallInst.getOpcode() != LoongArch::JIRL ||
         CallInst.getNumOperands() < 2 || !CallInst.getOperand(1).isReg() ||
-        !VtableSyms.empty() || getJumpTable(CallInst))
-      return BlocksVectorTy();
+        !VtableSyms.empty())
+      return Results;
 
     const bool IsTailCall = isTailCall(CallInst);
+    const bool IsJumpTable = getJumpTable(CallInst) != 0;
     const MCPhysReg TargetReg = CallInst.getOperand(1).getReg();
-    const MCPhysReg TmpReg =
-        TargetReg == LoongArch::R20 ? LoongArch::R21 : LoongArch::R20;
-    BlocksVectorTy Results;
+    // Since we don't really know if this is a call, we have to use ABI-reserved
+    // $r21 for a safe temp.
+    const MCPhysReg TempReg = LoongArch::R21;
+
+    // Label for the current code block.
     MCSymbol *NextTarget = nullptr;
+
+    // The join block which contains all the instructions following CallInst.
+    // MergeBlock remains null if CallInst is a tail call.
     MCSymbol *MergeBlock = nullptr;
 
     const auto appendBranchToMerge = [&](InstructionListType &NewCall) {
@@ -1462,20 +1470,27 @@ public:
     };
 
     for (unsigned I = 0; I < Targets.size(); ++I) {
+      if (IsJumpTable && !Targets[I].first)
+        return BlocksVectorTy();
+
       Results.emplace_back(NextTarget, InstructionListType());
       InstructionListType *NewCall = &Results.back().second;
 
       InstructionListType Addr =
-          Targets[I].first
-              ? materializeAddress(Targets[I].first, Ctx, TmpReg)
-              : createLoadImmediate(TmpReg, Targets[I].second);
-      NewCall->insert(NewCall->end(), Addr.begin(), Addr.end());
+          Targets[I].first ? materializeAddress(Targets[I].first, Ctx, TempReg)
+                           : createLoadImmediate(TempReg, Targets[I].second);
+      NewCall->insert(NewCall->end(), Addr.cbegin(), Addr.cend());
 
       NextTarget = Ctx->createNamedTempSymbol();
-      NewCall->push_back(MCInstBuilder(LoongArch::BNE)
-                             .addReg(TargetReg)
-                             .addReg(TmpReg)
-                             .addExpr(MCSymbolRefExpr::create(NextTarget, *Ctx)));
+      NewCall->push_back(
+          MCInstBuilder(IsJumpTable ? LoongArch::BEQ : LoongArch::BNE)
+              .addReg(TargetReg)
+              .addReg(TempReg)
+              .addExpr(MCSymbolRefExpr::create(
+                  IsJumpTable ? Targets[I].first : NextTarget, *Ctx)));
+
+      if (IsJumpTable)
+        continue;
 
       Results.emplace_back(Ctx->createNamedTempSymbol(), InstructionListType());
       NewCall = &Results.back().second;
@@ -1483,7 +1498,7 @@ public:
       if (Targets[I].first)
         createDirectCall(NewCall->back(), Targets[I].first, Ctx, IsTailCall);
       else
-        createIndirectCallInst(NewCall->back(), IsTailCall, TmpReg, 0);
+        createIndirectCallInst(NewCall->back(), IsTailCall, TempReg, 0);
 
       if (std::optional<uint32_t> Offset = getOffset(CallInst))
         setOffset(NewCall->back(), *Offset);
@@ -1496,6 +1511,7 @@ public:
       }
     }
 
+    // Cold call block.
     Results.emplace_back(NextTarget, InstructionListType());
     InstructionListType &NewCall = Results.back().second;
     for (const MCInst *Inst : MethodFetchInsns)
@@ -1503,10 +1519,67 @@ public:
         NewCall.push_back(*Inst);
     NewCall.push_back(CallInst);
 
-    if (!IsTailCall) {
+    if (!IsTailCall && !IsJumpTable) {
       appendBranchToMerge(NewCall);
+      // Record merge block
       Results.emplace_back(MergeBlock, InstructionListType());
     }
+
+    return Results;
+  }
+
+  BlocksVectorTy jumpTablePromotion(
+      const MCInst &IJmpInst,
+      const std::vector<std::pair<MCSymbol *, uint64_t>> &Targets,
+      const std::vector<MCInst *> &TargetFetchInsns,
+      MCContext *Ctx) const override {
+    assert(getJumpTable(IJmpInst) != 0);
+
+    if (IJmpInst.getNumOperands() < 2 || !IJmpInst.getOperand(1).isReg())
+      return BlocksVectorTy();
+
+    const MCPhysReg IndexReg = getJumpTableIndexReg(IJmpInst);
+    const MCPhysReg TargetReg = IJmpInst.getOperand(1).getReg();
+    // Since this is a jump rather than a call, we have to use ABI-reserved $r21
+    // for a safe temp.
+    const MCPhysReg TempReg = LoongArch::R21;
+
+    BlocksVectorTy Results;
+
+    // Label for the current code block.
+    MCSymbol *NextTarget = nullptr;
+
+    for (unsigned I = 0; I < Targets.size(); ++I) {
+      if (!Targets[I].first)
+        return BlocksVectorTy();
+
+      Results.emplace_back(NextTarget, InstructionListType());
+      InstructionListType *const CurBB = &Results.back().second;
+
+      // Load the index.
+      const InstructionListType IndexSeq =
+          IndexReg != LoongArch::NoRegister
+              ? createLoadImmediate(TempReg, Targets[I].second)
+              : materializeAddress(Targets[I].first, Ctx, TempReg);
+      CurBB->insert(CurBB->end(), IndexSeq.cbegin(), IndexSeq.cend());
+
+      // Compare current index to a specific index.
+      NextTarget = Ctx->createNamedTempSymbol();
+      CurBB->push_back(
+          MCInstBuilder(LoongArch::BEQ)
+              .addReg(IndexReg != LoongArch::NoRegister ? IndexReg : TargetReg)
+              .addReg(TempReg)
+              .addExpr(MCSymbolRefExpr::create(Targets[I].first, *Ctx)));
+    }
+
+    // Cold call block.
+    Results.emplace_back(NextTarget, InstructionListType());
+    InstructionListType &CurBB = Results.back().second;
+    for (const MCInst *Inst : TargetFetchInsns)
+      if (Inst != &IJmpInst)
+        CurBB.push_back(*Inst);
+
+    CurBB.push_back(IJmpInst);
 
     return Results;
   }
