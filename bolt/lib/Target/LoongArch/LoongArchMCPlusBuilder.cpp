@@ -1337,9 +1337,6 @@ public:
   std::optional<Relocation>
   createRelocation(const MCFixup &Fixup,
                    const MCAsmBackend &MAB) const override {
-    const MCFixupKindInfo &FKI = MAB.getFixupKindInfo(Fixup.getKind());
-
-    assert(FKI.TargetOffset == 0 && "0-bit relocation offset expected");
     const uint64_t RelOffset = Fixup.getOffset();
 
     uint32_t RelType;
@@ -1347,6 +1344,12 @@ public:
     default:
       // TODO: Need more consideration. Refs to x86 or AArch64.
       return std::nullopt;
+    case MCFixupKind(LoongArch::fixup_loongarch_b16):
+      RelType = ELF::R_LARCH_B16;
+      break;
+    case MCFixupKind(LoongArch::fixup_loongarch_b21):
+      RelType = ELF::R_LARCH_B21;
+      break;
     case MCFixupKind(LoongArch::fixup_loongarch_b26):
       RelType = ELF::R_LARCH_B26;
       break;
