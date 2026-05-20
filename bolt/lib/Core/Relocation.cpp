@@ -525,6 +525,18 @@ static void encodeValueLoongArch(uint32_t Type, uint64_t Value, uint64_t PC,
   case ELF::R_LARCH_64_PCREL:
     Value -= PC;
     break;
+  case ELF::R_LARCH_B26: {
+    Value -= PC;
+    assert(isInt<28>(Value) &&
+           "only PC +/- 128MB is allowed for direct branch/call");
+    assert(Value % 4 == 0 && "branch/call target must be 4-byte aligned");
+    const uint64_t Imm = Value >> 2;
+    const uint64_t Imm15_0 = (Imm & 0xffff) << 10;
+    const uint64_t Imm25_16 = (Imm >> 16) & 0x3ff;
+    const uint32_t Instr = support::endian::read32le(Data.data());
+    Value = (Instr & 0xfc000000) | Imm15_0 | Imm25_16;
+    break;
+  }
   }
   writeEncodedValue(Value, Data);
 }
