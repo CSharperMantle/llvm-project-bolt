@@ -1951,8 +1951,9 @@ void RewriteInstance::disassemblePLTSectionLoongArch(BinarySection &Section) {
     }
   };
 
-  // Skip the first special entry.
-  uint64_t InstrOffset = 32;
+  // Skip the first special .plt entry. Other PLT sections only contain regular
+  // entries.
+  uint64_t InstrOffset = Section.getName() == ".plt" ? 32 : 0;
 
   // Locate new plt entry
   while (InstrOffset < SectionSize) {

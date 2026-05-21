@@ -551,7 +551,8 @@ private:
   const PLTSectionInfo RISCV_PLTSections[2] = {{".plt"}, {nullptr}};
 
   /// LoongArch PLT sections.
-  const PLTSectionInfo LoongArch_PLTSections[2] = {{".plt"}, {nullptr}};
+  const PLTSectionInfo LoongArch_PLTSections[3] = {
+      {".plt"}, {".plt.got"}, {nullptr}};
 
   /// Return PLT information for a section with \p SectionName or nullptr
   /// if the section is not PLT.
