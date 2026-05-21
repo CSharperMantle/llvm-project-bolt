@@ -14,6 +14,7 @@
 #include "bolt/Core/BinaryContext.h"
 #include "bolt/Utils/CommandLineOpts.h"
 #include "bolt/Utils/Utils.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Support/CommandLine.h"
 
@@ -191,18 +192,25 @@ void BinarySection::flushPendingRelocations(raw_pwrite_stream &OS,
       ++SkippedPendingRelocations;
       continue;
     }
-    Value = Relocation::encodeValue(Reloc.Type, Value,
-                                    SectionAddress + Reloc.Offset);
 
-    OS.pwrite(reinterpret_cast<const char *>(&Value),
-              Relocation::getSizeForType(Reloc.Type),
-              SectionFileOffset + Reloc.Offset);
+    const size_t RelocationSize = Relocation::getSizeForType(Reloc.Type);
+    {
+      const StringRef SectionContents = getContents();
+      assert(Reloc.Offset + RelocationSize <= SectionContents.size() &&
+             "cannot patch relocation outside original section contents");
+      SmallVector<uint8_t> EncodedValue(
+          SectionContents.bytes_begin() + Reloc.Offset,
+          SectionContents.bytes_begin() + Reloc.Offset + RelocationSize);
+      Relocation::encodeValue(Reloc.Type, Value, SectionAddress + Reloc.Offset,
+                              EncodedValue);
+      OS.pwrite(reinterpret_cast<const char *>(EncodedValue.data()),
+                RelocationSize, SectionFileOffset + Reloc.Offset);
+    }
 
     LLVM_DEBUG(
         dbgs() << "BOLT-DEBUG: writing value 0x" << Twine::utohexstr(Value)
-               << " of size " << Relocation::getSizeForType(Reloc.Type)
-               << " at section offset 0x" << Twine::utohexstr(Reloc.Offset)
-               << " address 0x"
+               << " of size " << RelocationSize << " at section offset 0x"
+               << Twine::utohexstr(Reloc.Offset) << " address 0x"
                << Twine::utohexstr(SectionAddress + Reloc.Offset)
                << " file offset 0x"
                << Twine::utohexstr(SectionFileOffset + Reloc.Offset) << '\n';);

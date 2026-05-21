@@ -11,12 +11,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "bolt/Core/Relocation.h"
+#include "llvm/IR/Value.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Endian.h"
 
 using namespace llvm;
 using namespace bolt;
@@ -398,7 +400,27 @@ static bool skipRelocationTypeLoongArch(uint32_t Type) {
   }
 }
 
-static uint64_t encodeValueX86(uint32_t Type, uint64_t Value, uint64_t PC) {
+static void writeEncodedValue(uint64_t Value, MutableArrayRef<uint8_t> Data) {
+  switch (Data.size()) {
+  default:
+    llvm_unreachable("unsupported relocation size");
+  case 1:
+    Data[0] = static_cast<uint8_t>(Value & 0xff);
+    break;
+  case 2:
+    support::endian::write16le(Data.data(), static_cast<uint16_t>(Value));
+    break;
+  case 4:
+    support::endian::write32le(Data.data(), static_cast<uint32_t>(Value));
+    break;
+  case 8:
+    support::endian::write64le(Data.data(), Value);
+    break;
+  }
+}
+
+static void encodeValueX86(uint32_t Type, uint64_t Value, uint64_t PC,
+                           MutableArrayRef<uint8_t> Data) {
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
@@ -409,7 +431,7 @@ static uint64_t encodeValueX86(uint32_t Type, uint64_t Value, uint64_t PC) {
     Value -= PC;
     break;
   }
-  return Value;
+  writeEncodedValue(Value, Data);
 }
 
 static bool canEncodeValueAArch64(uint32_t Type, uint64_t Value, uint64_t PC) {
@@ -422,7 +444,8 @@ static bool canEncodeValueAArch64(uint32_t Type, uint64_t Value, uint64_t PC) {
   }
 }
 
-static uint64_t encodeValueAArch64(uint32_t Type, uint64_t Value, uint64_t PC) {
+static void encodeValueAArch64(uint32_t Type, uint64_t Value, uint64_t PC,
+                               MutableArrayRef<uint8_t> Data) {
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
@@ -451,10 +474,10 @@ static uint64_t encodeValueAArch64(uint32_t Type, uint64_t Value, uint64_t PC) {
     Value = ((Value >> 2) & 0x3ffffff) | 0x14000000ULL;
     break;
   }
-  return Value;
+  writeEncodedValue(Value, Data);
 }
 
-static uint64_t canEncodeValueRISCV(uint32_t Type, uint64_t Value,
+static bool canEncodeValueRISCV(uint32_t Type, uint64_t Value,
                                     uint64_t PC) {
   switch (Type) {
   default:
@@ -464,21 +487,24 @@ static uint64_t canEncodeValueRISCV(uint32_t Type, uint64_t Value,
   }
 }
 
-static uint64_t encodeValueRISCV(uint32_t Type, uint64_t Value, uint64_t PC) {
+static void encodeValueRISCV(uint32_t Type, uint64_t Value, uint64_t PC,
+                             MutableArrayRef<uint8_t> Data) {
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
   case ELF::R_RISCV_64:
     break;
   }
-  return Value;
+  writeEncodedValue(Value, Data);
 }
 
-static uint64_t canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
-                                        uint64_t PC) {
+static bool canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
+                                    uint64_t PC) {
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
+  case ELF::R_LARCH_B26:
+    return isInt<28>(Value - PC) && ((Value - PC) % 4 == 0);
   case ELF::R_LARCH_32:
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_32_PCREL:
@@ -487,8 +513,8 @@ static uint64_t canEncodeValueLoongArch(uint32_t Type, uint64_t Value,
   }
 }
 
-static uint64_t encodeValueLoongArch(uint32_t Type, uint64_t Value,
-                                     uint64_t PC) {
+static void encodeValueLoongArch(uint32_t Type, uint64_t Value, uint64_t PC,
+                                 MutableArrayRef<uint8_t> Data) {
   switch (Type) {
   default:
     llvm_unreachable("unsupported relocation");
@@ -500,7 +526,7 @@ static uint64_t encodeValueLoongArch(uint32_t Type, uint64_t Value,
     Value -= PC;
     break;
   }
-  return Value;
+  writeEncodedValue(Value, Data);
 }
 
 static uint64_t extractValueX86(uint32_t Type, uint64_t Contents, uint64_t PC) {
@@ -1169,18 +1195,19 @@ bool Relocation::skipRelocationType(uint32_t Type) {
   }
 }
 
-uint64_t Relocation::encodeValue(uint32_t Type, uint64_t Value, uint64_t PC) {
+void Relocation::encodeValue(uint32_t Type, uint64_t Value, uint64_t PC,
+                             MutableArrayRef<uint8_t> Data) {
   switch (Arch) {
   default:
     llvm_unreachable("Unsupported architecture");
   case Triple::aarch64:
-    return encodeValueAArch64(Type, Value, PC);
+    return encodeValueAArch64(Type, Value, PC, Data);
   case Triple::riscv64:
-    return encodeValueRISCV(Type, Value, PC);
+    return encodeValueRISCV(Type, Value, PC, Data);
   case Triple::loongarch64:
-    return encodeValueLoongArch(Type, Value, PC);
+    return encodeValueLoongArch(Type, Value, PC, Data);
   case Triple::x86_64:
-    return encodeValueX86(Type, Value, PC);
+    return encodeValueX86(Type, Value, PC, Data);
   }
 }
 
