@@ -56,6 +56,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/Regex.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
@@ -372,6 +373,12 @@ MCPlusBuilder *createMCPlusBuilder(const Triple::ArchType Arch,
 using ELF64LEPhdrTy = ELF64LEFile::Elf_Phdr;
 
 namespace {
+
+// See <https://sourceware.org/binutils/docs-2.42/as/Symbol-Names.html>.
+bool isGASLocalLabel(StringRef Name) {
+  static Regex GASLocalLabel("^\\.?L[0-9]+[\x01\x02][0-9]*(/[0-9]+)?$");
+  return GASLocalLabel.match(Name);
+}
 
 bool refersToReorderedSection(ErrorOr<BinarySection &> Section) {
   return llvm::any_of(opts::ReorderData, [&](const std::string &SectionName) {
@@ -1139,6 +1146,14 @@ void RewriteInstance::discoverFileObjects() {
              "unexpected function inside non-code section");
       LLVM_DEBUG(dbgs() << "BOLT-DEBUG: rejecting as symbol is not in code or "
                            "is in nobits section\n");
+      registerName(SymbolSize);
+      continue;
+    }
+
+    // Do not mistake GAS local symbols for the start of an assembly function.
+    if (!(SymbolFlags & SymbolRef::SF_Global) && isGASLocalLabel(SymName)) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: rejecting GAS local label as a "
+                           "function\n");
       registerName(SymbolSize);
       continue;
     }
@@ -2129,8 +2144,15 @@ void RewriteInstance::adjustFunctionBoundaries(
       // enabled because every branch needs a relocation and corresponding
       // symbol. We don't want to add such symbols as entry points.
       const auto PrivateLabelPrefix = BC->AsmInfo->getPrivateLabelPrefix();
+      const auto SymbolName = cantFail(Symbol.getName());
       if (!PrivateLabelPrefix.empty() &&
-          cantFail(Symbol.getName()).starts_with(PrivateLabelPrefix)) {
+          SymbolName.starts_with(PrivateLabelPrefix)) {
+        ++NextSymRefI;
+        continue;
+      }
+
+      // Skip GAS local labels.
+      if (isGASLocalLabel(SymbolName)) {
         ++NextSymRefI;
         continue;
       }
