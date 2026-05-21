@@ -1448,16 +1448,22 @@ public:
     BlocksVectorTy Results;
 
     if (CallInst.getOpcode() != LoongArch::JIRL ||
-        CallInst.getNumOperands() < 2 || !CallInst.getOperand(1).isReg() ||
-        !VtableSyms.empty())
+        CallInst.getNumOperands() < 2 || !CallInst.getOperand(0).isReg() ||
+        !CallInst.getOperand(1).isReg() || !VtableSyms.empty())
       return Results;
 
     const bool IsTailCall = isTailCall(CallInst);
     const bool IsJumpTable = getJumpTable(CallInst) != 0;
+    const bool IsKnownCall =
+        !IsJumpTable &&
+        (IsTailCall || CallInst.getOperand(0).getReg() == LoongArch::R1);
+
     const MCPhysReg TargetReg = CallInst.getOperand(1).getReg();
-    // Since we don't really know if this is a call, we have to use ABI-reserved
-    // $r21 for a safe temp.
-    const MCPhysReg TempReg = LoongArch::R21;
+    // Use $t8 only if we're absolutely sure it's a call. Otherwise, we have to
+    // use ABI-reserved $r21 for a safe temp.
+    const MCPhysReg TempReg = IsKnownCall && CompareReg != LoongArch::R20
+                                  ? LoongArch::R20
+                                  : LoongArch::R21;
 
     // Label for the current code block.
     MCSymbol *NextTarget = nullptr;
