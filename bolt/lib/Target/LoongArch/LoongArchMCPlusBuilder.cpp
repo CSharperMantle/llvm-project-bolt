@@ -969,7 +969,9 @@ public:
     case LoongArch::BL:
       OpNum = 0;
       return true;
+    case LoongArch::LU12I_W:
     case LoongArch::PCADDI:
+    case LoongArch::PCADDU18I:
       OpNum = 1;
       return true;
     case LoongArch::BEQZ:
@@ -991,18 +993,28 @@ public:
   }
 
   const MCSymbol *getTargetSymbol(const MCExpr *Expr) const override {
-    auto *LoongArchExpr = dyn_cast<LoongArchMCExpr>(Expr);
-    if (LoongArchExpr && LoongArchExpr->getSubExpr())
-      return getTargetSymbol(LoongArchExpr->getSubExpr());
+    if (auto *const SpecifierExpr = dyn_cast<MCSpecifierExpr>(Expr))
+      if (SpecifierExpr->getSubExpr())
+        return getTargetSymbol(SpecifierExpr->getSubExpr());
 
-    auto *BinExpr = dyn_cast<MCBinaryExpr>(Expr);
+    auto *const BinExpr = dyn_cast<MCBinaryExpr>(Expr);
     if (BinExpr)
       return getTargetSymbol(BinExpr->getLHS());
 
-    auto *SymExpr = dyn_cast<MCSymbolRefExpr>(Expr);
-    if (SymExpr && (SymExpr->getKind() == LoongArchMCExpr::VK_None ||
-                    SymExpr->getKind() == ELF::R_LARCH_PCREL20_S2))
-      return &SymExpr->getSymbol();
+    auto *const SymExpr = dyn_cast<MCSymbolRefExpr>(Expr);
+    if (SymExpr) {
+      switch (SymExpr->getSpecifier()) {
+      default:
+        return nullptr;
+      case LoongArchMCExpr::VK_None:
+      case ELF::R_LARCH_B16:
+      case ELF::R_LARCH_B21:
+      case ELF::R_LARCH_B26:
+      case ELF::R_LARCH_CALL36:
+      case ELF::R_LARCH_PCREL20_S2:
+        return &SymExpr->getSymbol();
+      }
+    }
 
     return nullptr;
   }
