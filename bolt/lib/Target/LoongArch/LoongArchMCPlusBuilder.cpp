@@ -1001,22 +1001,7 @@ public:
     if (BinExpr)
       return getTargetSymbol(BinExpr->getLHS());
 
-    auto *const SymExpr = dyn_cast<MCSymbolRefExpr>(Expr);
-    if (SymExpr) {
-      switch (SymExpr->getSpecifier()) {
-      default:
-        return nullptr;
-      case LoongArchMCExpr::VK_None:
-      case ELF::R_LARCH_B16:
-      case ELF::R_LARCH_B21:
-      case ELF::R_LARCH_B26:
-      case ELF::R_LARCH_CALL36:
-      case ELF::R_LARCH_PCREL20_S2:
-        return &SymExpr->getSymbol();
-      }
-    }
-
-    return nullptr;
+    return MCPlusBuilder::getTargetSymbol(Expr);
   }
 
   const MCSymbol *getTargetSymbol(const MCInst &Inst,
@@ -1834,16 +1819,9 @@ private:
 
   const MCExpr *tryGetPCRel20SubExpr(const MCExpr *Expr,
                                      MCContext *Ctx = nullptr) const {
-    if (const auto *E = dyn_cast<LoongArchMCExpr>(Expr)) {
+    if (const auto *E = dyn_cast<MCSpecifierExpr>(Expr)) {
       if (E->getSpecifier() == ELF::R_LARCH_PCREL20_S2)
         return E->getSubExpr();
-      return nullptr;
-    }
-    if (const auto *E = dyn_cast<MCSymbolRefExpr>(Expr)) {
-      if (E->getSpecifier() == ELF::R_LARCH_PCREL20_S2) {
-        assert(Ctx && "MCContext required to strip relocation specifier");
-        return MCSymbolRefExpr::create(&E->getSymbol(), *Ctx);
-      }
       return nullptr;
     }
     if (const auto *E = dyn_cast<MCBinaryExpr>(Expr)) {
