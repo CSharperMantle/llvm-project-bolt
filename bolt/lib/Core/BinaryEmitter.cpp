@@ -388,7 +388,21 @@ bool BinaryEmitter::emitFunction(BinaryFunction &Function,
       // Only write CIE CFI insns that LLVM will not already emit
       const std::vector<MCCFIInstruction> &FrameInstrs =
           MAI->getInitialFrameState();
-      if (!llvm::is_contained(FrameInstrs, CFIInstr))
+      const bool IsLiterallyContained =
+          llvm::is_contained(FrameInstrs, CFIInstr);
+      // Find non-literal synonyms.
+      bool HasSynonyms = false;
+      for (const auto &InitialInst : FrameInstrs) {
+        if (CFIInstr.getOperation() == MCCFIInstruction::OpDefCfaRegister &&
+            CFIInstr.getRegister() == InitialInst.getRegister()) {
+          if (InitialInst.getOperation() == MCCFIInstruction::OpDefCfa &&
+              InitialInst.getOffset() == 0) {
+            HasSynonyms = true;
+            break;
+          }
+        }
+      }
+      if (!(IsLiterallyContained || HasSynonyms))
         emitCFIInstruction(CFIInstr);
     }
   }
