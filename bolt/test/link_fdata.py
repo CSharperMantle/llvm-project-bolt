@@ -49,6 +49,15 @@ preagg_pat = re.compile(r"(?P<type>[TRSBFfr]) (?P<offsets_count>.*)")
 # <is symbol?> <closest elf symbol or DSO name> <relative address> <count>
 nolbr_pat = re.compile(r"([01].*) (?P<count>\d+)")
 
+# Memory profile:
+# <location kind> <closest elf symbol or DSO name> <relative PC address>
+# <location kind> <closest elf symbol or DSO name> <relative memory address>
+# <count>
+#
+# Cf. DataReader::parseLocation
+#   <location kind>: 3 not a symbol, 4 global symbol and 5 local symbol.
+mem_pat = re.compile(r"([345].*) (?P<count>\d+)")
+
 # Replacement symbol: #symname#
 replace_pat = re.compile(r"#(?P<symname>[^#]+)#")
 
@@ -65,6 +74,7 @@ with open(args.input, "r") as f:
         fdata_match = fdata_pat.match(profile_line)
         preagg_match = preagg_pat.match(profile_line)
         nolbr_match = nolbr_pat.match(profile_line)
+        mem_match = mem_pat.match(profile_line)
         if fdata_match:
             src_dst, mispred, execnt = fdata_match.groups()
             # Split by whitespaces not preceded by a backslash (negative lookbehind)
@@ -85,6 +95,16 @@ with open(args.input, "r") as f:
                 len(chunks) == 3
             ), f"ERROR: wrong format/whitespaces must be escaped:\n{line}"
             exprs.append(("NOLBR", (*chunks, count)))
+        elif mem_match:
+            loc, count = mem_match.groups()
+            # Split by whitespaces not preceded by a backslash (negative lookbehind)
+            chunks = re.split(r"(?<!\\) +", loc)
+            # Check if the number of records separated by non-escaped whitespace
+            # exactly matches the format.
+            assert (
+                len(chunks) == 6
+            ), f"ERROR: wrong format/whitespaces must be escaped:\n{line}"
+            exprs.append(("MEM", (*chunks, count)))
         elif preagg_match:
             exprs.append(("PREAGG", preagg_match.groups()))
         else:
@@ -157,6 +177,14 @@ with open(args.output, "w", newline="\n") as f:
         elif etype == "NOLBR":
             issym, anchor, offsym, count = expr
             print(evaluate_symbol(issym, anchor, offsym), count, file=f)
+        elif etype == "MEM":
+            issym1, anchor1, offsym1, issym2, anchor2, offsym2, count = expr
+            print(
+                evaluate_symbol(issym1, anchor1, offsym1),
+                evaluate_symbol(issym2, anchor2, offsym2),
+                count,
+                file=f,
+            )
         elif etype == "PREAGG":
             # Replace all symbols enclosed in ##
             print(expr[0], re.sub(replace_pat, replace_symbol, expr[1]), file=f)
