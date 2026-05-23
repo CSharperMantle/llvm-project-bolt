@@ -269,43 +269,34 @@ public:
     if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
       return IndirectBranchType::UNKNOWN;
 
-    // Helper: Find the most recent instruction before Start (but at or after
-    // Begin) that writes Reg.  Returns Start if no definition is found.
-    const auto findRegDef = [&](MCRegister Reg, InstructionIterator Start) {
-      InstructionIterator I = Start;
-      while (I != Begin) {
-        --I;
-        MCInst &Cur = *I;
-        if (&Cur == &Instruction || isPseudo(Cur) || isCFI(Cur))
-          continue;
-        BitVector WRegs(RegInfo->getNumRegs(), false);
-        getWrittenRegs(Cur, WRegs);
-        if (WRegs[Reg])
-          return I;
-      }
-      return Start;
-    };
+    const DenseMap<const MCInst *, SmallVector<MCInst *>> UDChain =
+        computeLocalUDChain(&Instruction, Begin, End);
 
     // Helper: For a provided `ld.d TargetReg, $sp, StackOffset`, find its
     // matching `st.d ???, $sp, StackOffset`.
-    const auto findStackStoreForLoad = [&](InstructionIterator LoadIt,
+    const auto findStackStoreForLoad = [&](const MCInst *Load,
                                            MCRegister TargetReg)
-        -> std::optional<std::pair<InstructionIterator, MCRegister>> {
-      if (!isStackPtrLoad(*LoadIt) || LoadIt->getNumOperands() < 3 ||
-          !LoadIt->getOperand(0).isReg() ||
-          LoadIt->getOperand(0).getReg() != TargetReg ||
-          !LoadIt->getOperand(2).isImm())
+        -> std::optional<std::pair<MCInst *, MCRegister>> {
+      if (!Load || !isStackPtrLoad(*Load) || Load->getNumOperands() < 3 ||
+          !Load->getOperand(0).isReg() ||
+          Load->getOperand(0).getReg() != TargetReg ||
+          !Load->getOperand(2).isImm())
         return std::nullopt;
 
-      const int64_t StackOffset = LoadIt->getOperand(2).getImm();
-      InstructionIterator StoreIt = LoadIt;
+      InstructionIterator StoreIt = Begin;
+      while (StoreIt != End && &*StoreIt != Load)
+        ++StoreIt;
+      if (StoreIt == End)
+        return std::nullopt;
+
+      const int64_t StackOffset = Load->getOperand(2).getImm();
       while (StoreIt != Begin) {
         --StoreIt;
         if (!isStackPtrStore(*StoreIt) || StoreIt->getNumOperands() < 3 ||
             !StoreIt->getOperand(2).isImm() ||
             StoreIt->getOperand(2).getImm() != StackOffset)
           continue;
-        return std::make_pair(StoreIt, StoreIt->getOperand(0).getReg());
+        return std::make_pair(&*StoreIt, StoreIt->getOperand(0).getReg());
       }
       return std::nullopt;
     };
@@ -315,41 +306,62 @@ public:
     //    # --- or ---
     //    pcalau12i $Reg, %pc_hi20(label)
     //    addi.d    $Reg, $Reg, %pc_lo12(label)
-    const auto resolveDirectPcRelBase =
-        [&](InstructionIterator Def, MCRegister TargetReg,
-            const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut) -> bool {
+    const auto resolveDirectPcRelBase = [&](MCInst *Def, MCRegister TargetReg,
+                                            const MCExpr *&DispExprOut,
+                                            MCInst *&PCRelBaseOut) -> bool {
+      if (!Def)
+        return false;
       if (matchPcaddi(*Def, TargetReg)) {
-        PCRelBaseOut = &*Def;
+        PCRelBaseOut = Def;
         DispExprOut = Def->getOperand(1).getExpr();
         return true;
       }
       MCRegister AddiSrc;
       if (matchAddiD(*Def, TargetReg, AddiSrc)) {
-        InstructionIterator PcalauIt = findRegDef(AddiSrc, Def);
-        if (PcalauIt != Def && matchPcalau12i(*PcalauIt, AddiSrc)) {
-          PCRelBaseOut = &*PcalauIt;
-          DispExprOut = PcalauIt->getOperand(1).getExpr();
+        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc, *Def);
+        if (Pcalau && matchPcalau12i(*Pcalau, AddiSrc)) {
+          PCRelBaseOut = Pcalau;
+          DispExprOut = Pcalau->getOperand(1).getExpr();
           return true;
         }
       }
       return false;
     };
 
-    // Helper: Resolve both simple and spilled PC-relative base materialization for JT dispatch.
-    const auto resolvePcRelBase =
-        [&](InstructionIterator Def, MCRegister TargetReg,
-            const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut) -> bool {
+    // Helper: Resolve both simple and spilled PC-relative base materialization
+    // for JT dispatch.
+    const auto resolvePcRelBase = [&](MCInst *Def, MCRegister TargetReg,
+                                      const MCExpr *&DispExprOut,
+                                      MCInst *&PCRelBaseOut) -> bool {
       if (resolveDirectPcRelBase(Def, TargetReg, DispExprOut, PCRelBaseOut))
         return true;
 
-      if (std::optional<std::pair<InstructionIterator, MCRegister>> Store =
-              findStackStoreForLoad(Def, TargetReg)) {
-        InstructionIterator StoredRegDefIt = findRegDef(Store->second,
-                                                        Store->first);
-        if (StoredRegDefIt == Store->first)
-          return false;
-        return resolveDirectPcRelBase(StoredRegDefIt, Store->second,
-                                      DispExprOut, PCRelBaseOut);
+      std::optional<std::pair<MCInst *, MCRegister>> Store =
+          findStackStoreForLoad(Def, TargetReg);
+      if (!Store)
+        return false;
+
+      MCInst *StoredRegDef = findRegDef(UDChain, Store->second, *Store->first);
+      return StoredRegDef && resolveDirectPcRelBase(StoredRegDef, Store->second,
+                                                    DispExprOut, PCRelBaseOut);
+    };
+
+    const auto resolveSlliIndex = [&](const MCInst &Use, MCRegister ScaledReg,
+                                      unsigned Shift, MCRegister &IndexReg,
+                                      bool AllowSpill = false) -> bool {
+      MCInst *Def = findRegDef(UDChain, ScaledReg, Use);
+      if (!Def)
+        return false;
+
+      if (matchSlliD(*Def, ScaledReg, Shift, IndexReg))
+        return true;
+
+      if (AllowSpill && isStackPtrLoad(*Def) && Def->getNumOperands() >= 3 &&
+          Def->getOperand(0).isReg() &&
+          Def->getOperand(0).getReg() == ScaledReg &&
+          Def->getOperand(2).isImm()) {
+        IndexReg = ScaledReg;
+        return true;
       }
 
       return false;
@@ -371,37 +383,32 @@ public:
     //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
     //     case ISD::BR_JT:
     do {
-      auto LdxDIt = findRegDef(JirlRj, End);
-      if (LdxDIt == End)
+      MCInst *const LdxD = findRegDef(UDChain, JirlRj, Instruction);
+      if (!LdxD)
         // Can't even find the instruction defining JirlRj.
         break;
 
       MCRegister LdxBase;
       MCRegister LdxIndex;
-      if (!matchLdxD(*LdxDIt, LdxBase, LdxIndex))
+      if (!matchLdxD(*LdxD, LdxBase, LdxIndex))
         // Insn defining JirlRj is not an ldx.d.
         break;
 
-      auto BaseDefIt = findRegDef(LdxBase, LdxDIt);
-      if (BaseDefIt == LdxDIt)
+      MCInst *const BaseDef = findRegDef(UDChain, LdxBase, *LdxD);
+      if (!BaseDef)
         // Can't even find the defn site of LdxBase.
         break;
 
-      if (!resolvePcRelBase(BaseDefIt, LdxBase, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, LdxBase, DispExpr, PCRelBaseOut))
         // Can't resolve LdxBase loading sequence.
         break;
 
-      auto SlliIt = findRegDef(LdxIndex, LdxDIt);
-      if (SlliIt == LdxDIt)
-        // Can't even find the defn site of LdxIndex.
-        break;
-
       MCRegister IndexSrc;
-      if (!matchSlliD(*SlliIt, LdxIndex, 3, IndexSrc))
+      if (!resolveSlliIndex(*LdxD, LdxIndex, 3, IndexSrc))
         // Can't resolve IndexSrc.
         break;
 
-      MemLocInstr = &*LdxDIt;
+      MemLocInstr = LdxD;
       BaseRegNum = LdxBase;
       IndexRegNum = IndexSrc;
       return IndirectBranchType::POSSIBLE_JUMP_TABLE;
@@ -424,61 +431,45 @@ public:
     //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
     //     "// For PIC, the sequence is:"
     do {
-      auto AddDIt = findRegDef(JirlRj, End);
-      if (AddDIt == End)
+      MCInst *AddD = findRegDef(UDChain, JirlRj, Instruction);
+      if (!AddD)
         break;
 
       // JirlRj spilled to stack?
-      if (std::optional<std::pair<InstructionIterator, MCRegister>> Store =
-              findStackStoreForLoad(AddDIt, JirlRj)) {
-        AddDIt = findRegDef(Store->second, Store->first);
-        if (AddDIt == Store->first)
+      if (std::optional<std::pair<MCInst *, MCRegister>> Store =
+              findStackStoreForLoad(AddD, JirlRj)) {
+        AddD = findRegDef(UDChain, Store->second, *Store->first);
+        if (!AddD)
           break;
       }
 
-      MCRegister AddOp1;
-      MCRegister AddOp2;
-      if (!matchAddD(*AddDIt, AddOp1, AddOp2))
-        break;
-
-      // One ADD operand is defined by LDX_W (loaded entry), the other by
-      // base materialization (table address).  Try both orderings.
+      MCRegister AddBase;
       MCRegister LdxBase;
       MCRegister LdxIndex;
-      auto LdxWIt = findRegDef(AddOp1, AddDIt);
-      if (!matchLdxW(*LdxWIt, LdxBase, LdxIndex)) {
-        LdxWIt = findRegDef(AddOp2, AddDIt);
-        if (!matchLdxW(*LdxWIt, LdxBase, LdxIndex))
-          // Neither worked.
+      MCRegister AddOp1;
+      MCRegister AddOp2;
+      if (!matchAddD(*AddD, AddOp1, AddOp2))
+        break;
+      MCInst *LdxW = findRegDef(UDChain, AddOp1, *AddD);
+      if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex)) {
+        LdxW = findRegDef(UDChain, AddOp2, *AddD);
+        if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex))
           break;
       }
+      AddBase = (AddOp1 == LdxW->getOperand(0).getReg()) ? AddOp2 : AddOp1;
 
-      MCRegister LdxRd = LdxWIt->getOperand(0).getReg();
-      MCRegister AddBase = (AddOp1 == LdxRd) ? AddOp2 : AddOp1;
-
-      auto BaseDefIt = findRegDef(AddBase, AddDIt);
-      if (BaseDefIt == AddDIt)
+      MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      if (!BaseDef)
         break;
 
-      if (!resolvePcRelBase(BaseDefIt, AddBase, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, AddBase, DispExpr, PCRelBaseOut))
         break;
 
       MCRegister IndexSrc;
-      auto SlliIt = findRegDef(LdxIndex, LdxWIt);
-      if (SlliIt == LdxWIt)
+      if (!resolveSlliIndex(*LdxW, LdxIndex, 2, IndexSrc, /*AllowSpill=*/true))
         break;
-      if (!matchSlliD(*SlliIt, LdxIndex, 2, IndexSrc)) {
-        // Can this be a spill?
-        if (!isStackPtrLoad(*SlliIt) || SlliIt->getNumOperands() < 3 ||
-            !SlliIt->getOperand(0).isReg() ||
-            SlliIt->getOperand(0).getReg() != LdxIndex ||
-            !SlliIt->getOperand(2).isImm())
-          break;
-        // Yes it is!
-        IndexSrc = LdxIndex;
-      }
 
-      MemLocInstr = &*LdxWIt;
+      MemLocInstr = LdxW;
       BaseRegNum = AddBase;
       IndexRegNum = IndexSrc;
       return IndirectBranchType::POSSIBLE_PIC_JUMP_TABLE;
@@ -506,56 +497,49 @@ public:
     //     gen_tablejump
     //     define_expand "tablejump"
     do {
-      auto LoadIt = findRegDef(JirlRj, End);
-      if (LoadIt == End)
+      MCInst *const Load = findRegDef(UDChain, JirlRj, Instruction);
+      if (!Load)
         break;
 
       MCRegister AddrReg;
-      if (!matchLdD(*LoadIt, AddrReg))
+      if (!matchLdD(*Load, AddrReg))
         break;
 
-      auto AddrDefIt = findRegDef(AddrReg, LoadIt);
-      if (AddrDefIt == LoadIt)
+      MCInst *const AddrDef = findRegDef(UDChain, AddrReg, *Load);
+      if (!AddrDef)
         break;
 
       const unsigned ExpectedShift = Log2_32(PtrSize);
 
       MCRegister BaseReg;
       MCRegister IdxReg;
-      if (!matchAlslD(*AddrDefIt, ExpectedShift, IdxReg, BaseReg)) {
+      if (!matchAlslD(*AddrDef, ExpectedShift, IdxReg, BaseReg)) {
         MCRegister AddOp1, AddOp2;
-        if (!matchAddD(*AddrDefIt, AddOp1, AddOp2))
+        if (!matchAddD(*AddrDef, AddOp1, AddOp2))
           break;
 
-        // slli.d + add.d
-        auto Def1 = findRegDef(AddOp1, AddrDefIt);
-        auto Def2 = findRegDef(AddOp2, AddrDefIt);
         MCRegister Tmp;
+        MCInst *const Def1 = findRegDef(UDChain, AddOp1, *AddrDef);
+        MCInst *const Def2 = findRegDef(UDChain, AddOp2, *AddrDef);
         const bool Op1IsSlli =
-            Def1 != AddrDefIt && matchSlliD(*Def1, AddOp1, ExpectedShift, Tmp);
+            Def1 && matchSlliD(*Def1, AddOp1, ExpectedShift, Tmp);
         const bool Op2IsSlli =
-            Def2 != AddrDefIt && matchSlliD(*Def2, AddOp2, ExpectedShift, Tmp);
-
-        if (Op1IsSlli && !Op2IsSlli) {
-          IdxReg = Tmp;
-          BaseReg = AddOp2;
-        } else if (!Op1IsSlli && Op2IsSlli) {
-          IdxReg = Tmp;
-          BaseReg = AddOp1;
-        } else {
-          // No slli.d found.
+            Def2 && matchSlliD(*Def2, AddOp2, ExpectedShift, Tmp);
+        if (Op1IsSlli == Op2IsSlli)
           break;
-        }
+
+        IdxReg = Tmp;
+        BaseReg = Op1IsSlli ? AddOp2 : AddOp1;
       }
 
-      auto BaseDefIt = findRegDef(BaseReg, AddrDefIt);
-      if (BaseDefIt == AddrDefIt)
+      MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      if (!BaseDef)
         break;
 
-      if (!resolvePcRelBase(BaseDefIt, BaseReg, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, BaseReg, DispExpr, PCRelBaseOut))
         break;
 
-      MemLocInstr = &*LoadIt;
+      MemLocInstr = Load;
       BaseRegNum = BaseReg;
       IndexRegNum = IdxReg;
       return IndirectBranchType::POSSIBLE_JUMP_TABLE;
@@ -577,8 +561,8 @@ public:
       if (JirlRd != LoongArch::R0)
         break;
 
-      InstructionIterator Def = findRegDef(JirlRj, End);
-      if (Def == End)
+      MCInst *const Def = findRegDef(UDChain, JirlRj, Instruction);
+      if (!Def)
         break;
 
       if (matchPcaddi(*Def, JirlRj) || matchPcaddu18i(*Def, JirlRj))
@@ -588,8 +572,8 @@ public:
       if (!matchAddiD(*Def, JirlRj, AddiSrc))
         break;
 
-      InstructionIterator BaseDef = findRegDef(AddiSrc, Def);
-      if (BaseDef == Def || !matchPcalau12i(*BaseDef, AddiSrc))
+      MCInst *const BaseDef = findRegDef(UDChain, AddiSrc, *Def);
+      if (!BaseDef || !matchPcalau12i(*BaseDef, AddiSrc))
         break;
 
       return IndirectBranchType::POSSIBLE_TAIL_CALL;
@@ -1830,6 +1814,86 @@ private:
         return MCBinaryExpr::create(E->getOpcode(), LHS, E->getRHS(), *Ctx);
       return nullptr;
     }
+    return nullptr;
+  }
+
+  DenseMap<const MCInst *, SmallVector<MCInst *>>
+  computeLocalUDChain(const MCInst *CurInstr, InstructionIterator Begin,
+                      InstructionIterator End) const {
+    DenseMap<int, MCInst *> RegAliasTable;
+    DenseMap<const MCInst *, SmallVector<MCInst *>> Uses;
+
+    auto addInstrOperands = [&](const MCInst &Instr) {
+      // Update Uses table
+      for (const MCOperand &Operand : MCPlus::primeOperands(Instr)) {
+        if (!Operand.isReg())
+          continue;
+        unsigned Reg = Operand.getReg();
+        MCInst *AliasInst = RegAliasTable[Reg];
+        Uses[&Instr].push_back(AliasInst);
+        LLVM_DEBUG({
+          dbgs() << "Adding reg operand " << Reg << " refs ";
+          if (AliasInst != nullptr)
+            AliasInst->dump();
+          else
+            dbgs() << "\n";
+        });
+      }
+    };
+
+    LLVM_DEBUG(dbgs() << "computeLocalUDChain\n");
+    bool TerminatorSeen = false;
+    for (auto II = Begin; II != End; ++II) {
+      MCInst &Instr = *II;
+      // Ignore nops and CFIs
+      if (isPseudo(Instr) || isNoop(Instr))
+        continue;
+      if (TerminatorSeen) {
+        RegAliasTable.clear();
+        Uses.clear();
+      }
+
+      LLVM_DEBUG(dbgs() << "Now updating for:\n ");
+      LLVM_DEBUG(Instr.dump());
+      addInstrOperands(Instr);
+
+      BitVector Regs = BitVector(RegInfo->getNumRegs(), false);
+      getWrittenRegs(Instr, Regs);
+
+      // Update register definitions after this point
+      for (int Idx : Regs.set_bits()) {
+        RegAliasTable[Idx] = &Instr;
+        LLVM_DEBUG(dbgs() << "Setting reg " << Idx
+                          << " def to current instr.\n");
+      }
+
+      TerminatorSeen = isTerminator(Instr);
+    }
+
+    // Process the last instruction, which is not currently added into the
+    // instruction stream
+    if (CurInstr)
+      addInstrOperands(*CurInstr);
+
+    return Uses;
+  }
+
+  MCInst *
+  findRegDef(const DenseMap<const MCInst *, SmallVector<MCInst *>> &UDChain,
+             MCRegister Reg, const MCInst &StartInst) const {
+    auto Uses = UDChain.find(&StartInst);
+    if (Uses == UDChain.end())
+      return nullptr;
+
+    unsigned RegOpNo = 0;
+    for (const MCOperand &Operand : MCPlus::primeOperands(StartInst)) {
+      if (!Operand.isReg())
+        continue;
+      if (Operand.getReg() == Reg)
+        return RegOpNo < Uses->second.size() ? Uses->second[RegOpNo] : nullptr;
+      ++RegOpNo;
+    }
+
     return nullptr;
   }
 };
