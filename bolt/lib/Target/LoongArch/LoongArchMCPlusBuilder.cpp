@@ -582,6 +582,86 @@ public:
     return IndirectBranchType::UNKNOWN;
   }
 
+  bool analyzeVirtualMethodCall(InstructionIterator Begin,
+                                InstructionIterator End,
+                                std::vector<MCInst *> &MethodFetchInsns,
+                                unsigned &VtableRegNum, unsigned &MethodRegNum,
+                                uint64_t &MethodOffset) const override {
+    VtableRegNum = LoongArch::NoRegister;
+    MethodRegNum = LoongArch::NoRegister;
+    MethodOffset = 0;
+
+    assert(Begin != End && "empty instruction range");
+
+    auto I = End;
+    const MCInst &Jirl = *(--I);
+    if (Jirl.getOpcode() != LoongArch::JIRL ||
+        Jirl.getNumOperands() < 3 || !Jirl.getOperand(0).isReg() ||
+        !Jirl.getOperand(1).isReg() || !Jirl.getOperand(2).isImm() ||
+        Jirl.getOperand(2).getImm() != 0)
+      return false;
+
+    const MCRegister JirlRd = Jirl.getOperand(0).getReg();
+    const MCRegister JirlRj = Jirl.getOperand(1).getReg();
+
+    // Filter out returns.
+    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
+      return false;
+
+    const DenseMap<const MCInst *, SmallVector<MCInst *>> UDChain =
+        computeLocalUDChain(nullptr, Begin, End);
+
+    // Path 1: LLVM/GCC fixed-slot virtual call
+    //
+    // Vptr        ld.d     $VtableReg, $ThisReg, 0
+    //             # --- or ---
+    //             ldptr.d  $VtableReg, $ThisReg, 0
+    // Method      ld.d     $MethodReg, $VtableReg, MethodOffset
+    //             # --- or ---
+    //             ldptr.d  $MethodReg, $VtableReg, MethodOffset
+    // Call        jirl     $zero, $MethodReg, 0
+    //             # --- or ---
+    //             jirl     $ra, $MethodReg, 0
+    //
+    // Cf.
+    //   llvm/lib/Target/LoongArch/LoongArchISelLowering.cpp
+    //     LoongArchTargetLowering::LowerCall
+    //   llvm/lib/Target/LoongArch/LoongArchInstrInfo.td
+    //     PseudoCALLIndirect, PseudoTAILIndirect,
+    //     LdPat<load, LD_D, i64>, LDPTR_D load pattern
+    //   gcc/config/loongarch/loongarch.md
+    //     call_internal/call_value_internal,
+    //     sibcall_internal/sibcall_value_internal
+    do {
+      MCInst *const Load = findRegDef(UDChain, JirlRj, Jirl);
+      if (!Load)
+        break;
+
+      const unsigned Opc = Load->getOpcode();
+      if ((Opc != LoongArch::LD_D && Opc != LoongArch::LDPTR_D) ||
+          Load->getNumOperands() < 3 || !Load->getOperand(0).isReg() ||
+          Load->getOperand(0).getReg() != JirlRj ||
+          !Load->getOperand(1).isReg() || !Load->getOperand(2).isImm())
+        break;
+
+      VtableRegNum = Load->getOperand(1).getReg();
+      MethodRegNum = JirlRj;
+      MethodOffset = Load->getOperand(2).getImm();
+      MethodFetchInsns.push_back(Load);
+      return true;
+    } while (0);
+
+    // TODO: indexed vtable-slot load
+    //
+    // Method      ldx.d  $MethodReg, $VtableReg, $IndexReg
+    //
+    // This needs MethodOffset recovery from $IndexReg before it is safe for
+    // vtable ICP. Do not accept it until constant/scaled-index recovery is
+    // implemented and tested.
+
+    return false;
+  }
+
   std::pair<const MCSymbol *, uint64_t>
   getTargetSymbolInfo(const MCExpr *Expr) const override {
     // Unwrap LoongArchMCExpr (e.g., %pc_hi20(sym), %pc_lo12(sym))
@@ -1430,16 +1510,30 @@ public:
 
     if (CallInst.getOpcode() != LoongArch::JIRL ||
         CallInst.getNumOperands() < 2 || !CallInst.getOperand(0).isReg() ||
-        !CallInst.getOperand(1).isReg() || !VtableSyms.empty())
+        !CallInst.getOperand(1).isReg())
       return Results;
 
     const bool IsTailCall = isTailCall(CallInst);
     const bool IsJumpTable = getJumpTable(CallInst) != 0;
+    const bool LoadElim = !VtableSyms.empty();
+    assert((!LoadElim || VtableSyms.size() == Targets.size()) &&
+           "There must be a vtable entry for every method in the targets "
+           "vector.");
+
+    if (LoadElim && (MethodFetchInsns.empty() ||
+                     MethodFetchInsns.back()->getNumOperands() < 2 ||
+                     !MethodFetchInsns.back()->getOperand(1).isReg()))
+      return Results;
+
     const bool IsKnownCall =
         !IsJumpTable &&
         (IsTailCall || CallInst.getOperand(0).getReg() == LoongArch::R1);
 
     const MCPhysReg TargetReg = CallInst.getOperand(1).getReg();
+    const MCPhysReg CompareReg =
+        LoadElim ? static_cast<MCPhysReg>(
+                       MethodFetchInsns.back()->getOperand(1).getReg())
+                 : TargetReg;
     // Use $t8 only if we're absolutely sure it's a call. Otherwise, we have to
     // use ABI-reserved $r21 for a safe temp.
     const MCPhysReg TempReg = IsKnownCall && CompareReg != LoongArch::R20
@@ -1466,15 +1560,20 @@ public:
       Results.emplace_back(NextTarget, InstructionListType());
       InstructionListType *NewCall = &Results.back().second;
 
-      InstructionListType Addr =
-          Targets[I].first ? materializeAddress(Targets[I].first, Ctx, TempReg)
-                           : createLoadImmediate(TempReg, Targets[I].second);
+      InstructionListType Addr;
+      if (LoadElim)
+        Addr = materializeAddress(VtableSyms[I].first, Ctx, TempReg,
+                                  VtableSyms[I].second);
+      else if (Targets[I].first)
+        Addr = materializeAddress(Targets[I].first, Ctx, TempReg);
+      else
+        Addr = createLoadImmediate(TempReg, Targets[I].second);
       NewCall->insert(NewCall->end(), Addr.cbegin(), Addr.cend());
 
       NextTarget = Ctx->createNamedTempSymbol();
       NewCall->push_back(
           MCInstBuilder(IsJumpTable ? LoongArch::BEQ : LoongArch::BNE)
-              .addReg(TargetReg)
+              .addReg(CompareReg)
               .addReg(TempReg)
               .addExpr(MCSymbolRefExpr::create(
                   IsJumpTable ? Targets[I].first : NextTarget, *Ctx)));
