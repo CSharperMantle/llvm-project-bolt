@@ -1872,12 +1872,24 @@ void RewriteInstance::createPLTBinaryFunction(uint64_t TargetAddress,
 
   ErrorOr<BinarySection &> Section = BC->getSectionForAddress(EntryAddress);
   assert(Section && "cannot get section for address");
+  const std::string PLTName = Symbol->getName().str() + "@PLT";
   if (!BF)
-    BF = BC->createBinaryFunction(Symbol->getName().str() + "@PLT", *Section,
-                                  EntryAddress, 0, EntrySize,
+    BF = BC->createBinaryFunction(PLTName, *Section, EntryAddress, 0, EntrySize,
                                   Section->getAlignment());
-  else
-    BF->addAlternativeName(Symbol->getName().str() + "@PLT");
+  else {
+    MCSymbol *PLTSymbol = BC->registerNameAtAddress(
+        PLTName, EntryAddress, EntrySize, Section->getAlignment());
+    BC->setSymbolToFunctionMap(PLTSymbol, BF);
+    // See what prio adjustment is needed to prefer @PLT names.
+    auto &Symbols = BF->getSymbols();
+    auto *const It = llvm::find(Symbols, PLTSymbol);
+    if (It == Symbols.end())
+      // No existing @PLT names are present. Place it at highest prio.
+      Symbols.insert(Symbols.begin(), PLTSymbol);
+    else if (It != Symbols.begin())
+      // There is existing one. Move it to the front.
+      std::swap(Symbols.front(), *It);
+  }
   setPLTSymbol(BF, Symbol->getName());
 }
 

@@ -593,6 +593,22 @@ Symbols:
     Type:            STT_OBJECT
     Index:           SHN_ABS
     Value:           0x630
+  - Name:            '__libc_start_main$plt'
+    Type:            STT_FUNC
+    Section:         .plt
+    Value:           0x650
+  - Name:            'abort$plt'
+    Type:            STT_FUNC
+    Section:         .plt
+    Value:           0x660
+  - Name:            'puts$plt'
+    Type:            STT_FUNC
+    Section:         .plt
+    Value:           0x670
+  - Name:            '__cxa_finalize$plt'
+    Type:            STT_FUNC
+    Section:         .plt
+    Value:           0x680
   - Name:            __dso_handle
     Type:            STT_OBJECT
     Section:         .sdata
