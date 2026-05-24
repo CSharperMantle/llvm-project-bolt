@@ -259,15 +259,21 @@ public:
     if (Instruction.getOpcode() != LoongArch::JIRL ||
         Instruction.getNumOperands() < 3 ||
         !Instruction.getOperand(0).isReg() ||
-        !Instruction.getOperand(1).isReg())
+        !Instruction.getOperand(1).isReg()) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                        << "terminator is not jirl\n");
       return IndirectBranchType::UNKNOWN;
+    }
 
     const MCRegister JirlRd = Instruction.getOperand(0).getReg();
     const MCRegister JirlRj = Instruction.getOperand(1).getReg();
 
     // Filter out returns.
-    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
+    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                        << "return instruction\n");
       return IndirectBranchType::UNKNOWN;
+    }
 
     const DenseMap<const MCInst *, SmallVector<MCInst *>> UDChain =
         computeLocalUDChain(&Instruction, Begin, End);
@@ -384,29 +390,44 @@ public:
     //     case ISD::BR_JT:
     do {
       MCInst *const LdxD = findRegDef(UDChain, JirlRj, Instruction);
-      if (!LdxD)
+      if (!LdxD) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                          << "JirlRj has no local def\n");
         // Can't even find the instruction defining JirlRj.
         break;
+      }
 
       MCRegister LdxBase;
       MCRegister LdxIndex;
-      if (!matchLdxD(*LdxD, LdxBase, LdxIndex))
+      if (!matchLdxD(*LdxD, LdxBase, LdxIndex)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
+                          << "table: JirlRj def is not ldx.d\n");
         // Insn defining JirlRj is not an ldx.d.
         break;
+      }
 
       MCInst *const BaseDef = findRegDef(UDChain, LdxBase, *LdxD);
-      if (!BaseDef)
+      if (!BaseDef) {
         // Can't even find the defn site of LdxBase.
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
+                          << "table: LdxBase has no local def\n");
         break;
+      }
 
-      if (!resolvePcRelBase(BaseDef, LdxBase, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, LdxBase, DispExpr, PCRelBaseOut)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
+                          << "table: can't resolve LdxBase\n");
         // Can't resolve LdxBase loading sequence.
         break;
+      }
 
       MCRegister IndexSrc;
-      if (!resolveSlliIndex(*LdxD, LdxIndex, 3, IndexSrc))
+      if (!resolveSlliIndex(*LdxD, LdxIndex, 3, IndexSrc)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
+                          << "table: can't resolve scaled index\n");
         // Can't resolve IndexSrc.
         break;
+      }
 
       MemLocInstr = LdxD;
       BaseRegNum = LdxBase;
@@ -432,15 +453,21 @@ public:
     //     "// For PIC, the sequence is:"
     do {
       MCInst *AddD = findRegDef(UDChain, JirlRj, Instruction);
-      if (!AddD)
+      if (!AddD) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                          << "JirlRj has no local def\n");
         break;
+      }
 
       // JirlRj spilled to stack?
       if (std::optional<std::pair<MCInst *, MCRegister>> Store =
               findStackStoreForLoad(AddD, JirlRj)) {
         AddD = findRegDef(UDChain, Store->second, *Store->first);
-        if (!AddD)
+        if (!AddD) {
+          LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                            << "table: spilled add source has no local def\n");
           break;
+        }
       }
 
       MCRegister AddBase;
@@ -448,26 +475,42 @@ public:
       MCRegister LdxIndex;
       MCRegister AddOp1;
       MCRegister AddOp2;
-      if (!matchAddD(*AddD, AddOp1, AddOp2))
+      if (!matchAddD(*AddD, AddOp1, AddOp2)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                          << "table: JirlRj def is not add.d\n");
         break;
+      }
       MCInst *LdxW = findRegDef(UDChain, AddOp1, *AddD);
       if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex)) {
         LdxW = findRegDef(UDChain, AddOp2, *AddD);
-        if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex))
+        if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex)) {
+          LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                            << "table: add.d operand is not ldx.w\n");
           break;
+        }
       }
       AddBase = (AddOp1 == LdxW->getOperand(0).getReg()) ? AddOp2 : AddOp1;
 
       MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
-      if (!BaseDef)
+      if (!BaseDef) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                          << "table: AddBase has no local def\n");
         break;
+      }
 
-      if (!resolvePcRelBase(BaseDef, AddBase, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, AddBase, DispExpr, PCRelBaseOut)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                          << "table: can't resolve AddBase\n");
         break;
+      }
 
       MCRegister IndexSrc;
-      if (!resolveSlliIndex(*LdxW, LdxIndex, 2, IndexSrc, /*AllowSpill=*/true))
+      if (!resolveSlliIndex(*LdxW, LdxIndex, 2, IndexSrc,
+                            /*AllowSpill=*/true)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
+                          << "table: can't resolve scaled index\n");
         break;
+      }
 
       MemLocInstr = LdxW;
       BaseRegNum = AddBase;
@@ -498,16 +541,25 @@ public:
     //     define_expand "tablejump"
     do {
       MCInst *const Load = findRegDef(UDChain, JirlRj, Instruction);
-      if (!Load)
+      if (!Load) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                          << "JirlRj has no local def\n");
         break;
+      }
 
       MCRegister AddrReg;
-      if (!matchLdD(*Load, AddrReg))
+      if (!matchLdD(*Load, AddrReg)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                          << "table: JirlRj def is not ld.d/ldptr.d\n");
         break;
+      }
 
       MCInst *const AddrDef = findRegDef(UDChain, AddrReg, *Load);
-      if (!AddrDef)
+      if (!AddrDef) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                          << "table: AddrReg has no local def\n");
         break;
+      }
 
       const unsigned ExpectedShift = Log2_32(PtrSize);
 
@@ -515,8 +567,11 @@ public:
       MCRegister IdxReg;
       if (!matchAlslD(*AddrDef, ExpectedShift, IdxReg, BaseReg)) {
         MCRegister AddOp1, AddOp2;
-        if (!matchAddD(*AddrDef, AddOp1, AddOp2))
+        if (!matchAddD(*AddrDef, AddOp1, AddOp2)) {
+          LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                            << "table: AddrReg def is not alsl.d/add.d\n");
           break;
+        }
 
         MCRegister Tmp;
         MCInst *const Def1 = findRegDef(UDChain, AddOp1, *AddrDef);
@@ -525,19 +580,28 @@ public:
             Def1 && matchSlliD(*Def1, AddOp1, ExpectedShift, Tmp);
         const bool Op2IsSlli =
             Def2 && matchSlliD(*Def2, AddOp2, ExpectedShift, Tmp);
-        if (Op1IsSlli == Op2IsSlli)
+        if (Op1IsSlli == Op2IsSlli) {
+          LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                            << "table: can't identify scaled index\n");
           break;
+        }
 
         IdxReg = Tmp;
         BaseReg = Op1IsSlli ? AddOp2 : AddOp1;
       }
 
       MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
-      if (!BaseDef)
+      if (!BaseDef) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                          << "table: BaseReg has no local def\n");
         break;
+      }
 
-      if (!resolvePcRelBase(BaseDef, BaseReg, DispExpr, PCRelBaseOut))
+      if (!resolvePcRelBase(BaseDef, BaseReg, DispExpr, PCRelBaseOut)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
+                          << "table: can't resolve BaseReg\n");
         break;
+      }
 
       MemLocInstr = Load;
       BaseRegNum = BaseReg;
@@ -558,27 +622,42 @@ public:
     // Cf.
     //   <https://reviews.llvm.org/D137889>
     do {
-      if (JirlRd != LoongArch::R0)
+      if (JirlRd != LoongArch::R0) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
+                          << "jirl writes return address\n");
         break;
+      }
 
       MCInst *const Def = findRegDef(UDChain, JirlRj, Instruction);
-      if (!Def)
+      if (!Def) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
+                          << "JirlRj has no local def\n");
         break;
+      }
 
       if (matchPcaddi(*Def, JirlRj) || matchPcaddu18i(*Def, JirlRj))
         return IndirectBranchType::POSSIBLE_TAIL_CALL;
 
       MCRegister AddiSrc;
-      if (!matchAddiD(*Def, JirlRj, AddiSrc))
+      if (!matchAddiD(*Def, JirlRj, AddiSrc)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
+                          << "target materialization is not pcaddi/"
+                          << "pcaddu18i/pcalau12i+addi.d\n");
         break;
+      }
 
       MCInst *const BaseDef = findRegDef(UDChain, AddiSrc, *Def);
-      if (!BaseDef || !matchPcalau12i(*BaseDef, AddiSrc))
+      if (!BaseDef || !matchPcalau12i(*BaseDef, AddiSrc)) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
+                          << "addi.d base is not pcalau12i\n");
         break;
+      }
 
       return IndirectBranchType::POSSIBLE_TAIL_CALL;
     } while (0);
 
+    LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
+                      << "unknown pattern\n");
     return IndirectBranchType::UNKNOWN;
   }
 
@@ -595,18 +674,23 @@ public:
 
     auto I = End;
     const MCInst &Jirl = *(--I);
-    if (Jirl.getOpcode() != LoongArch::JIRL ||
-        Jirl.getNumOperands() < 3 || !Jirl.getOperand(0).isReg() ||
-        !Jirl.getOperand(1).isReg() || !Jirl.getOperand(2).isImm() ||
-        Jirl.getOperand(2).getImm() != 0)
+    if (Jirl.getOpcode() != LoongArch::JIRL || Jirl.getNumOperands() < 3 ||
+        !Jirl.getOperand(0).isReg() || !Jirl.getOperand(1).isReg() ||
+        !Jirl.getOperand(2).isImm() || Jirl.getOperand(2).getImm() != 0) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method call: "
+                        << "terminator is not zero-offset jirl\n");
       return false;
+    }
 
     const MCRegister JirlRd = Jirl.getOperand(0).getReg();
     const MCRegister JirlRj = Jirl.getOperand(1).getReg();
 
     // Filter out returns.
-    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1)
+    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method call: "
+                        << "return instruction\n");
       return false;
+    }
 
     const DenseMap<const MCInst *, SmallVector<MCInst *>> UDChain =
         computeLocalUDChain(nullptr, Begin, End);
@@ -634,15 +718,22 @@ public:
     //     sibcall_internal/sibcall_value_internal
     do {
       MCInst *const Load = findRegDef(UDChain, JirlRj, Jirl);
-      if (!Load)
+      if (!Load) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method "
+                          << "call: method register has no local def\n");
         break;
+      }
 
       const unsigned Opc = Load->getOpcode();
       if ((Opc != LoongArch::LD_D && Opc != LoongArch::LDPTR_D) ||
           Load->getNumOperands() < 3 || !Load->getOperand(0).isReg() ||
           Load->getOperand(0).getReg() != JirlRj ||
-          !Load->getOperand(1).isReg() || !Load->getOperand(2).isImm())
+          !Load->getOperand(1).isReg() || !Load->getOperand(2).isImm()) {
+        LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method "
+                          << "call: method load is not fixed-slot ld.d/"
+                          << "ldptr.d\n");
         break;
+      }
 
       VtableRegNum = Load->getOperand(1).getReg();
       MethodRegNum = JirlRj;
