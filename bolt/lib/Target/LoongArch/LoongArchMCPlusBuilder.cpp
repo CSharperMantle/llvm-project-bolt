@@ -146,6 +146,11 @@ public:
   bool shouldRecordCodeRelocation(uint32_t RelType) const override {
     switch (RelType) {
     case ELF::R_LARCH_32:
+    case ELF::R_LARCH_64:
+    case ELF::R_LARCH_ADD32:
+    case ELF::R_LARCH_ADD64:
+    case ELF::R_LARCH_SUB32:
+    case ELF::R_LARCH_SUB64:
     case ELF::R_LARCH_B16:
     case ELF::R_LARCH_B21:
     case ELF::R_LARCH_B26:
