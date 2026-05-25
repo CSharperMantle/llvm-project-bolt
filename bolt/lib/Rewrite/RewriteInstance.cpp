@@ -2396,6 +2396,11 @@ void RewriteInstance::adjustCommandLineOptions() {
     exit(1);
   }
 
+  if (opts::StrictMode && opts::NeverStrict) {
+    BC->errs() << "BOLT-ERROR: -strict and -never-strict cannot be used together\n";
+    exit(1);
+  }
+
   if (opts::StrictMode && !BC->HasRelocations) {
     BC->errs()
         << "BOLT-WARNING: disabling strict mode (-strict) in non-relocation "
@@ -2404,7 +2409,7 @@ void RewriteInstance::adjustCommandLineOptions() {
   }
 
   if (BC->HasRelocations && opts::AggregateOnly &&
-      !opts::StrictMode.getNumOccurrences()) {
+      !opts::StrictMode.getNumOccurrences() && !opts::NeverStrict) {
     BC->outs() << "BOLT-INFO: enabling strict relocation mode for aggregation "
                   "purposes\n";
     opts::StrictMode = true;

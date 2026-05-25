@@ -57,6 +57,11 @@ AggregateOnly("aggregate-only",
   cl::Hidden,
   cl::cat(AggregatorCategory));
 
+cl::opt<bool>
+    NeverStrict("never-strict",
+                 cl::desc("disable strict relocation mode and don't allow overriding"),
+                 cl::cat(AggregatorCategory));
+
 cl::opt<unsigned>
     BucketsPerLine("line-size",
                    cl::desc("number of entries per line (default 256)"),
@@ -282,7 +287,6 @@ cl::opt<bool> SplitEH("split-eh", cl::desc("split C++ exception handling code"),
 cl::opt<bool>
     StrictMode("strict",
                cl::desc("trust the input to be from a well-formed source"),
-
                cl::cat(BoltCategory));
 
 cl::opt<bool> TimeOpts("time-opts",

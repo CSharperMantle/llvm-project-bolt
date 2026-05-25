@@ -95,6 +95,7 @@ extern llvm::cl::opt<bool> Hugify;
 extern llvm::cl::opt<bool> Instrument;
 extern llvm::cl::opt<std::string> OutputFilename;
 extern llvm::cl::opt<std::string> PerfData;
+extern llvm::cl::opt<bool> NeverStrict;
 extern llvm::cl::opt<bool> PrintCacheMetrics;
 extern llvm::cl::opt<bool> PrintSections;
 extern llvm::cl::opt<bool> UpdateBranchProtection;
