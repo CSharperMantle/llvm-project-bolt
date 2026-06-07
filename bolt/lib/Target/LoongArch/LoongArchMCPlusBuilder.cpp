@@ -66,10 +66,12 @@ public:
   }
 
   bool isNoop(const MCInst &Inst) const override {
-    return Inst.getOpcode() == LoongArch::ANDI &&
+    return Inst.getOpcode() == LoongArch::ANDI && Inst.getNumOperands() == 3 &&
+           Inst.getOperand(0).isReg() &&
            Inst.getOperand(0).getReg() == LoongArch::R0 &&
+           Inst.getOperand(1).isReg() &&
            Inst.getOperand(1).getReg() == LoongArch::R0 &&
-           Inst.getOperand(2).getImm() == 0;
+           Inst.getOperand(2).isImm() && Inst.getOperand(2).getImm() == 0;
   }
 
   bool hasPCRelOperand(const MCInst &Inst) const override {
