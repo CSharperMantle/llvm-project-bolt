@@ -24,6 +24,7 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define DEBUG_TYPE "mcplus"
@@ -800,8 +801,16 @@ public:
     switch (Inst.getOpcode()) {
     default:
       return Inst.end();
+    case LoongArch::ADDI_W:  // addi.w $rd, $rj, imm
     case LoongArch::ADDI_D:  // addi.d $rd, $rj, imm
+    case LoongArch::LD_B:    // ld.b $rd, $rj, imm
+    case LoongArch::LD_BU:   // ld.bu $rd, $rj, imm
+    case LoongArch::LD_H:    // ld.h $rd, $rj, imm
+    case LoongArch::LD_HU:   // ld.hu $rd, $rj, imm
+    case LoongArch::LD_W:    // ld.w $rd, $rj, imm
+    case LoongArch::LD_WU:   // ld.wu $rd, $rj, imm
     case LoongArch::LD_D:    // ld.d $rd, $rj, imm
+    case LoongArch::LDPTR_W: // ldptr.w $rd, $rj, imm
     case LoongArch::LDPTR_D: // ldptr.d $rd, $rj, imm
       return Inst.getNumOperands() >= 3 ? (Inst.begin() + 2) : Inst.end();
     case LoongArch::PCALAU12I: // pcalau12i $rd, imm
@@ -982,6 +991,16 @@ public:
 
   StringRef getTrapFillValue() const override {
     return StringRef("\x00\x00\x2a\x00", 4);
+  }
+
+  bool evaluateMemOperandTarget(const MCInst &Inst, uint64_t &Target,
+                                uint64_t Address = 0,
+                                uint64_t Size = 0) const override {
+    (void)Inst;
+    (void)Target;
+    (void)Address;
+    (void)Size;
+    return false;
   }
 
   const MCExpr *
@@ -1679,6 +1698,85 @@ public:
                    .addImm((Imm >> 52) & 0xFFF);
 
     return Insts;
+  }
+
+  bool replaceMemOperandWithImm(MCInst &Inst, InstructionListType &NewInsts,
+                                StringRef ConstantData,
+                                uint64_t Offset) const override {
+    if (Inst.getNumOperands() < 1 || !Inst.getOperand(0).isReg()) {
+      LLVM_DEBUG(
+          dbgs()
+          << "BOLT-DEBUG: replaceMemOperandWithImm called with insane Inst\n");
+      return false;
+    }
+
+    const MCRegister DestReg = Inst.getOperand(0).getReg();
+
+    unsigned DataSize;
+    switch (Inst.getOpcode()) {
+    case LoongArch::LD_B:
+    case LoongArch::LD_BU:
+      DataSize = 1;
+      break;
+    case LoongArch::LD_H:
+    case LoongArch::LD_HU:
+      DataSize = 2;
+      break;
+    case LoongArch::LD_W:
+    case LoongArch::LD_WU:
+    case LoongArch::LDPTR_W:
+      DataSize = 4;
+      break;
+    case LoongArch::LD_D:
+    case LoongArch::LDPTR_D:
+      DataSize = 8;
+      break;
+    default:
+      return false;
+    }
+    const bool IsUnsigned = Inst.getOpcode() == LoongArch::LD_BU ||
+                            Inst.getOpcode() == LoongArch::LD_HU ||
+                            Inst.getOpcode() == LoongArch::LD_WU;
+
+    if (Offset + DataSize > ConstantData.size()) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: replaceMemOperandWithImm called with "
+                           "invalid offset for given constant data\n");
+      return false;
+    }
+
+    if (IsUnsigned) {
+      const uint64_t ImmVal =
+          DataExtractor(ConstantData, true, 8).getUnsigned(&Offset, DataSize);
+      if (isUInt<12>(ImmVal)) {
+        NewInsts.emplace_back(MCInstBuilder(LoongArch::ORI)
+                                  .addReg(DestReg)
+                                  .addReg(LoongArch::R0)
+                                  .addImm(ImmVal));
+      } else {
+        NewInsts = createLoadImmediate(DestReg, ImmVal);
+      }
+      return true;
+    }
+
+    // Signed loads sign-extend the loaded value.
+    const int64_t ImmVal =
+        DataExtractor(ConstantData, true, 8).getSigned(&Offset, DataSize);
+
+    if (isInt<12>(ImmVal)) {
+      NewInsts.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
+                                .addReg(DestReg)
+                                .addReg(LoongArch::R0)
+                                .addImm(ImmVal));
+    } else if (isUInt<12>(ImmVal)) {
+      NewInsts.emplace_back(MCInstBuilder(LoongArch::ORI)
+                                .addReg(DestReg)
+                                .addReg(LoongArch::R0)
+                                .addImm(ImmVal));
+    } else {
+      NewInsts = createLoadImmediate(DestReg, static_cast<uint64_t>(ImmVal));
+    }
+
+    return true;
   }
 
   BlocksVectorTy indirectCallPromotion(

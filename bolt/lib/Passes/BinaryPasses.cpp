@@ -1251,14 +1251,41 @@ bool SimplifyRODataLoads::simplifyRODataLoads(BinaryFunction &BF) {
         if (!DisplSymbol)
           continue;
 
+        // Skip synthesized "__BOLT_got_zero" since they are not RO and
+        // PROGBITS.
+        if (DisplSymbol->getName() == "__BOLT_got_zero")
+          continue;
+
         // Look up the symbol address in the global symbols map of the binary
         // context object.
         BinaryData *BD = BC.getBinaryDataByName(DisplSymbol->getName());
         if (!BD)
           continue;
         TargetAddress = BD->getAddress() + DisplOffset;
-      } else if (!MIB->evaluateMemOperandTarget(Inst, TargetAddress)) {
-        continue;
+      } else {
+        // For non-PC-relative loads, check if the displacement is a symbolic
+        // expression that we can resolve to a known symbol.  This handles
+        // architectures like LoongArch where loads use register-relative
+        // addressing with a symbolic displacement (e.g., ld.d with %pc_lo12).
+        MCOperand *DispOp = MIB->getMemOperandDisp(Inst);
+        if (DispOp != Inst.end() && DispOp->isExpr()) {
+          const MCSymbol *DisplSymbol;
+          uint64_t DisplOffset;
+          std::tie(DisplSymbol, DisplOffset) =
+              MIB->getTargetSymbolInfo(DispOp->getExpr());
+          if (!DisplSymbol)
+            continue;
+          // Skip synthesized "__BOLT_got_zero" since they are not RO and
+          // PROGBITS.
+          if (DisplSymbol->getName() == "__BOLT_got_zero")
+            continue;
+          BinaryData *BD = BC.getBinaryDataByName(DisplSymbol->getName());
+          if (!BD)
+            continue;
+          TargetAddress = BD->getAddress() + DisplOffset;
+        } else if (!MIB->evaluateMemOperandTarget(Inst, TargetAddress)) {
+          continue;
+        }
       }
 
       // Get the contents of the section containing the target address of the
