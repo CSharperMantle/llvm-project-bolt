@@ -307,6 +307,36 @@ public:
       : OpMatcher<int64_t>(ImmToMatch) {}
 };
 
+class Expr : public OpMatcher<const MCExpr *> {
+  bool matches(const MCOperand &Op) const {
+    if (!Op.isExpr())
+      return false;
+
+    return matchValue(Op.getExpr());
+  }
+
+  template <class... OpMatchers>
+  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+
+public:
+  Expr(std::optional<const MCExpr *> ExprToMatch = std::nullopt)
+      : OpMatcher<const MCExpr *>(ExprToMatch) {}
+};
+
+/// Skip matching the current operand. This always matches.
+class Skip : public OpMatcher<std::monostate> {
+  bool matches(const MCOperand &Op) const {
+    return matchValue(std::monostate());
+  }
+
+  template <class... OpMatchers>
+  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+
+public:
+  Skip(std::optional<std::monostate> ExprToMatch = std::nullopt)
+      : OpMatcher<std::monostate>(ExprToMatch) {}
+};
+
 /// Tries to match Inst and updates Ops on success.
 ///
 /// If Inst has the specified Opcode and its operand list prefix matches Ops,
