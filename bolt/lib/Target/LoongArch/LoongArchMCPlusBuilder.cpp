@@ -1508,6 +1508,76 @@ public:
     Regs |= getAliases(LoongArch::R31);
   }
 
+  BitVector getRegsUsedAsParams() const override {
+    BitVector Regs = BitVector(RegInfo->getNumRegs(), false);
+    Regs.set(LoongArch::R4);
+    Regs.set(LoongArch::R5);
+    Regs.set(LoongArch::R6);
+    Regs.set(LoongArch::R7);
+    Regs.set(LoongArch::R8);
+    Regs.set(LoongArch::R9);
+    Regs.set(LoongArch::R10);
+    Regs.set(LoongArch::R11);
+    return Regs;
+  }
+
+  void getDefaultDefIn(BitVector &Regs) const override {
+    assert(Regs.size() >= RegInfo->getNumRegs() &&
+           "The size of BitVector is less than RegInfo->getNumRegs().");
+    Regs.set(LoongArch::R4);
+    Regs.set(LoongArch::R5);
+    Regs.set(LoongArch::R6);
+    Regs.set(LoongArch::R7);
+    Regs.set(LoongArch::R8);
+    Regs.set(LoongArch::R9);
+    Regs.set(LoongArch::R10);
+    Regs.set(LoongArch::R11);
+  }
+
+  void getDefaultLiveOut(BitVector &Regs) const override {
+    assert(Regs.size() >= RegInfo->getNumRegs() &&
+           "The size of BitVector is less than RegInfo->getNumRegs().");
+    Regs.set(LoongArch::R4);
+    Regs.set(LoongArch::R5);
+  }
+
+  void getGPRegs(BitVector &Regs, bool IncludeAlias) const override {
+    // LoongArch has no aliases for GPRs.
+    (void)IncludeAlias;
+    Regs.set(LoongArch::R0);
+    Regs.set(LoongArch::R1);
+    Regs.set(LoongArch::R2);
+    Regs.set(LoongArch::R3);
+    Regs.set(LoongArch::R4);
+    Regs.set(LoongArch::R5);
+    Regs.set(LoongArch::R6);
+    Regs.set(LoongArch::R7);
+    Regs.set(LoongArch::R8);
+    Regs.set(LoongArch::R9);
+    Regs.set(LoongArch::R10);
+    Regs.set(LoongArch::R11);
+    Regs.set(LoongArch::R12);
+    Regs.set(LoongArch::R13);
+    Regs.set(LoongArch::R14);
+    Regs.set(LoongArch::R15);
+    Regs.set(LoongArch::R16);
+    Regs.set(LoongArch::R17);
+    Regs.set(LoongArch::R18);
+    Regs.set(LoongArch::R19);
+    Regs.set(LoongArch::R20);
+    Regs.set(LoongArch::R21);
+    Regs.set(LoongArch::R22);
+    Regs.set(LoongArch::R23);
+    Regs.set(LoongArch::R24);
+    Regs.set(LoongArch::R25);
+    Regs.set(LoongArch::R26);
+    Regs.set(LoongArch::R27);
+    Regs.set(LoongArch::R28);
+    Regs.set(LoongArch::R29);
+    Regs.set(LoongArch::R30);
+    Regs.set(LoongArch::R31);
+  }
+
   std::optional<Relocation>
   createRelocation(const MCFixup &Fixup,
                    const MCAsmBackend &MAB) const override {
