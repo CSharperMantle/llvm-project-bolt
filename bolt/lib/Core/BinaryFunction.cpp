@@ -1038,7 +1038,15 @@ BinaryFunction::processIndirectBranch(MCInst &Instruction, unsigned Size,
 
   // Convert the instruction into jump table branch.
   const MCSymbol *JTLabel = BC.getOrCreateJumpTable(*this, ArrayStart, JTType);
-  BC.MIB->replaceMemOperandDisp(*MemLocInstr, JTLabel, BC.Ctx.get());
+  if (BC.isLoongArch()) {
+    // On LoongArch, JT address is materialized by PCRelBaseInstr, while
+    // MemLocInstr is merely a load that does not carry the JT label. Patch the
+    // base instruction instead.
+    assert(PCRelBaseInstr && "LoongArch JT requires PCRelBaseInstr");
+    BC.MIB->replaceMemOperandDisp(*PCRelBaseInstr, JTLabel, BC.Ctx.get());
+  } else {
+    BC.MIB->replaceMemOperandDisp(*MemLocInstr, JTLabel, BC.Ctx.get());
+  }
   BC.MIB->setJumpTable(Instruction, ArrayStart, IndexRegNum);
 
   JTSites.emplace_back(Offset, ArrayStart);

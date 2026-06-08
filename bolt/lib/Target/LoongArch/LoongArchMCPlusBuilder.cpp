@@ -661,6 +661,133 @@ public:
     return false;
   }
 
+  bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
+                     InstructionIterator End, MCInst *&JTLoadInst,
+                     const MCSymbol *&JTSymbol) override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    Reg JirlRd, JirlRj;
+    if (!matchInst(IndJmp, LoongArch::JIRL, JirlRd, JirlRj, Skip())) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: getJTLabelRef: not a JIRL\n");
+      return false;
+    }
+
+    // Filter out returns.
+    if (JirlRd.get() == LoongArch::R0 && JirlRj.get() == LoongArch::R1) {
+      LLVM_DEBUG(dbgs() << "BOLT-DEBUG: getJTLabelRef: JIRL is a return\n");
+      return false;
+    }
+
+    const DenseMap<const MCInst *, SmallVector<MCInst *>> UDChain =
+        computeLocalUDChain(&IndJmp, Begin, End);
+
+    // Helper: given a register-defining instruction in a JT dispatch sequence,
+    // find the pcaddi/pcalau12i base instruction and extract the JT symbol.
+    const auto resolveBase = [&](MCInst *Def,
+                                 MCRegister TargetReg) -> MCInst * {
+      if (!Def)
+        return nullptr;
+      Expr DispExpr;
+      if (matchInst(*Def, LoongArch::PCADDI, Reg(TargetReg), DispExpr)) {
+        JTSymbol = getTargetSymbol(DispExpr.get());
+        return Def;
+      }
+      Reg AddiSrc;
+      if (matchInst(*Def, LoongArch::ADDI_D, Reg(TargetReg), AddiSrc)) {
+        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        if (Pcalau &&
+            matchInst(*Pcalau, LoongArch::PCALAU12I, AddiSrc, DispExpr)) {
+          JTSymbol = getTargetSymbol(DispExpr.get());
+          return Pcalau;
+        }
+      }
+      return nullptr;
+    };
+
+    // Note: See analyzeIndirectBranch() for complete descriptions of the
+    // matching shapes below.
+
+    // Path 1: LLVM non-PIE
+    do {
+      MCInst *const LdxD = findRegDef(UDChain, JirlRj.get(), IndJmp);
+      if (!LdxD)
+        break;
+      Reg LdxBase, LdxIndex;
+      if (!matchInst(*LdxD, LoongArch::LDX_D, Reg(), LdxBase, LdxIndex))
+        break;
+      MCInst *const BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
+      JTLoadInst = resolveBase(BaseDef, LdxBase.get());
+      if (JTLoadInst)
+        return true;
+    } while (0);
+
+    // Path 2: LLVM PIE
+    do {
+      MCInst *AddD = findRegDef(UDChain, JirlRj.get(), IndJmp);
+      if (!AddD)
+        break;
+      Reg AddOp1, AddOp2;
+      if (!matchInst(*AddD, LoongArch::ADD_D, Reg(), AddOp1, AddOp2))
+        break;
+      Reg LdxRdReg, LdxBaseReg, LdxIndexReg;
+      MCInst *LdxW = findRegDef(UDChain, AddOp1.get(), *AddD);
+      if (!LdxW || !matchInst(*LdxW, LoongArch::LDX_W, LdxRdReg, LdxBaseReg,
+                              LdxIndexReg)) {
+        LdxW = findRegDef(UDChain, AddOp2.get(), *AddD);
+        if (!LdxW || !matchInst(*LdxW, LoongArch::LDX_W, LdxRdReg, LdxBaseReg,
+                                LdxIndexReg))
+          break;
+      }
+      const MCRegister AddBase =
+          (AddOp1.get() == LdxRdReg.get()) ? AddOp2.get() : AddOp1.get();
+      MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      JTLoadInst = resolveBase(BaseDef, AddBase);
+      if (JTLoadInst)
+        return true;
+    } while (0);
+
+    // Path 3: GCC non-PIE
+    do {
+      MCInst *const Load = findRegDef(UDChain, JirlRj.get(), IndJmp);
+      if (!Load)
+        break;
+      Reg AddrReg;
+      if (!matchInst(*Load, LoongArch::LD_D, Reg(), AddrReg) &&
+          !matchInst(*Load, LoongArch::LDPTR_D, Reg(), AddrReg))
+        break;
+      MCInst *const AddrDef = findRegDef(UDChain, AddrReg.get(), *Load);
+      if (!AddrDef)
+        break;
+      MCRegister BaseReg;
+      Reg BaseRegObj, IdxRegObj;
+      if (!matchInst(*AddrDef, LoongArch::ALSL_D, Reg(), IdxRegObj, BaseRegObj,
+                     Imm(3))) {
+        Reg AddOp1Reg, AddOp2Reg, Tmp;
+        if (!matchInst(*AddrDef, LoongArch::ADD_D, Reg(), AddOp1Reg, AddOp2Reg))
+          break;
+        MCInst *const Def1 = findRegDef(UDChain, AddOp1Reg.get(), *AddrDef);
+        MCInst *const Def2 = findRegDef(UDChain, AddOp2Reg.get(), *AddrDef);
+        const bool Op1IsSlli =
+            Def1 && matchInst(*Def1, LoongArch::SLLI_D, Reg(AddOp1Reg.get()),
+                              Tmp, Imm(3));
+        const bool Op2IsSlli =
+            Def2 && matchInst(*Def2, LoongArch::SLLI_D, Reg(AddOp2Reg.get()),
+                              Tmp, Imm(3));
+        if (Op1IsSlli == Op2IsSlli)
+          break;
+        BaseReg = Op1IsSlli ? AddOp2Reg.get() : AddOp1Reg.get();
+      } else {
+        BaseReg = BaseRegObj.get();
+      }
+      MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      JTLoadInst = resolveBase(BaseDef, BaseReg);
+      if (JTLoadInst)
+        return true;
+    } while (0);
+
+    return false;
+  }
+
   std::pair<const MCSymbol *, uint64_t>
   getTargetSymbolInfo(const MCExpr *Expr) const override {
     // Unwrap LoongArchMCExpr (e.g., %pc_hi20(sym), %pc_lo12(sym))
@@ -673,7 +800,9 @@ public:
     switch (Inst.getOpcode()) {
     default:
       return Inst.end();
-    case LoongArch::ADDI_D: // addi.d $rd, $rj, imm
+    case LoongArch::ADDI_D:  // addi.d $rd, $rj, imm
+    case LoongArch::LD_D:    // ld.d $rd, $rj, imm
+    case LoongArch::LDPTR_D: // ldptr.d $rd, $rj, imm
       return Inst.getNumOperands() >= 3 ? (Inst.begin() + 2) : Inst.end();
     case LoongArch::PCALAU12I: // pcalau12i $rd, imm
     case LoongArch::PCADDI:    // pcaddi $rd, imm
