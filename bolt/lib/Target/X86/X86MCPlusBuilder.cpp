@@ -649,6 +649,64 @@ public:
     return std::unique_ptr<MCInstMatcher>(new LEAMatcher(std::move(Target)));
   }
 
+  bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
+                     InstructionIterator End, MCInst *&JTLoadInst,
+                     const MCSymbol *&JTSymbol) override {
+    MCPhysReg BaseReg1;
+    uint64_t Scale;
+    JTLoadInst = const_cast<MCInst *>(&IndJmp);
+    MutableArrayRef<MCInst> Window(const_cast<MCInst *>(&*Begin),
+                                   const_cast<MCInst *>(&IndJmp) + 1);
+    // Try a standard indirect jump matcher, scale 8
+    std::unique_ptr<MCInstMatcher> IndJmpMatcher =
+        matchIndJmp(matchReg(BaseReg1), matchImm(Scale), matchReg(),
+                    /*Offset=*/matchSymbol(JTSymbol));
+    if (!IndJmpMatcher->match(*RegInfo, *this, Window, -1) ||
+        BaseReg1 != getNoRegister() || Scale != 8) {
+      MCPhysReg BaseReg2;
+      uint64_t Offset;
+      // Standard JT matching failed. Trying now:
+      //     movq  "jt.2397/1"(,%rax,8), %rax
+      //     jmpq  *%rax
+      std::unique_ptr<MCInstMatcher> LoadMatcherOwner =
+          matchLoad(matchReg(BaseReg1), matchImm(Scale), matchReg(),
+                    /*Offset=*/matchSymbol(JTSymbol));
+      MCInstMatcher *LoadMatcher = LoadMatcherOwner.get();
+      std::unique_ptr<MCInstMatcher> IndJmpMatcher2 =
+          matchIndJmp(std::move(LoadMatcherOwner));
+      if (!IndJmpMatcher2->match(*RegInfo, *this, Window, -1) ||
+          BaseReg1 != getNoRegister() || Scale != 8) {
+        // JT matching failed. Trying now:
+        // PIC-style matcher, scale 4
+        //    addq    %rdx, %rsi
+        //    addq    %rdx, %rdi
+        //    leaq    DATAat0x402450(%rip), %r11
+        //    movslq  (%r11,%rdx,4), %rcx
+        //    addq    %r11, %rcx
+        //    jmpq    *%rcx # JUMPTABLE @0x402450
+        std::unique_ptr<MCInstMatcher> PICIndJmpMatcher = matchIndJmp(matchAdd(
+            matchReg(BaseReg1), matchLoad(matchReg(BaseReg2), matchImm(Scale),
+                                          matchReg(), matchImm(Offset))));
+        std::unique_ptr<MCInstMatcher> LEAMatcherOwner =
+            matchLoadAddr(matchSymbol(JTSymbol));
+        MCInstMatcher *LEAMatcher = LEAMatcherOwner.get();
+        std::unique_ptr<MCInstMatcher> PICBaseAddrMatcher = matchIndJmp(
+            matchAdd(std::move(LEAMatcherOwner), matchAnyOperand()));
+        if (!PICIndJmpMatcher->match(*RegInfo, *this, Window, -1) ||
+            Scale != 4 || BaseReg1 != BaseReg2 || Offset != 0 ||
+            !PICBaseAddrMatcher->match(*RegInfo, *this, Window, -1)) {
+          return false;
+        }
+        // Matched PIC, identify the instruction with the reference to the JT
+        JTLoadInst = LEAMatcher->CurInst;
+      } else {
+        // Matched non-PIC
+        JTLoadInst = LoadMatcher->CurInst;
+      }
+    }
+    return true;
+  }
+
   bool hasPCRelOperand(const MCInst &Inst) const override {
     for (const MCOperand &Operand : Inst)
       if (Operand.isReg() && Operand.getReg() == X86::RIP)

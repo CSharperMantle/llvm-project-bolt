@@ -1156,6 +1156,19 @@ public:
     return nullptr;
   }
 
+  /// \brief Given an indirect branch instruction annotated with a jump table,
+  /// find the instruction that references the jump table symbol within the
+  /// given instruction window, and return it along with the symbol.
+  ///
+  /// Called by disambiguateJumpTables() to patch JT references when two
+  /// branches share the same jump table.
+  virtual bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
+                             InstructionIterator End, MCInst *&JTLoadInst,
+                             const MCSymbol *&JTSymbol) {
+    llvm_unreachable("not implemented");
+    return false;
+  }
+
   /// \brief Given a branch instruction try to get the address the branch
   /// targets. Return true on success, and the address in Target.
   virtual bool evaluateBranch(const MCInst &Inst, uint64_t Addr, uint64_t Size,
