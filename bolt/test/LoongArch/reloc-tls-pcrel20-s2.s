@@ -32,5 +32,4 @@ tdata:
 // OBJDUMP-NEXT:     addi.d $a0, $a0,
 // OBJDUMP-NEXT:     pcalau12i $a1,
 // OBJDUMP-NEXT:     addi.d $a1, $a1,
-// OBJDUMP-NEXT:     nop
 // OBJDUMP-NEXT:     ret

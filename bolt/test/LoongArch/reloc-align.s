@@ -23,7 +23,4 @@ _start:
   .size _start, .-_start
 
 // OBJDUMP:      <_start>:
-// OBJDUMP-NEXT:     nop
-// OBJDUMP-NEXT:     nop
-// OBJDUMP-NEXT:     nop
 // OBJDUMP-NEXT:     ret

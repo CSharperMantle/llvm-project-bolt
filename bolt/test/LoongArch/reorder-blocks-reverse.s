@@ -7,17 +7,15 @@
 // BOLT: basic block reordering modified layout of 1 functions
 
 // OBJDUMP:      0000000000400000 <_start>:
-// OBJDUMP-NEXT:     nop
-// OBJDUMP-NEXT:     beq $t0, $t1, 20 <_start+0x18>
-// OBJDUMP-NEXT:     b 24 <_start+0x20>
+// OBJDUMP-NEXT:     beq $t0, $t1, 20 <_start+0x14>
+// OBJDUMP-NEXT:     b 24 <_start+0x1c>
 // OBJDUMP-NEXT:     ret
 // OBJDUMP-NEXT:     addi.d $a0, $zero, 6
-// OBJDUMP-NEXT:     b -8 <_start+0xc>
+// OBJDUMP-NEXT:     b -8 <_start+0x8>
 // OBJDUMP-NEXT:     addi.d $a0, $zero, 5
-// OBJDUMP-NEXT:     b -16 <_start+0xc>
-// OBJDUMP-NEXT:     nop
-// OBJDUMP-NEXT:     beq $t0, $t2, -20 <_start+0x10>
-// OBJDUMP-NEXT:     b -16 <_start+0x18>
+// OBJDUMP-NEXT:     b -16 <_start+0x8>
+// OBJDUMP-NEXT:     beq $t0, $t2, -16 <_start+0xc>
+// OBJDUMP-NEXT:     b -12 <_start+0x14>
 
   .text
   .globl _start

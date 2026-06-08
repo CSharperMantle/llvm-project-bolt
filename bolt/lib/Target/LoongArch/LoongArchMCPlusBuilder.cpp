@@ -15,6 +15,7 @@
 #include "MCTargetDesc/LoongArchMCAsmInfo.h"
 #include "MCTargetDesc/LoongArchMCTargetDesc.h"
 #include "bolt/Core/BinaryBasicBlock.h"
+#include "bolt/Core/MCInstUtils.h"
 #include "bolt/Core/MCPlusBuilder.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCContext.h"
@@ -31,108 +32,6 @@ using namespace llvm;
 using namespace bolt;
 
 namespace {
-
-// ── Instruction pattern matchers for dispatch reconstruction ──
-
-static bool matchPcaddi(const MCInst &Inst, MCRegister Rd) {
-  return Inst.getOpcode() == LoongArch::PCADDI && Inst.getNumOperands() >= 2 &&
-         Inst.getOperand(0).isReg() && Inst.getOperand(0).getReg() == Rd &&
-         Inst.getOperand(1).isExpr();
-}
-
-static bool matchPcaddu18i(const MCInst &Inst, MCRegister Rd) {
-  return Inst.getOpcode() == LoongArch::PCADDU18I &&
-         Inst.getNumOperands() >= 2 && Inst.getOperand(0).isReg() &&
-         Inst.getOperand(0).getReg() == Rd && Inst.getOperand(1).isExpr();
-}
-
-static bool matchAddiD(const MCInst &Inst, MCRegister Rd, MCRegister &RsOut) {
-  if (Inst.getOpcode() != LoongArch::ADDI_D || Inst.getNumOperands() < 3)
-    return false;
-  if (!Inst.getOperand(0).isReg() || Inst.getOperand(0).getReg() != Rd)
-    return false;
-  if (!Inst.getOperand(1).isReg())
-    return false;
-  RsOut = Inst.getOperand(1).getReg();
-  return true;
-}
-
-static bool matchPcalau12i(const MCInst &Inst, MCRegister Rd) {
-  return Inst.getOpcode() == LoongArch::PCALAU12I &&
-         Inst.getNumOperands() >= 2 && Inst.getOperand(0).isReg() &&
-         Inst.getOperand(0).getReg() == Rd && Inst.getOperand(1).isExpr();
-}
-
-static bool matchSlliD(const MCInst &Inst, MCRegister Rd, unsigned Shift,
-                       MCRegister &RsOut) {
-  if (Inst.getOpcode() != LoongArch::SLLI_D || Inst.getNumOperands() < 3)
-    return false;
-  if (!Inst.getOperand(0).isReg() || Inst.getOperand(0).getReg() != Rd)
-    return false;
-  if (!Inst.getOperand(1).isReg())
-    return false;
-  if (!Inst.getOperand(2).isImm() || Inst.getOperand(2).getImm() != Shift)
-    return false;
-  RsOut = Inst.getOperand(1).getReg();
-  return true;
-}
-
-static bool matchLdxD(const MCInst &Inst, MCRegister &RjOut,
-                      MCRegister &RkOut) {
-  if (Inst.getOpcode() != LoongArch::LDX_D || Inst.getNumOperands() < 3)
-    return false;
-  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
-    return false;
-  RjOut = Inst.getOperand(1).getReg();
-  RkOut = Inst.getOperand(2).getReg();
-  return true;
-}
-
-static bool matchLdxW(const MCInst &Inst, MCRegister &RjOut,
-                      MCRegister &RkOut) {
-  if (Inst.getOpcode() != LoongArch::LDX_W || Inst.getNumOperands() < 3)
-    return false;
-  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
-    return false;
-  RjOut = Inst.getOperand(1).getReg();
-  RkOut = Inst.getOperand(2).getReg();
-  return true;
-}
-
-static bool matchLdD(const MCInst &Inst, MCRegister &RjOut) {
-  unsigned Opc = Inst.getOpcode();
-  if (Opc != LoongArch::LDPTR_D && Opc != LoongArch::LD_D)
-    return false;
-  if (!Inst.getOperand(1).isReg())
-    return false;
-  RjOut = Inst.getOperand(1).getReg();
-  return true;
-}
-
-static bool matchAlslD(const MCInst &Inst, unsigned Shift, MCRegister &RjOut,
-                       MCRegister &RkOut) {
-  if (Inst.getOpcode() != LoongArch::ALSL_D || Inst.getNumOperands() < 4)
-    return false;
-  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg() ||
-      !Inst.getOperand(3).isImm())
-    return false;
-  if (Inst.getOperand(3).getImm() != Shift)
-    return false;
-  RjOut = Inst.getOperand(1).getReg();
-  RkOut = Inst.getOperand(2).getReg();
-  return true;
-}
-
-static bool matchAddD(const MCInst &Inst, MCRegister &RjOut,
-                      MCRegister &RkOut) {
-  if (Inst.getOpcode() != LoongArch::ADD_D || Inst.getNumOperands() < 3)
-    return false;
-  if (!Inst.getOperand(1).isReg() || !Inst.getOperand(2).isReg())
-    return false;
-  RjOut = Inst.getOperand(1).getReg();
-  RkOut = Inst.getOperand(2).getReg();
-  return true;
-}
 
 class LoongArchMCPlusBuilder : public MCPlusBuilder {
 public:
@@ -205,23 +104,14 @@ public:
   }
 
   bool isIndirectCall(const MCInst &Inst) const override {
-    if (!isCall(Inst))
-      return false;
-
-    switch (Inst.getOpcode()) {
-    default:
-      return false;
-    case LoongArch::JIRL:
-      return true;
-    }
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return isCall(Inst) && matchInst(Inst, LoongArch::JIRL);
   }
 
   bool isNoop(const MCInst &Inst) const override {
-    return Inst.getOpcode() == LoongArch::ANDI && Inst.getNumOperands() == 3 &&
-           Inst.getOperand(0).isReg() &&
-           Inst.getOperand(0).getReg() == LoongArch::R0 &&
-           Inst.getOperand(1).isReg() &&
-           Inst.getOperand(1).getReg() == LoongArch::R0;
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::ANDI, Reg(LoongArch::R0),
+                     Reg(LoongArch::R0), Skip());
   }
 
   bool hasPCRelOperand(const MCInst &Inst) const override {
@@ -253,6 +143,8 @@ public:
       const unsigned PtrSize, MCInst *&MemLocInstr, unsigned &BaseRegNum,
       unsigned &IndexRegNum, int64_t &DispValue, const MCExpr *&DispExpr,
       MCInst *&PCRelBaseOut, MCInst *&FixedEntryLoadInst) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
     MemLocInstr = nullptr;
     BaseRegNum = 0;
     IndexRegNum = 0;
@@ -261,20 +153,15 @@ public:
     PCRelBaseOut = nullptr;
     FixedEntryLoadInst = nullptr;
 
-    if (Instruction.getOpcode() != LoongArch::JIRL ||
-        Instruction.getNumOperands() < 3 ||
-        !Instruction.getOperand(0).isReg() ||
-        !Instruction.getOperand(1).isReg()) {
+    Reg JirlRd, JirlRj;
+    if (!matchInst(Instruction, LoongArch::JIRL, JirlRd, JirlRj, Skip())) {
       LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
                         << "terminator is not jirl\n");
       return IndirectBranchType::UNKNOWN;
     }
 
-    const MCRegister JirlRd = Instruction.getOperand(0).getReg();
-    const MCRegister JirlRj = Instruction.getOperand(1).getReg();
-
     // Filter out returns.
-    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1) {
+    if (JirlRd.get() == LoongArch::R0 && JirlRj.get() == LoongArch::R1) {
       LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
                         << "return instruction\n");
       return IndirectBranchType::UNKNOWN;
@@ -322,17 +209,19 @@ public:
                                             MCInst *&PCRelBaseOut) -> bool {
       if (!Def)
         return false;
-      if (matchPcaddi(*Def, TargetReg)) {
+      Expr DispExpr;
+      if (matchInst(*Def, LoongArch::PCADDI, Reg(TargetReg), DispExpr)) {
         PCRelBaseOut = Def;
-        DispExprOut = Def->getOperand(1).getExpr();
+        DispExprOut = DispExpr.get();
         return true;
       }
-      MCRegister AddiSrc;
-      if (matchAddiD(*Def, TargetReg, AddiSrc)) {
-        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc, *Def);
-        if (Pcalau && matchPcalau12i(*Pcalau, AddiSrc)) {
+      Reg AddiSrc;
+      if (matchInst(*Def, LoongArch::ADDI_D, Reg(TargetReg), AddiSrc)) {
+        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        if (Pcalau &&
+            matchInst(*Pcalau, LoongArch::PCALAU12I, AddiSrc, DispExpr)) {
           PCRelBaseOut = Pcalau;
-          DispExprOut = Pcalau->getOperand(1).getExpr();
+          DispExprOut = DispExpr.get();
           return true;
         }
       }
@@ -364,8 +253,12 @@ public:
       if (!Def)
         return false;
 
-      if (matchSlliD(*Def, ScaledReg, Shift, IndexReg))
+      Reg TheIndexReg;
+      if (matchInst(*Def, LoongArch::SLLI_D, Reg(ScaledReg), TheIndexReg,
+                    Imm(Shift))) {
+        IndexReg = TheIndexReg.get();
         return true;
+      }
 
       if (AllowSpill && isStackPtrLoad(*Def) && Def->getNumOperands() >= 3 &&
           Def->getOperand(0).isReg() &&
@@ -394,7 +287,7 @@ public:
     //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
     //     case ISD::BR_JT:
     do {
-      MCInst *const LdxD = findRegDef(UDChain, JirlRj, Instruction);
+      MCInst *const LdxD = findRegDef(UDChain, JirlRj.get(), Instruction);
       if (!LdxD) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
                           << "JirlRj has no local def\n");
@@ -402,16 +295,15 @@ public:
         break;
       }
 
-      MCRegister LdxBase;
-      MCRegister LdxIndex;
-      if (!matchLdxD(*LdxD, LdxBase, LdxIndex)) {
+      Reg LdxBase, LdxIndex;
+      if (!matchInst(*LdxD, LoongArch::LDX_D, Reg(), LdxBase, LdxIndex)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
                           << "table: JirlRj def is not ldx.d\n");
         // Insn defining JirlRj is not an ldx.d.
         break;
       }
 
-      MCInst *const BaseDef = findRegDef(UDChain, LdxBase, *LdxD);
+      MCInst *const BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
       if (!BaseDef) {
         // Can't even find the defn site of LdxBase.
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
@@ -419,7 +311,7 @@ public:
         break;
       }
 
-      if (!resolvePcRelBase(BaseDef, LdxBase, DispExpr, PCRelBaseOut)) {
+      if (!resolvePcRelBase(BaseDef, LdxBase.get(), DispExpr, PCRelBaseOut)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
                           << "table: can't resolve LdxBase\n");
         // Can't resolve LdxBase loading sequence.
@@ -427,7 +319,7 @@ public:
       }
 
       MCRegister IndexSrc;
-      if (!resolveSlliIndex(*LdxD, LdxIndex, 3, IndexSrc)) {
+      if (!resolveSlliIndex(*LdxD, LdxIndex.get(), 3, IndexSrc)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
                           << "table: can't resolve scaled index\n");
         // Can't resolve IndexSrc.
@@ -435,7 +327,7 @@ public:
       }
 
       MemLocInstr = LdxD;
-      BaseRegNum = LdxBase;
+      BaseRegNum = LdxBase.get();
       IndexRegNum = IndexSrc;
       return IndirectBranchType::POSSIBLE_JUMP_TABLE;
     } while (0);
@@ -457,7 +349,7 @@ public:
     //   llvm/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
     //     "// For PIC, the sequence is:"
     do {
-      MCInst *AddD = findRegDef(UDChain, JirlRj, Instruction);
+      MCInst *AddD = findRegDef(UDChain, JirlRj.get(), Instruction);
       if (!AddD) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
                           << "JirlRj has no local def\n");
@@ -466,7 +358,7 @@ public:
 
       // JirlRj spilled to stack?
       if (std::optional<std::pair<MCInst *, MCRegister>> Store =
-              findStackStoreForLoad(AddD, JirlRj)) {
+              findStackStoreForLoad(AddD, JirlRj.get())) {
         AddD = findRegDef(UDChain, Store->second, *Store->first);
         if (!AddD) {
           LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
@@ -475,26 +367,29 @@ public:
         }
       }
 
-      MCRegister AddBase;
-      MCRegister LdxBase;
-      MCRegister LdxIndex;
-      MCRegister AddOp1;
-      MCRegister AddOp2;
-      if (!matchAddD(*AddD, AddOp1, AddOp2)) {
+      Reg AddOp1, AddOp2;
+      if (!matchInst(*AddD, LoongArch::ADD_D, Reg(), AddOp1, AddOp2)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
                           << "table: JirlRj def is not add.d\n");
         break;
       }
-      MCInst *LdxW = findRegDef(UDChain, AddOp1, *AddD);
-      if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex)) {
-        LdxW = findRegDef(UDChain, AddOp2, *AddD);
-        if (!LdxW || !matchLdxW(*LdxW, LdxBase, LdxIndex)) {
+
+      Reg LdxRdReg, LdxBaseReg, LdxIndexReg;
+      MCInst *LdxW = findRegDef(UDChain, AddOp1.get(), *AddD);
+      if (!LdxW || !matchInst(*LdxW, LoongArch::LDX_W, LdxRdReg, LdxBaseReg,
+                              LdxIndexReg)) {
+        LdxW = findRegDef(UDChain, AddOp2.get(), *AddD);
+        if (!LdxW || !matchInst(*LdxW, LoongArch::LDX_W, LdxRdReg, LdxBaseReg,
+                                LdxIndexReg)) {
           LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
                             << "table: add.d operand is not ldx.w\n");
           break;
         }
       }
-      AddBase = (AddOp1 == LdxW->getOperand(0).getReg()) ? AddOp2 : AddOp1;
+      const MCRegister LdxBase = LdxBaseReg.get();
+      const MCRegister LdxIndex = LdxIndexReg.get();
+      const MCRegister AddBase =
+          (AddOp1.get() == LdxRdReg.get()) ? AddOp2.get() : AddOp1.get();
 
       MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
       if (!BaseDef) {
@@ -545,21 +440,22 @@ public:
     //     gen_tablejump
     //     define_expand "tablejump"
     do {
-      MCInst *const Load = findRegDef(UDChain, JirlRj, Instruction);
+      MCInst *const Load = findRegDef(UDChain, JirlRj.get(), Instruction);
       if (!Load) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match indirect branch: "
                           << "JirlRj has no local def\n");
         break;
       }
 
-      MCRegister AddrReg;
-      if (!matchLdD(*Load, AddrReg)) {
+      Reg AddrReg;
+      if (!matchInst(*Load, LoongArch::LD_D, Reg(), AddrReg) &&
+          !matchInst(*Load, LoongArch::LDPTR_D, Reg(), AddrReg)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                           << "table: JirlRj def is not ld.d/ldptr.d\n");
         break;
       }
 
-      MCInst *const AddrDef = findRegDef(UDChain, AddrReg, *Load);
+      MCInst *const AddrDef = findRegDef(UDChain, AddrReg.get(), *Load);
       if (!AddrDef) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                           << "table: AddrReg has no local def\n");
@@ -568,31 +464,38 @@ public:
 
       const unsigned ExpectedShift = Log2_32(PtrSize);
 
-      MCRegister BaseReg;
-      MCRegister IdxReg;
-      if (!matchAlslD(*AddrDef, ExpectedShift, IdxReg, BaseReg)) {
-        MCRegister AddOp1, AddOp2;
-        if (!matchAddD(*AddrDef, AddOp1, AddOp2)) {
+      MCRegister BaseReg, IdxReg;
+      Reg BaseRegObj, IdxRegObj;
+      if (!matchInst(*AddrDef, LoongArch::ALSL_D, Reg(), IdxRegObj, BaseRegObj,
+                     Imm(ExpectedShift))) {
+        Reg AddOp1Reg, AddOp2Reg;
+        if (!matchInst(*AddrDef, LoongArch::ADD_D, Reg(), AddOp1Reg,
+                       AddOp2Reg)) {
           LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                             << "table: AddrReg def is not alsl.d/add.d\n");
           break;
         }
 
-        MCRegister Tmp;
-        MCInst *const Def1 = findRegDef(UDChain, AddOp1, *AddrDef);
-        MCInst *const Def2 = findRegDef(UDChain, AddOp2, *AddrDef);
+        MCInst *const Def1 = findRegDef(UDChain, AddOp1Reg.get(), *AddrDef);
+        MCInst *const Def2 = findRegDef(UDChain, AddOp2Reg.get(), *AddrDef);
+        Reg Tmp;
         const bool Op1IsSlli =
-            Def1 && matchSlliD(*Def1, AddOp1, ExpectedShift, Tmp);
+            Def1 && matchInst(*Def1, LoongArch::SLLI_D, Reg(AddOp1Reg.get()),
+                              Tmp, Imm(ExpectedShift));
         const bool Op2IsSlli =
-            Def2 && matchSlliD(*Def2, AddOp2, ExpectedShift, Tmp);
+            Def2 && matchInst(*Def2, LoongArch::SLLI_D, Reg(AddOp2Reg.get()),
+                              Tmp, Imm(ExpectedShift));
         if (Op1IsSlli == Op2IsSlli) {
           LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                             << "table: can't identify scaled index\n");
           break;
         }
 
-        IdxReg = Tmp;
-        BaseReg = Op1IsSlli ? AddOp2 : AddOp1;
+        IdxReg = Tmp.get();
+        BaseReg = Op1IsSlli ? AddOp2Reg.get() : AddOp1Reg.get();
+      } else {
+        IdxReg = IdxRegObj.get();
+        BaseReg = BaseRegObj.get();
       }
 
       MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
@@ -627,32 +530,33 @@ public:
     // Cf.
     //   <https://reviews.llvm.org/D137889>
     do {
-      if (JirlRd != LoongArch::R0) {
+      if (JirlRd.get() != LoongArch::R0) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
                           << "jirl writes return address\n");
         break;
       }
 
-      MCInst *const Def = findRegDef(UDChain, JirlRj, Instruction);
+      MCInst *const Def = findRegDef(UDChain, JirlRj.get(), Instruction);
       if (!Def) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
                           << "JirlRj has no local def\n");
         break;
       }
 
-      if (matchPcaddi(*Def, JirlRj) || matchPcaddu18i(*Def, JirlRj))
+      if (matchInst(*Def, LoongArch::PCADDI, Reg(JirlRj)) ||
+          matchInst(*Def, LoongArch::PCADDU18I, Reg(JirlRj)))
         return IndirectBranchType::POSSIBLE_TAIL_CALL;
 
-      MCRegister AddiSrc;
-      if (!matchAddiD(*Def, JirlRj, AddiSrc)) {
+      Reg AddiSrc;
+      if (!matchInst(*Def, LoongArch::ADDI_D, Reg(JirlRj), AddiSrc)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
                           << "target materialization is not pcaddi/"
                           << "pcaddu18i/pcalau12i+addi.d\n");
         break;
       }
 
-      MCInst *const BaseDef = findRegDef(UDChain, AddiSrc, *Def);
-      if (!BaseDef || !matchPcalau12i(*BaseDef, AddiSrc)) {
+      MCInst *const BaseDef = findRegDef(UDChain, AddiSrc.get(), *Def);
+      if (!BaseDef || !matchInst(*BaseDef, LoongArch::PCALAU12I, AddiSrc)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match tail call: "
                           << "addi.d base is not pcalau12i\n");
         break;
@@ -671,6 +575,8 @@ public:
                                 std::vector<MCInst *> &MethodFetchInsns,
                                 unsigned &VtableRegNum, unsigned &MethodRegNum,
                                 uint64_t &MethodOffset) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
     VtableRegNum = LoongArch::NoRegister;
     MethodRegNum = LoongArch::NoRegister;
     MethodOffset = 0;
@@ -679,19 +585,17 @@ public:
 
     auto I = End;
     const MCInst &Jirl = *(--I);
-    if (Jirl.getOpcode() != LoongArch::JIRL || Jirl.getNumOperands() < 3 ||
-        !Jirl.getOperand(0).isReg() || !Jirl.getOperand(1).isReg() ||
-        !Jirl.getOperand(2).isImm() || Jirl.getOperand(2).getImm() != 0) {
+    Reg JirlRd, JirlRj;
+    Imm JirlImm;
+    if (!matchInst(Jirl, LoongArch::JIRL, JirlRd, JirlRj, JirlImm) ||
+        JirlImm.get() != 0) {
       LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method call: "
                         << "terminator is not zero-offset jirl\n");
       return false;
     }
 
-    const MCRegister JirlRd = Jirl.getOperand(0).getReg();
-    const MCRegister JirlRj = Jirl.getOperand(1).getReg();
-
     // Filter out returns.
-    if (JirlRd == LoongArch::R0 && JirlRj == LoongArch::R1) {
+    if (JirlRd.get() == LoongArch::R0 && JirlRj.get() == LoongArch::R1) {
       LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method call: "
                         << "return instruction\n");
       return false;
@@ -722,27 +626,26 @@ public:
     //     call_internal/call_value_internal,
     //     sibcall_internal/sibcall_value_internal
     do {
-      MCInst *const Load = findRegDef(UDChain, JirlRj, Jirl);
+      MCInst *const Load = findRegDef(UDChain, JirlRj.get(), Jirl);
       if (!Load) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method "
                           << "call: method register has no local def\n");
         break;
       }
 
-      const unsigned Opc = Load->getOpcode();
-      if ((Opc != LoongArch::LD_D && Opc != LoongArch::LDPTR_D) ||
-          Load->getNumOperands() < 3 || !Load->getOperand(0).isReg() ||
-          Load->getOperand(0).getReg() != JirlRj ||
-          !Load->getOperand(1).isReg() || !Load->getOperand(2).isImm()) {
+      Reg VtableReg;
+      Imm VtableImm;
+      if (!matchInst(*Load, LoongArch::LD_D, JirlRj, VtableReg, VtableImm) &&
+          !matchInst(*Load, LoongArch::LDPTR_D, JirlRj, VtableReg, VtableImm)) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match virtual method "
                           << "call: method load is not fixed-slot ld.d/"
                           << "ldptr.d\n");
         break;
       }
 
-      VtableRegNum = Load->getOperand(1).getReg();
-      MethodRegNum = JirlRj;
-      MethodOffset = Load->getOperand(2).getImm();
+      VtableRegNum = VtableReg.get();
+      MethodRegNum = JirlRj.get();
+      MethodOffset = VtableImm.get();
       MethodFetchInsns.push_back(Load);
       return true;
     } while (0);
@@ -944,8 +847,8 @@ public:
   }
 
   bool isTrap(const MCInst &Inst) const override {
-    return Inst.getOpcode() == LoongArch::BREAK && Inst.getNumOperands() == 1 &&
-           Inst.getOperand(0).isImm() && Inst.getOperand(0).getImm() == 0;
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::BREAK, Imm(0));
   }
 
   StringRef getTrapFillValue() const override {
@@ -1180,6 +1083,7 @@ public:
   uint64_t analyzePLTEntry(MCInst &Instruction, InstructionIterator Begin,
                            InstructionIterator End,
                            uint64_t BeginPC) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
 
 #define CHECK_(cond_)                                                          \
   if (!(cond_)) {                                                              \
@@ -1205,29 +1109,24 @@ public:
 
       CHECK_(I != End);
       const auto &PCRelInst = *I++;
-      CHECK_(PCRelInst.getOpcode() == LoongArch::PCADDU12I);
-      CHECK_(PCRelInst.getOperand(0).isReg() &&
-             PCRelInst.getOperand(0).getReg() == LoongArch::R15);
-      CHECK_(PCRelInst.getOperand(1).isImm());
-      PCRelOffset = BeginPC + (PCRelInst.getOperand(1).getImm() << 12);
+      Imm PCRelImm;
+      CHECK_(matchInst(PCRelInst, LoongArch::PCADDU12I, Reg(LoongArch::R15),
+                       PCRelImm));
+      PCRelOffset = BeginPC + (PCRelImm.get() << 12);
 
       CHECK_(I != End);
       const auto &LdInst = *I++;
-      CHECK_(LdInst.getOpcode() == LoongArch::LD_D ||
-             LdInst.getOpcode() == LoongArch::LD_W);
-      CHECK_(LdInst.getOperand(0).isReg() &&
-             LdInst.getOperand(0).getReg() == LoongArch::R15);
-      CHECK_(LdInst.getOperand(1).isReg() &&
-             LdInst.getOperand(1).getReg() == LoongArch::R15);
-      LdOffset = LdInst.getOperand(2).getImm();
+      Imm LdImm;
+      CHECK_(matchInst(LdInst, LoongArch::LD_D, Reg(LoongArch::R15),
+                       Reg(LoongArch::R15), LdImm) ||
+             matchInst(LdInst, LoongArch::LD_W, Reg(LoongArch::R15),
+                       Reg(LoongArch::R15), LdImm));
+      LdOffset = LdImm.get();
 
       CHECK_(I != End);
       const auto &JirlInst = *I++;
-      CHECK_(JirlInst.getOpcode() == LoongArch::JIRL);
-      CHECK_(JirlInst.getOperand(0).isReg() &&
-             JirlInst.getOperand(0).getReg() == LoongArch::R13);
-      CHECK_(JirlInst.getOperand(1).isReg() &&
-             JirlInst.getOperand(1).getReg() == LoongArch::R15);
+      CHECK_(matchInst(JirlInst, LoongArch::JIRL, Reg(LoongArch::R13),
+                       Reg(LoongArch::R15)));
 
       CHECK_(I != End);
       const auto &NopInst = *I++;
@@ -1247,40 +1146,33 @@ public:
     // Cf.
     //   https://github.com/rui314/mold/blob/45970e661d462fd664e7249a4bfc20ca4d0c6f39/src/arch-loongarch.cc#L187
     do {
-      int64_t PCRelOffset;
-      int64_t LdOffset;
+      int64_t PCRelOffset, LdOffset;
       auto I = Begin;
 
       CHECK_(I != End);
       const auto &PCRelInst = *I++;
-      CHECK_(PCRelInst.getOpcode() == LoongArch::PCALAU12I);
-      CHECK_(PCRelInst.getOperand(0).isReg() &&
-             PCRelInst.getOperand(0).getReg() == LoongArch::R15);
-      CHECK_(PCRelInst.getOperand(1).isImm());
-      PCRelOffset =
-          (BeginPC + (PCRelInst.getOperand(1).getImm() << 12)) & ~0xfffULL;
+      Imm PCRelImm;
+      CHECK_(matchInst(PCRelInst, LoongArch::PCALAU12I, Reg(LoongArch::R15),
+                       PCRelImm));
+      PCRelOffset = (BeginPC + (PCRelImm.get() << 12)) & ~0xfffULL;
 
       CHECK_(I != End);
       const auto &LdInst = *I++;
-      CHECK_(LdInst.getOpcode() == LoongArch::LD_D ||
-             LdInst.getOpcode() == LoongArch::LD_W);
-      CHECK_(LdInst.getOperand(0).isReg() &&
-             LdInst.getOperand(0).getReg() == LoongArch::R15);
-      CHECK_(LdInst.getOperand(1).isReg() &&
-             LdInst.getOperand(1).getReg() == LoongArch::R15);
-      LdOffset = LdInst.getOperand(2).getImm();
+      Imm LdImm;
+      CHECK_(matchInst(LdInst, LoongArch::LD_D, Reg(LoongArch::R15),
+                       Reg(LoongArch::R15), LdImm) ||
+             matchInst(LdInst, LoongArch::LD_W, Reg(LoongArch::R15),
+                       Reg(LoongArch::R15), LdImm));
+      LdOffset = LdImm.get();
 
       CHECK_(I != End);
       const auto &JirlInst = *I++;
-      CHECK_(JirlInst.getOpcode() == LoongArch::JIRL);
-      CHECK_(JirlInst.getOperand(0).isReg() &&
-             JirlInst.getOperand(0).getReg() == LoongArch::R13);
-      CHECK_(JirlInst.getOperand(1).isReg() &&
-             JirlInst.getOperand(1).getReg() == LoongArch::R15);
+      CHECK_(matchInst(JirlInst, LoongArch::JIRL, Reg(LoongArch::R13),
+                       Reg(LoongArch::R15)));
 
       CHECK_(I != End);
       const auto &BreakInst = *I++;
-      CHECK_(BreakInst.getOpcode() == LoongArch::BREAK);
+      CHECK_(matchInst(BreakInst, LoongArch::BREAK));
 
       CHECK_(I == End);
       return PCRelOffset + LdOffset;
@@ -1450,18 +1342,14 @@ public:
   MCPhysReg getFlagsReg() const override { return LoongArch::NoRegister; }
 
   bool isCleanRegXOR(const MCInst &Inst) const override {
-    switch (Inst.getOpcode()) {
-    default:
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    Reg Rd;
+    // Get rd first.
+    if (!matchInst(Inst, LoongArch::XOR, Rd)) {
       return false;
-    case LoongArch::XOR:
-      break;
     }
-    if (!(Inst.getNumOperands() >= 3 && Inst.getOperand(0).isReg() &&
-          Inst.getOperand(1).isReg() && Inst.getOperand(2).isReg()))
-      return false;
-    const MCRegister Rd = Inst.getOperand(0).getReg();
-    return Inst.getOperand(1).getReg() == Rd &&
-           Inst.getOperand(2).getReg() == Rd;
+    // Then see if every operand is rd.
+    return matchInst(Inst, LoongArch::XOR, Rd, Rd, Rd);
   }
 
   MCPhysReg getIntArgRegister(unsigned ArgNo) const override {
@@ -1892,19 +1780,15 @@ public:
 
 private:
   bool isStackPtrLoad(const MCInst &Inst) const {
-    const unsigned Opc = Inst.getOpcode();
-    if (Opc != LoongArch::LDPTR_D && Opc != LoongArch::LD_D)
-      return false;
-    return Inst.getNumOperands() >= 2 && Inst.getOperand(1).isReg() &&
-           Inst.getOperand(1).getReg() == LoongArch::R3;
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::LDPTR_D, Skip(), Reg(LoongArch::R3)) ||
+           matchInst(Inst, LoongArch::LD_D, Skip(), Reg(LoongArch::R3));
   }
 
   bool isStackPtrStore(const MCInst &Inst) const {
-    const unsigned Opc = Inst.getOpcode();
-    if (Opc != LoongArch::STPTR_D && Opc != LoongArch::ST_D)
-      return false;
-    return Inst.getNumOperands() >= 2 && Inst.getOperand(1).isReg() &&
-           Inst.getOperand(1).getReg() == LoongArch::R3;
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::STPTR_D, Skip(), Reg(LoongArch::R3)) ||
+           matchInst(Inst, LoongArch::ST_D, Skip(), Reg(LoongArch::R3));
   }
 
   /// Load a register from a stack slot.
