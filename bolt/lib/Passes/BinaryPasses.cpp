@@ -1222,7 +1222,8 @@ bool SimplifyRODataLoads::simplifyRODataLoads(BinaryFunction &BF) {
   uint64_t NumDynamicLocalLoadsFound = 0;
 
   for (BinaryBasicBlock *BB : BF.getLayout().blocks()) {
-    for (MCInst &Inst : *BB) {
+    for (auto II = BB->begin(); II != BB->end(); ++II) {
+      MCInst &Inst = *II;
       unsigned Opcode = Inst.getOpcode();
       const MCInstrDesc &Desc = BC.MII->get(Opcode);
 
@@ -1278,10 +1279,15 @@ bool SimplifyRODataLoads::simplifyRODataLoads(BinaryFunction &BF) {
       if (BB->hasProfile())
         NumDynamicLocalLoadsFound += BB->getExecutionCount();
 
-      if (MIB->replaceMemOperandWithImm(Inst, ConstantData, Offset)) {
+      InstructionListType NewInsts;
+      if (MIB->replaceMemOperandWithImm(Inst, NewInsts, ConstantData, Offset)) {
         ++NumLocalLoadsSimplified;
         if (BB->hasProfile())
           NumDynamicLocalLoadsSimplified += BB->getExecutionCount();
+        if (!NewInsts.empty()) {
+          II = BB->replaceInstruction(II, NewInsts);
+          std::advance(II, NewInsts.size() - 1);
+        }
       }
     }
   }

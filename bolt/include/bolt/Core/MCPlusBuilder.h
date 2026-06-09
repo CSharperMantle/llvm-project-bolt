@@ -1369,6 +1369,21 @@ public:
     return false;
   }
 
+  /// Same as replaceMemOperandWithImm, but may produce multiple instructions.
+  /// The replacement instructions are returned in \p NewInsts. The original
+  /// instruction is not modified. The default implementation delegates to the
+  /// single-instruction version above.
+  virtual bool replaceMemOperandWithImm(MCInst &Inst,
+                                        InstructionListType &NewInsts,
+                                        StringRef ConstantData,
+                                        uint64_t Offset) const {
+    if (replaceMemOperandWithImm(Inst, ConstantData, Offset)) {
+      NewInsts.assign(1, Inst);
+      return true;
+    }
+    return false;
+  }
+
   /// Same as replaceMemOperandWithImm, but for registers.
   virtual bool replaceMemOperandWithReg(MCInst &Inst, MCPhysReg RegNum) const {
     llvm_unreachable("not implemented");
