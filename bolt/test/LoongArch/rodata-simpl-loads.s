@@ -17,7 +17,7 @@
 // OBJDUMP-NEXT: add.d $t0, $t0, $a0
 /// Case 3
 // OBJDUMP-NEXT: pcalau12i $a0, {{-?[0-9]+}}
-// OBJDUMP-NEXT: ori $a0, $zero, 56
+// OBJDUMP-NEXT: addi.d $a0, $zero, 56
 // OBJDUMP-NEXT: add.d $t0, $t0, $a0
 /// Case 4
 // OBJDUMP-NEXT: pcalau12i $a0, {{-?[0-9]+}}
@@ -26,9 +26,9 @@
 /// Case 5
 // OBJDUMP-NEXT: pcalau12i $a0, {{-?[0-9]+}}
 // OBJDUMP-NEXT: lu12i.w $a0, -217109
-// OBJDUMP-NEXT: ori $a0, $a0, 2750
 // OBJDUMP-NEXT: lu32i.d $a0, 397876
 // OBJDUMP-NEXT: lu52i.d $a0, $a0, -1657
+// OBJDUMP-NEXT: ori $a0, $a0, 2750
 // OBJDUMP-NEXT: add.d $t0, $t0, $a0
 
   .text

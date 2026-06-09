@@ -1675,28 +1675,107 @@ public:
 
   InstructionListType createLoadImmediate(const MCPhysReg Dest,
                                           uint64_t Imm) const override {
-    // lu12i.w  $rd, (Imm >> 12) & 0xFFFFF      // rd[31:12] = Imm[31:12]
-    // ori      $rd, $rd, Imm & 0xFFF           // rd[11:0]  = Imm[11:0]
-    // lu32i.d  $rd, $rd, (Imm >> 32) & 0xFFFFF // rd[51:32] = Imm[51:32]
-    // lu52i.d  $rd, $rd, (Imm >> 52) & 0xFFF   // rd[63:52] = Imm[63:52]
-    InstructionListType Insts(4);
+    // <https://searchfox.org/firefox-main/rev/13c921de977264c9684ce23b0bfc46578babda18/js/src/jit/loong64/MacroAssembler-loong64.cpp#196-253>
 
-    Insts[0] = MCInstBuilder(LoongArch::LU12I_W)
-                   .addReg(Dest)
-                   .addImm((Imm >> 12) & 0xFFFFF);
-    Insts[1] = MCInstBuilder(LoongArch::ORI)
-                   .addReg(Dest)
-                   .addReg(Dest)
-                   .addImm(Imm & 0xFFF);
-    Insts[2] = MCInstBuilder(LoongArch::LU32I_D)
-                   .addReg(Dest)
-                   .addReg(Dest)
-                   .addImm((Imm >> 32) & 0xFFFFF);
-    Insts[3] = MCInstBuilder(LoongArch::LU52I_D)
-                   .addReg(Dest)
-                   .addReg(Dest)
-                   .addImm((Imm >> 52) & 0xFFF);
+    const int64_t SImm = static_cast<int64_t>(Imm);
 
+    InstructionListType Insts;
+
+    if (isInt<12>(SImm)) {
+      Insts.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
+                             .addReg(Dest)
+                             .addReg(LoongArch::R0)
+                             .addImm(SImm));
+      return Insts;
+    }
+    if (isUInt<12>(SImm)) {
+      Insts.emplace_back(MCInstBuilder(LoongArch::ORI)
+                             .addReg(Dest)
+                             .addReg(LoongArch::R0)
+                             .addImm(SImm));
+      return Insts;
+    }
+
+    const uint32_t Bits11To0 = Imm & 0xFFF;
+    const uint32_t Bits31To12 = (Imm >> 12) & 0xFFFFF;
+    const uint32_t Bits51To32 = (Imm >> 32) & 0xFFFFF;
+    const uint32_t Bits63To52 = (Imm >> 52) & 0xFFF;
+
+    // The mnemonics of these imm-generating instructions may be a bit
+    // misleading. From
+    // <https://loongson.github.io/LoongArch-Documentation/LoongArch-Vol1-EN.html#_lu12i_w_lu32i_d_lu52i_d>:
+    //
+    // * LU12I.W: GR[rd] = SignExtend({si20, 12'b0}, GRLEN)
+    //   Build from 0 and imm
+    // * LU32I.D: GR[rd] = {SignExtend(si20, 32), GR[rd][31:0]}
+    //   Concat(!) rd and imm
+    // * LU52I.D: GR[rd] = {si12, GR[rj][51:0]}
+    //   Concat rj(!), imm and store to rd
+    //
+    // These matter when building large numbers.
+
+    if (isInt<32>(SImm)) {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+    } else if (isUInt<32>(Imm)) {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+      if ((Bits31To12 >> 19) & 1)
+        Insts.emplace_back(MCInstBuilder(LoongArch::BSTRINS_D)
+                               .addReg(Dest)
+                               .addReg(LoongArch::R0)
+                               .addImm(63)
+                               .addImm(32));
+    } else if (isInt<52>(SImm)) {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU32I_D)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits51To32));
+    } else if (isUInt<52>(Imm)) {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU32I_D)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits51To32));
+      Insts.emplace_back(MCInstBuilder(LoongArch::BSTRINS_D)
+                             .addReg(Dest)
+                             .addReg(LoongArch::R0)
+                             .addImm(63)
+                             .addImm(52));
+    } else if (Bits31To12 == 0 && Bits51To32 == 0) {
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU52I_D)
+                             .addReg(Dest)
+                             .addReg(LoongArch::R0)
+                             .addImm(Bits63To52));
+    } else if (Bits31To12 != 0 && ((Bits31To12 >> 19) & 1) == 0 &&
+               Bits51To32 == 0) {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU52I_D)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits63To52));
+    } else {
+      Insts.emplace_back(
+          MCInstBuilder(LoongArch::LU12I_W).addReg(Dest).addImm(Bits31To12));
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU32I_D)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits51To32));
+      Insts.emplace_back(MCInstBuilder(LoongArch::LU52I_D)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits63To52));
+    }
+
+    if (Bits11To0 != 0)
+      Insts.emplace_back(MCInstBuilder(LoongArch::ORI)
+                             .addReg(Dest)
+                             .addReg(Dest)
+                             .addImm(Bits11To0));
     return Insts;
   }
 
@@ -1747,35 +1826,12 @@ public:
     if (IsUnsigned) {
       const uint64_t ImmVal =
           DataExtractor(ConstantData, true, 8).getUnsigned(&Offset, DataSize);
-      if (isUInt<12>(ImmVal)) {
-        NewInsts.emplace_back(MCInstBuilder(LoongArch::ORI)
-                                  .addReg(DestReg)
-                                  .addReg(LoongArch::R0)
-                                  .addImm(ImmVal));
-      } else {
-        NewInsts = createLoadImmediate(DestReg, ImmVal);
-      }
-      return true;
-    }
-
-    // Signed loads sign-extend the loaded value.
-    const int64_t ImmVal =
-        DataExtractor(ConstantData, true, 8).getSigned(&Offset, DataSize);
-
-    if (isInt<12>(ImmVal)) {
-      NewInsts.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
-                                .addReg(DestReg)
-                                .addReg(LoongArch::R0)
-                                .addImm(ImmVal));
-    } else if (isUInt<12>(ImmVal)) {
-      NewInsts.emplace_back(MCInstBuilder(LoongArch::ORI)
-                                .addReg(DestReg)
-                                .addReg(LoongArch::R0)
-                                .addImm(ImmVal));
+      NewInsts = createLoadImmediate(DestReg, ImmVal);
     } else {
+      const int64_t ImmVal =
+          DataExtractor(ConstantData, true, 8).getSigned(&Offset, DataSize);
       NewInsts = createLoadImmediate(DestReg, static_cast<uint64_t>(ImmVal));
     }
-
     return true;
   }
 
