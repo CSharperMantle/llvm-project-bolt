@@ -1295,6 +1295,12 @@ bool SimplifyRODataLoads::simplifyRODataLoads(BinaryFunction &BF) {
       if (!DataSection || DataSection->isWritable())
         continue;
 
+      // Skip ELF metadata sections (e.g. .dynsym, .dynstr, .gnu.hash) that are
+      // ro but not "[format and meaning] determined solely by the program".
+      // Don't touch them.
+      if (DataSection->getELFType() != ELF::SHT_PROGBITS)
+        continue;
+
       if (BC.getRelocationAt(TargetAddress) ||
           BC.getDynamicRelocationAt(TargetAddress))
         continue;
