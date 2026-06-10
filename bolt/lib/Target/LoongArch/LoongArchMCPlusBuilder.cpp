@@ -651,13 +651,24 @@ public:
       return true;
     } while (0);
 
-    // TODO: indexed vtable-slot load
+    // NOT PLANNED: Indexed vtable-slot load
     //
     // Method      ldx.d  $MethodReg, $VtableReg, $IndexReg
     //
     // This needs MethodOffset recovery from $IndexReg before it is safe for
-    // vtable ICP. Do not accept it until constant/scaled-index recovery is
-    // implemented and tested.
+    // vtable ICP. The threshold is >32764 bytes (>~4096 methods) and hardly
+    // ever reached in real class hierarchies.
+    //
+    // Clang materializes the constant via multi-instruction li sequences,
+    // which itself is easy to generate but hard to recover without emulated
+    // execution.
+    // - llvm/lib/Target/LoongArch/LoongArchMergeBaseOffset.cpp
+    //
+    // GCC never emits ldx.d for vtable loads:
+    // - gcc-16.1.0/gcc/config/loongarch/loongarch.cc:2544 loongarch_classify_address
+    //   Penalizes REG+REG at 3x cost
+    // - gcc-16.1.0/gcc/config/loongarch/loongarch.cc:5318 loongarch_output_move
+    //   Always selects ld.d/ldptr.d for integer constant offsets
 
     return false;
   }
