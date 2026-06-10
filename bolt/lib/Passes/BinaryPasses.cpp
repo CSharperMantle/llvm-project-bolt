@@ -1901,7 +1901,7 @@ Error StripRepRet::runOnFunctions(BinaryContext &BC) {
 }
 
 Error InlineMemcpy::runOnFunctions(BinaryContext &BC) {
-  if (!BC.isX86() && !BC.isAArch64())
+  if (!BC.isX86() && !BC.isAArch64() && !BC.isLoongArch())
     return Error::success();
 
   uint64_t NumInlined = 0;
@@ -1929,7 +1929,8 @@ Error InlineMemcpy::runOnFunctions(BinaryContext &BC) {
         std::optional<uint64_t> KnownSize =
             BC.MIB->findMemcpySizeInBytes(BB, II);
 
-        if (BC.isAArch64() && (!KnownSize.has_value() || *KnownSize > 64))
+        if ((BC.isAArch64() || BC.isLoongArch()) &&
+            (!KnownSize.has_value() || *KnownSize > 64))
           continue;
 
         const InstructionListType NewCode =

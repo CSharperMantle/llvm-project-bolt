@@ -1846,6 +1846,58 @@ public:
     return true;
   }
 
+  std::optional<uint64_t>
+  extractMoveImmediate(const MCInst &Inst, MCPhysReg TargetReg) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    Imm Offset;
+    if (matchInst(Inst, LoongArch::ADDI_D, Reg(TargetReg), Reg(LoongArch::R0),
+                  Offset) ||
+        matchInst(Inst, LoongArch::ADDI_W, Reg(TargetReg), Reg(LoongArch::R0),
+                  Offset) ||
+        matchInst(Inst, LoongArch::ORI, Reg(TargetReg), Reg(LoongArch::R0),
+                  Offset))
+      return static_cast<uint64_t>(Offset.get());
+    return std::nullopt;
+  }
+
+  std::optional<uint64_t>
+  findMemcpySizeInBytes(const BinaryBasicBlock &BB,
+                        InstructionListType::iterator CallInst) const override {
+    MCPhysReg SizeReg = getIntArgRegister(2);
+    if (SizeReg == getNoRegister())
+      return std::nullopt;
+
+    BitVector WrittenRegs(RegInfo->getNumRegs());
+    const BitVector &SizeRegAliases = getAliases(SizeReg);
+
+    for (auto InstIt = CallInst; InstIt != BB.begin(); --InstIt) {
+      const MCInst &Inst = *InstIt;
+      WrittenRegs.reset();
+      getWrittenRegs(Inst, WrittenRegs);
+      if (WrittenRegs.anyCommon(SizeRegAliases))
+        return extractMoveImmediate(Inst, SizeReg);
+    }
+    return std::nullopt;
+  }
+
+  InstructionListType
+  createInlineMemcpy(bool ReturnEnd,
+                     std::optional<uint64_t> KnownSize) const override {
+    assert(KnownSize.has_value() &&
+           "LoongArch memcpy inlining requires known size");
+    InstructionListType Code;
+    uint64_t Size = *KnownSize;
+
+    generateSizeSpecificMemcpy(Code, Size);
+
+    if (ReturnEnd)
+      Code.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
+                            .addReg(LoongArch::R4)
+                            .addReg(LoongArch::R4)
+                            .addImm(Size));
+    return Code;
+  }
+
   BlocksVectorTy indirectCallPromotion(
       const MCInst &CallInst,
       const std::vector<std::pair<MCSymbol *, uint64_t>> &Targets,
@@ -2338,6 +2390,56 @@ private:
     }
 
     return nullptr;
+  }
+
+  void generateSizeSpecificMemcpy(InstructionListType &Code,
+                                  uint64_t Size) const {
+    // $t0-$t8
+    constexpr unsigned NumTempRegs = 9;
+
+    struct LoadStoreOp {
+      uint8_t Size;
+      unsigned LdOp;
+      unsigned StOp;
+    };
+    static const std::array<LoadStoreOp, 4> LoadStoreOps = {{
+        {8, LoongArch::LD_D, LoongArch::ST_D},
+        {4, LoongArch::LD_WU, LoongArch::ST_W},
+        {2, LoongArch::LD_HU, LoongArch::ST_H},
+        {1, LoongArch::LD_BU, LoongArch::ST_B},
+    }};
+
+    // [(Reg, OpIdx, Offset)]
+    SmallVector<std::tuple<MCRegister, uint8_t, int64_t>> Chunks;
+
+    uint64_t Remaining = Size;
+    uint64_t Offset = 0;
+    while (Remaining > 0) {
+      Chunks.clear();
+      for (const auto &[OpIdx, Op] : enumerate(LoadStoreOps)) {
+        // Select widest access as possible
+        while (Remaining >= Op.Size && Chunks.size() < NumTempRegs) {
+          Chunks.emplace_back(LoongArch::R12 + Chunks.size(),
+                              static_cast<uint8_t>(OpIdx),
+                              static_cast<int64_t>(Offset));
+          Remaining -= Op.Size;
+          Offset += Op.Size;
+        }
+      }
+      // Load group first, then store
+      for (const auto &[Reg, OpIdx, Offset] : Chunks) {
+        Code.emplace_back(MCInstBuilder(LoadStoreOps[OpIdx].LdOp)
+                              .addReg(Reg)
+                              .addReg(LoongArch::R5)
+                              .addImm(Offset));
+      }
+      for (const auto &[Reg, OpIdx, Offset] : Chunks) {
+        Code.emplace_back(MCInstBuilder(LoadStoreOps[OpIdx].StOp)
+                              .addReg(Reg)
+                              .addReg(LoongArch::R4)
+                              .addImm(Offset));
+      }
+    }
   }
 };
 
