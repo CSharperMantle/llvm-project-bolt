@@ -356,9 +356,17 @@ LongJmpPass::tentativeLayoutRelocMode(const BinaryContext &BC,
   CurrentIndex = 0;
   bool ColdLayoutDone = false;
   auto runColdLayout = [&]() {
+    if (!opts::HotFunctionsAtEnd)
+      // | .text | .text.cold |
+      //         ^
+      // Add slacks at end of .text for alignment.
+      DotAddress = alignTo(DotAddress, opts::AlignText);
     DotAddress = tentativeLayoutRelocColdPart(BC, SortedFunctions, DotAddress);
     ColdLayoutDone = true;
     if (opts::HotFunctionsAtEnd)
+      // | .text.cold | .text |
+      //              ^
+      // Pad .text.cold for alignment.
       DotAddress = alignTo(DotAddress, opts::AlignText);
   };
   for (BinaryFunction *Func : SortedFunctions) {
