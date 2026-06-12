@@ -841,12 +841,20 @@ public:
                                   loongarch::getEdgeKindName) {}
 };
 
-Error buildTables_ELF_loongarch(LinkGraph &G) {
+Error buildTables(LinkGraph &G) {
   LLVM_DEBUG(dbgs() << "Visiting edges in graph:\n");
 
   GOTTableManager GOT;
   PLTTableManager PLT(GOT);
   visitExistingEdges(G, GOT, PLT);
+  return Error::success();
+}
+
+Error buildGOT(LinkGraph &G) {
+  LLVM_DEBUG(dbgs() << "Visiting edges in graph:\n");
+
+  GOTTableManager GOT;
+  visitExistingEdges(G, GOT);
   return Error::success();
 }
 
@@ -906,7 +914,7 @@ void link_ELF_loongarch(std::unique_ptr<LinkGraph> G,
       Config.PrePrunePasses.push_back(markAllSymbolsLive);
 
     // Add an in-place GOT/PLTStubs build pass.
-    Config.PostPrunePasses.push_back(buildTables_ELF_loongarch);
+    Config.PostPrunePasses.push_back(buildTables);
 
     // Add a linker relaxation pass.
     Config.PostAllocationPasses.push_back(relax);
@@ -917,6 +925,8 @@ void link_ELF_loongarch(std::unique_ptr<LinkGraph> G,
 
   ELFJITLinker_loongarch::link(std::move(Ctx), std::move(G), std::move(Config));
 }
+
+LinkGraphPassFunction createBuildGOTPass_ELF_loongarch() { return buildGOT; }
 
 LinkGraphPassFunction createRelaxationPass_ELF_loongarch() { return relax; }
 

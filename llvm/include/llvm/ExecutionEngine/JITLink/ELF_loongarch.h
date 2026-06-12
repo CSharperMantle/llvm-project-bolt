@@ -33,6 +33,9 @@ Expected<std::unique_ptr<LinkGraph>> createLinkGraphFromELFObject_loongarch(
 void link_ELF_loongarch(std::unique_ptr<LinkGraph> G,
                         std::unique_ptr<JITLinkContext> Ctx);
 
+/// Returns a pass that builds GOT tables. Should be added to PostPrunePasses.
+LinkGraphPassFunction createBuildGOTPass_ELF_loongarch();
+
 /// Returns a pass that performs linker relaxation. Should be added to
 /// PostAllocationPasses.
 LinkGraphPassFunction createRelaxationPass_ELF_loongarch();
