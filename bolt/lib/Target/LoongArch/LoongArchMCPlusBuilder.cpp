@@ -2077,16 +2077,23 @@ public:
                                                      MCSymbol *HandlerFuncAddr,
                                                      int CallSiteID,
                                                      MCContext *Ctx) override {
+    // spill      $t1, X                    (save address if not tail call)
     // spill      $a0, $a1                  (save args)
-    // convert call to or $a0, $r0, rj      (pass original target in a0)
-    // createLoadImmediate $a1, CallSiteID  (pass callsite id in a1)
-    // spill      $a0, $a1                  (save the prepared args for the
-    // handler) pcalau12i  $t0, Handler              (load handler address)
-    // addi.d     $t0, $t0, ...
-    // jirl       $ra, $t0, 0               (call handler)
-    // carry over annotations
+    // convert call to or $a0, $r0, rj      (load original target in a0)
+    // createLoadImmediate $a1, CallSiteID  (load callsite id in a1)
+    // push       $a0, $a1                  (pass the args on stack)
+    // pcalau12i  $t1, Handler              (load handler address)
+    // addi.d     $t1, $t1, ...
+    // jirl       $ra, $t1, 0               (call handler)
+    //                                      carry over annotations
     InstructionListType Insts;
 
+    if (!isTailCall(CallInst)) {
+      Insts.emplace_back();
+      createStackPointerIncrement(Insts.back(), 16);
+      Insts.emplace_back();
+      storeReg(Insts.back(), LoongArch::R13, LoongArch::R3, 0);
+    }
     spillRegs(Insts, {LoongArch::R4, LoongArch::R5});
     Insts.emplace_back(CallInst);
     convertIndirectCallToLoad(Insts.back(), LoongArch::R4);
@@ -2102,7 +2109,6 @@ public:
                            0);
     stripAnnotations(Insts.back());
     moveAnnotations(std::move(CallInst), Insts.back());
-
     return Insts;
   }
 
@@ -2159,6 +2165,11 @@ public:
     Insts.emplace_back();
     createStackPointerDecrement(Insts.back(), 16);
     reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    // Restore $t1. See createInstrumentedIndirectCall
+    Insts.emplace_back();
+    loadReg(Insts.back(), LoongArch::R13, LoongArch::R3, 0);
+    Insts.emplace_back();
+    createStackPointerDecrement(Insts.back(), 16);
     Insts.emplace_back();
     createIndirectCallInst(Insts.back(), true, LoongArch::R12, 0);
 
@@ -2167,7 +2178,18 @@ public:
 
   InstructionListType
   createInstrumentedIndTailCallHandlerExitBB() const override {
-    return createInstrumentedIndCallHandlerExitBB();
+    InstructionListType Insts;
+
+    reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    Insts.emplace_back();
+    loadReg(Insts.back(), LoongArch::R12, LoongArch::R3, 0);
+    Insts.emplace_back();
+    createStackPointerDecrement(Insts.back(), 16);
+    reloadRegs(Insts, {LoongArch::R4, LoongArch::R5});
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), true, LoongArch::R12, 0);
+
+    return Insts;
   }
 
   InstructionListType createSymbolTrampoline(const MCSymbol *TgtSym,

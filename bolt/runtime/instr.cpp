@@ -1721,6 +1721,7 @@ extern "C" __attribute((naked)) void __bolt_instr_indirect_call()
   //        (+)
   //         8       0
   // |  ...  |  ...  |
+  // |   -   |  $t1  |
   // |  $a1  |  $a0  |
   // |  arg1 |  arg0 | <- $sp @ end of createInstrumentedIndirectCall()
   // |  $a1  |  $a0  |
