@@ -10,6 +10,7 @@
 #include "bolt/Core/BinaryContext.h"
 #include "bolt/Core/BinaryData.h"
 #include "bolt/Core/BinarySection.h"
+#include "llvm/ExecutionEngine/JITLink/ELF_loongarch.h"
 #include "llvm/ExecutionEngine/JITLink/ELF_riscv.h"
 #include "llvm/ExecutionEngine/JITLink/JITLink.h"
 #include "llvm/ExecutionEngine/Orc/Shared/ExecutorAddress.h"
@@ -102,6 +103,11 @@ struct JITLinkLinker::Context : jitlink::JITLinkContext {
       });
       return Error::success();
     });
+
+    if (G.getTargetTriple().isLoongArch()) {
+      Config.PostPrunePasses.push_back(
+          jitlink::createBuildGOTPass_ELF_loongarch());
+    }
 
     if (G.getTargetTriple().isRISCV()) {
       Config.PostAllocationPasses.push_back(
