@@ -1702,8 +1702,7 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_call()
                        "ldp x0, x1, [sp, #288]\n"
                        "bl instrumentIndirectCall\n"
                        RESTORE_ALL
-                       "ret\n"
-                       :::);
+                       "ret\n");
   // clang-format on
 #elif defined(__riscv)
   // clang-format off
@@ -1715,8 +1714,7 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_call()
                       "addi sp, sp, -288\n"
                       "jal x1, instrumentIndirectCall\n"
                       RESTORE_ALL
-                      "ret\n"
-                      :::);
+                      "ret\n");
   // clang-format on
 #elif defined(__loongarch__)
   // clang-format off
@@ -1741,12 +1739,11 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_call()
 #else
   // clang-format off
   __asm__ __volatile__(SAVE_ALL
-                       "mov 0xa0(%%rsp), %%rdi\n"
-                       "mov 0x98(%%rsp), %%rsi\n"
+                       "mov 0xa0(%rsp), %rdi\n"
+                       "mov 0x98(%rsp), %rsi\n"
                        "call instrumentIndirectCall\n"
                        RESTORE_ALL
-                       "ret\n"
-                       :::);
+                       "ret\n");
   // clang-format on
 #endif
 }
@@ -1759,8 +1756,7 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_tailcall()
                        "ldp x0, x1, [sp, #288]\n"
                        "bl instrumentIndirectCall\n"
                        RESTORE_ALL
-                       "ret\n"
-                       :::);
+                       "ret\n");
   // clang-format on
 #elif defined(__riscv)
   // clang-format off
@@ -1771,8 +1767,7 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_tailcall()
                       "addi sp, sp, -288\n"
                       "jal x1, instrumentIndirectCall\n"
                       RESTORE_ALL
-                      "ret\n"
-                      :::);
+                      "ret\n");
   // clang-format on
 #elif defined(__loongarch__)
   // clang-format off
@@ -1788,12 +1783,11 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_tailcall()
 #else
   // clang-format off
   __asm__ __volatile__(SAVE_ALL
-                       "mov 0x98(%%rsp), %%rdi\n"
-                       "mov 0x90(%%rsp), %%rsi\n"
+                       "mov 0x98(%rsp), %rdi\n"
+                       "mov 0x90(%rsp), %rsi\n"
                        "call instrumentIndirectCall\n"
                        RESTORE_ALL
-                       "ret\n"
-                       :::);
+                       "ret\n");
   // clang-format on
 #endif
 }
@@ -1808,8 +1802,7 @@ extern "C" BOLT_NAKED void __bolt_instr_start()
                        RESTORE_ALL
                        "adrp x16, __bolt_start_trampoline\n"
                        "add x16, x16, #:lo12:__bolt_start_trampoline\n"
-                       "br x16\n"
-                       :::);
+                       "br x16\n");
   // clang-format on
 #elif defined(__riscv)
   // clang-format off
@@ -1818,10 +1811,9 @@ extern "C" BOLT_NAKED void __bolt_instr_start()
                       "jal x1, __bolt_instr_setup\n"
                       RESTORE_ALL
                       "setup_symbol:\n"
-                      "auipc x5, %%pcrel_hi(__bolt_start_trampoline)\n"
-                      "addi x5, x5, %%pcrel_lo(setup_symbol)\n"
-                      "jr x5\n"
-                      :::);
+                      "auipc x5, %pcrel_hi(__bolt_start_trampoline)\n"
+                      "addi x5, x5, %pcrel_lo(setup_symbol)\n"
+                      "jr x5\n");
   // clang-format on
 #elif defined(__loongarch__)
   // clang-format off
@@ -1838,8 +1830,7 @@ extern "C" BOLT_NAKED void __bolt_instr_start()
   __asm__ __volatile__(SAVE_ALL
                        "call __bolt_instr_setup\n"
                        RESTORE_ALL
-                       "jmp __bolt_start_trampoline\n"
-                       :::);
+                       "jmp __bolt_start_trampoline\n");
   // clang-format on
 #endif
 }

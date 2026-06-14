@@ -176,14 +176,12 @@ extern "C" BOLT_NAKED void __bolt_hugify_self() {
   // clang-format off
 #if defined(__x86_64__)
   __asm__ __volatile__(SAVE_ALL "call __bolt_hugify_self_impl\n" RESTORE_ALL
-                                "jmp __bolt_hugify_start_program\n"
-                                :::);
+                                "jmp __bolt_hugify_start_program\n");
 #elif defined(__aarch64__) || defined(__arm64__)
   __asm__ __volatile__(SAVE_ALL "bl __bolt_hugify_self_impl\n" RESTORE_ALL
                                 "adrp x16, __bolt_hugify_start_program\n"
                                 "add x16, x16, #:lo12:__bolt_hugify_start_program\n"
-                                "br x16\n"
-                                :::);
+                                "br x16\n");
 #elif defined(__loongarch__) && (__loongarch_grlen == 64)
   __asm__ __volatile__(
     SAVE_ALL
