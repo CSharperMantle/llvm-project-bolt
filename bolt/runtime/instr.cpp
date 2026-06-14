@@ -1537,7 +1537,7 @@ extern "C" void __bolt_instr_clear_counters() {
 ///    to get a pointer to this function and call through the acquired
 ///    function pointer to dump profile data.
 ///
-extern "C" void __attribute((force_align_arg_pointer))
+extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void
 __bolt_instr_data_dump(int FD, const char *LibPath = nullptr,
                        const uint8_t *LibContents = nullptr,
                        uint64_t LibSize = 0) {
@@ -1634,9 +1634,10 @@ out:;
 
 extern "C" void __bolt_instr_indirect_call();
 extern "C" void __bolt_instr_indirect_tailcall();
+extern "C" void __bolt_instr_start();
 
 /// Initialization code
-extern "C" void __attribute((force_align_arg_pointer)) __bolt_instr_setup() {
+extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void __bolt_instr_setup() {
   __bolt_ind_call_counter_func_pointer = __bolt_instr_indirect_call;
   __bolt_ind_tailcall_counter_func_pointer = __bolt_instr_indirect_tailcall;
   TextBaseAddress = getTextBaseAddress();
@@ -1684,14 +1685,16 @@ extern "C" void __attribute((force_align_arg_pointer)) __bolt_instr_setup() {
   }
 }
 
-extern "C" __attribute((force_align_arg_pointer)) void
+extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void
 instrumentIndirectCall(uint64_t Target, uint64_t IndCallID) {
   GlobalIndCallCounters[IndCallID].incrementVal(Target, *GlobalAlloc);
 }
 
+#ifdef HAVE_ATTR_NAKED
+
 /// We receive as in-stack arguments the identifier of the indirect call site
 /// as well as the target address for the call
-extern "C" __attribute((naked)) void __bolt_instr_indirect_call()
+extern "C" BOLT_NAKED void __bolt_instr_indirect_call()
 {
 #if defined(__aarch64__)
   // clang-format off
@@ -1748,7 +1751,7 @@ extern "C" __attribute((naked)) void __bolt_instr_indirect_call()
 #endif
 }
 
-extern "C" __attribute((naked)) void __bolt_instr_indirect_tailcall()
+extern "C" BOLT_NAKED void __bolt_instr_indirect_tailcall()
 {
 #if defined(__aarch64__)
   // clang-format off
@@ -1796,7 +1799,7 @@ extern "C" __attribute((naked)) void __bolt_instr_indirect_tailcall()
 }
 
 /// This is hooking ELF's entry, it needs to save all machine state.
-extern "C" __attribute((naked)) void __bolt_instr_start()
+extern "C" BOLT_NAKED void __bolt_instr_start()
 {
 #if defined(__aarch64__)
   // clang-format off
@@ -1840,6 +1843,199 @@ extern "C" __attribute((naked)) void __bolt_instr_start()
   // clang-format on
 #endif
 }
+
+#else
+
+// Some compilers do not support __attribute__((naked)); use a file-scope asm
+// statement to emit the function body directly.
+#if defined(__aarch64__) && !defined(__APPLE__)
+
+// clang-format off
+__asm__(".globl __bolt_instr_indirect_call                      \n"
+        ".type __bolt_instr_indirect_call, @function            \n"
+        "__bolt_instr_indirect_call:                            \n"
+
+        SAVE_ALL
+        "ldp x0, x1, [sp, #288]                                 \n"
+        "bl instrumentIndirectCall                              \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_call,                        "
+        "      .-__bolt_instr_indirect_call                     \n");
+
+__asm__(".globl __bolt_instr_indirect_tailcall                  \n"
+        ".type __bolt_instr_indirect_tailcall, @function        \n"
+        "__bolt_instr_indirect_tailcall:                        \n"
+
+        SAVE_ALL
+        "ldp x0, x1, [sp, #288]                                 \n"
+        "bl instrumentIndirectCall                              \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_tailcall,                    "
+        "      .-__bolt_instr_indirect_tailcall                 \n");
+
+__asm__(".globl __bolt_instr_start                              \n"
+        ".type __bolt_instr_start, @function                    \n"
+        "__bolt_instr_start:                                    \n"
+
+        SAVE_ALL
+        "bl __bolt_instr_setup                                  \n"
+        RESTORE_ALL
+        "adrp x16, __bolt_start_trampoline                      \n"
+        "add x16, x16, #:lo12:__bolt_start_trampoline           \n"
+        "br x16                                                 \n"
+
+        ".size __bolt_instr_start,                                "
+        "      .-__bolt_instr_start                             \n");
+// clang-format on
+
+#elif defined(__riscv)
+
+// clang-format off
+__asm__(".globl __bolt_instr_indirect_call                      \n"
+        ".type __bolt_instr_indirect_call, @function            \n"
+        "__bolt_instr_indirect_call:                            \n"
+
+        SAVE_ALL
+        "addi sp, sp, 288                                       \n"
+        "ld x10, 0(sp)                                          \n"
+        "ld x11, 8(sp)                                          \n"
+        "addi sp, sp, -288                                      \n"
+        "jal x1, instrumentIndirectCall                         \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_call,                        "
+        "      .-__bolt_instr_indirect_call                     \n");
+
+__asm__(".globl __bolt_instr_indirect_tailcall                  \n"
+        ".type __bolt_instr_indirect_tailcall, @function        \n"
+        "__bolt_instr_indirect_tailcall:                        \n"
+
+        SAVE_ALL
+        "addi sp, sp, 288                                       \n"
+        "ld x10, 0(sp)                                          \n"
+        "ld x11, 8(sp)                                          \n"
+        "addi sp, sp, -288                                      \n"
+        "jal x1, instrumentIndirectCall                         \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_tailcall,                    "
+        "      .-__bolt_instr_indirect_tailcall                 \n");
+
+__asm__(".globl __bolt_instr_start                              \n"
+        ".type __bolt_instr_start, @function                    \n"
+        "__bolt_instr_start:                                    \n"
+
+        SAVE_ALL
+        "jal x1, __bolt_instr_setup                             \n"
+        RESTORE_ALL
+        ".Lbolt_instr_setup_symbol:                             \n"
+        "auipc x5, %pcrel_hi(__bolt_start_trampoline)           \n"
+        "addi x5, x5, %pcrel_lo(.Lbolt_instr_setup_symbol)      \n"
+        "jr x5                                                  \n"
+
+        ".size __bolt_instr_start,                                "
+        "      .-__bolt_instr_start                             \n");
+// clang-format on
+
+#elif defined(__loongarch__) && (__loongarch_grlen == 64)
+
+// clang-format off
+__asm__(".globl __bolt_instr_indirect_call                      \n"
+        ".type __bolt_instr_indirect_call, @function            \n"
+        "__bolt_instr_indirect_call:                            \n"
+
+        SAVE_ALL
+        "ld.d   $a0, $sp, (256+8*4+0)                           \n"
+        "ld.d   $a1, $sp, (256+8*4+8)                           \n"
+        "bl     instrumentIndirectCall                          \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_call,                        "
+        "      .-__bolt_instr_indirect_call                     \n");
+
+__asm__(".globl __bolt_instr_indirect_tailcall                  \n"
+        ".type __bolt_instr_indirect_tailcall, @function        \n"
+        "__bolt_instr_indirect_tailcall:                        \n"
+
+        SAVE_ALL
+        "ld.d   $a0, $sp, (256+8*4+0)                           \n"
+        "ld.d   $a1, $sp, (256+8*4+8)                           \n"
+        "bl     instrumentIndirectCall                          \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_tailcall,                    "
+        "      .-__bolt_instr_indirect_tailcall                 \n");
+
+__asm__(".globl __bolt_instr_start                              \n"
+        ".type __bolt_instr_start, @function                    \n"
+        "__bolt_instr_start:                                    \n"
+
+        SAVE_ALL
+        "bl        __bolt_instr_setup                           \n"
+        RESTORE_ALL
+        "pcalau12i $t0, %pc_hi20(__bolt_start_trampoline)       \n"
+        "addi.d    $t0, $t0, %pc_lo12(__bolt_start_trampoline)  \n"
+        "jr        $t0                                          \n"
+
+        ".size __bolt_instr_start,                                "
+        "      .-__bolt_instr_start                             \n");
+// clang-format on
+
+#else
+
+// clang-format off
+__asm__(".globl __bolt_instr_indirect_call                      \n"
+        ".type __bolt_instr_indirect_call, @function            \n"
+        "__bolt_instr_indirect_call:                            \n"
+
+        SAVE_ALL_BASIC
+        "mov 0xa0(%rsp), %rdi                                   \n"
+        "mov 0x98(%rsp), %rsi                                   \n"
+        "call instrumentIndirectCall                            \n"
+        RESTORE_ALL_BASIC
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_call,                        "
+        "      .-__bolt_instr_indirect_call                     \n");
+
+__asm__(".globl __bolt_instr_indirect_tailcall                  \n"
+        ".type __bolt_instr_indirect_tailcall, @function        \n"
+        "__bolt_instr_indirect_tailcall:                        \n"
+
+        SAVE_ALL_BASIC
+        "mov 0x98(%rsp), %rdi                                   \n"
+        "mov 0x90(%rsp), %rsi                                   \n"
+        "call instrumentIndirectCall                            \n"
+        RESTORE_ALL_BASIC
+        "ret                                                    \n"
+
+        ".size __bolt_instr_indirect_tailcall,                    "
+        "      .-__bolt_instr_indirect_tailcall                 \n");
+
+__asm__(".globl __bolt_instr_start                              \n"
+        ".type __bolt_instr_start, @function                    \n"
+        "__bolt_instr_start:                                    \n"
+
+        SAVE_ALL_BASIC
+        "call __bolt_instr_setup                                \n"
+        RESTORE_ALL_BASIC
+        "jmp __bolt_start_trampoline                            \n"
+
+        ".size __bolt_instr_start,                                "
+        "      .-__bolt_instr_start                             \n");
+// clang-format on
+
+#endif
+
+#endif /* HAVE_ATTR_NAKED */
 
 /// This is hooking into ELF's DT_FINI
 extern "C" void __bolt_instr_fini() {
@@ -1909,7 +2105,7 @@ extern "C" void __bolt_instr_data_dump() {
 // one extra leading underscore: _bolt_instr_setup -> __bolt_instr_setup.
 extern "C"
 __attribute__((section("__TEXT,__setup")))
-__attribute__((force_align_arg_pointer))
+BOLT_FORCE_ALIGN_ARG_POINTER
 void _bolt_instr_setup() {
   __asm__ __volatile__(SAVE_ALL :::);
 
@@ -1920,7 +2116,7 @@ void _bolt_instr_setup() {
 
 extern "C"
 __attribute__((section("__TEXT,__fini")))
-__attribute__((force_align_arg_pointer))
+BOLT_FORCE_ALIGN_ARG_POINTER
 void _bolt_instr_fini() {
   report("Bye!\n");
   __bolt_instr_data_dump();

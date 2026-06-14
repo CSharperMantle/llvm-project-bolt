@@ -5,12 +5,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)
 
 include(CheckCXXCompilerFlag)
+include(CheckCXXSourceCompiles)
 include(CheckIncludeFiles)
 include(GNUInstallDirs)
 
 check_include_files(elf.h HAVE_ELF_H)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+
+check_cxx_source_compiles("
+  __attribute__((naked)) void f() { __asm__ __volatile__(\"\"); }
+  int main() { return 0; }
+" HAVE_ATTR_NAKED
+FAIL_REGEX "[Ww]arning")
+
+check_cxx_source_compiles("
+  __attribute__((force_align_arg_pointer)) void f() {}
+  int main() { return 0; }
+" HAVE_ATTR_FORCE_ALIGN_ARG_POINTER
+FAIL_REGEX "[Ww]arning")
 
 add_library(bolt_rt_instr STATIC
   instr.cpp

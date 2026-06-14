@@ -1,1 +1,3 @@
 #cmakedefine HAVE_ELF_H
+#cmakedefine HAVE_ATTR_NAKED
+#cmakedefine HAVE_ATTR_FORCE_ALIGN_ARG_POINTER

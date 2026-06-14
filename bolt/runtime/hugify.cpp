@@ -169,8 +169,10 @@ extern "C" void __bolt_hugify_self_impl() {
   }
 }
 
+#ifdef HAVE_ATTR_NAKED
+
 /// This is hooking ELF's entry, it needs to save all machine state.
-extern "C" __attribute((naked)) void __bolt_hugify_self() {
+extern "C" BOLT_NAKED void __bolt_hugify_self() {
   // clang-format off
 #if defined(__x86_64__)
   __asm__ __volatile__(SAVE_ALL "call __bolt_hugify_self_impl\n" RESTORE_ALL
@@ -195,4 +197,53 @@ extern "C" __attribute((naked)) void __bolt_hugify_self() {
 #endif
   // clang-format on
 }
+
+#else
+
+extern "C" void __bolt_hugify_self();
+
+#if defined(__x86_64__)
+// clang-format off
+__asm__(".globl __bolt_hugify_self                                      \n"
+        ".type __bolt_hugify_self, @function                            \n"
+        "__bolt_hugify_self:                                            \n"
+            SAVE_ALL_BASIC
+        "   call __bolt_hugify_self_impl                                \n"
+            RESTORE_ALL_BASIC
+        "   jmp __bolt_hugify_start_program                             \n"
+        ".size __bolt_hugify_self, .-__bolt_hugify_self                 \n");
+// clang-format on
+#elif defined(__aarch64__) && !defined(__APPLE__)
+// clang-format off
+__asm__(".globl __bolt_hugify_self                                      \n"
+        ".type __bolt_hugify_self, @function                            \n"
+        "__bolt_hugify_self:                                            \n"
+            SAVE_ALL
+        "   bl __bolt_hugify_self_impl                                  \n"
+            RESTORE_ALL
+        "   adrp x16, __bolt_hugify_start_program                       \n"
+        "   add x16, x16, #:lo12:__bolt_hugify_start_program            \n"
+        "   br x16                                                      \n"
+        ".size __bolt_hugify_self, .-__bolt_hugify_self                 \n");
+// clang-format on
+#elif defined(__loongarch__) && (__loongarch_grlen == 64)
+// clang-format off
+__asm__(".globl __bolt_hugify_self                                      \n"
+        ".type __bolt_hugify_self, @function                            \n"
+        "__bolt_hugify_self:                                            \n"
+            SAVE_ALL
+        "   bl         __bolt_hugify_self_impl                          \n"
+            RESTORE_ALL
+        "   pcalau12i  $t0, %pc_hi20(__bolt_hugify_start_program)       \n"
+        "   addi.d     $t0, $t0, %pc_lo12(__bolt_hugify_start_program)  \n"
+        "   jr         $t0                                              \n");
+// clang-format on
+#else
+extern "C" void __bolt_hugify_self() {
+  __exit(1);
+}
+#endif
+
+#endif /* HAVE_ATTR_NAKED */
+
 #endif

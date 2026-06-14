@@ -163,6 +163,18 @@ struct timespec {
 #error "For AArch64/ARM64, X86_64, RISCV64 and LoongArch64 only."
 #endif
 
+#ifdef HAVE_ATTR_NAKED
+#define BOLT_NAKED __attribute__((naked))
+#else
+#define BOLT_NAKED
+#endif
+
+#ifdef HAVE_ATTR_FORCE_ALIGN_ARG_POINTER
+#define BOLT_FORCE_ALIGN_ARG_POINTER __attribute__((force_align_arg_pointer))
+#else
+#define BOLT_FORCE_ALIGN_ARG_POINTER
+#endif
+
 constexpr uint32_t BufSize = 10240;
 
 // Helper functions for writing strings to the .fdata file. We intentionally
