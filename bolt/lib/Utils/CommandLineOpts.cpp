@@ -221,6 +221,12 @@ cl::opt<bool> HotText(
         "will put hot code into 2M pages. This requires relocation."),
     cl::ZeroOrMore, cl::cat(BoltCategory));
 
+// See also BinaryContext::HugePageSize for default.
+cl::opt<uint64_t> HugePageSize(
+    "huge-page-size",
+    cl::desc("THP size in bytes for code alignment (0 for default)"),
+    cl::init(0), cl::cat(BoltCategory));
+
 cl::opt<bool>
     Instrument("instrument",
                cl::desc("instrument code to generate accurate profile data"),

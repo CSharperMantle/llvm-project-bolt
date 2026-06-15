@@ -158,7 +158,9 @@ BinaryContext::BinaryContext(std::unique_ptr<MCContext> Ctx,
   RegularPageSize = isAArch64()     ? RegularPageSizeAArch64
                     : isLoongArch() ? RegularPageSizeLoongArch
                                     : RegularPageSizeX86;
-  PageAlign = opts::NoHugePages ? RegularPageSize : HugePageSize;
+  PageAlign = opts::NoHugePages ? RegularPageSize
+                                : (opts::HugePageSize != 0 ? opts::HugePageSize
+                                                           : HugePageSize);
 }
 
 BinaryContext::~BinaryContext() {
