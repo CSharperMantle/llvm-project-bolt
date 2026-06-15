@@ -5216,6 +5216,7 @@ void RewriteInstance::updateELFSymbolTable(
 
   unsigned NumHotTextSymsUpdated = 0;
   unsigned NumHotDataSymsUpdated = 0;
+  unsigned NumHugifyPageSizeSymsUpdated = 0;
 
   std::map<const BinaryFunction *, uint64_t> IslandSizes;
   auto getConstantIslandSize = [&IslandSizes](const BinaryFunction &BF) {
@@ -5248,6 +5249,18 @@ void RewriteInstance::updateELFSymbolTable(
     if (IsDynSym && NewIndex != OldIndex && NewIndex == ELF::SHN_UNDEF)
       return OldIndex;
     return NewIndex;
+  };
+
+  auto setHugifyPageSizeSymbol = [&](ELFSymTy &Symbol) {
+    ErrorOr<BinarySection &> Section =
+        BC->getUniqueSectionByName(".bolt.hugify.data");
+    assert(Section && "expected emitted hugify runtime data section");
+
+    Symbol.st_value = getNewValueForSymbol("__bolt_hugify_page_size");
+    Symbol.st_size = sizeof(uint64_t);
+    Symbol.st_shndx = Section->getIndex();
+    Symbol.st_other = ELF::STV_DEFAULT;
+    Symbol.setBindingAndType(ELF::STB_GLOBAL, ELF::STT_OBJECT);
   };
 
   // Get the extra symbol name of a split fragment; used in addExtraSymbols.
@@ -5422,6 +5435,14 @@ void RewriteInstance::updateELFSymbolTable(
       if (opts::HotText) {
         updateSymbolValue(*SymbolName);
         ++NumHotTextSymsUpdated;
+      }
+      goto registerSymbol;
+    }
+
+    if (*SymbolName == "__bolt_hugify_page_size") {
+      if (opts::HotText) {
+        setHugifyPageSizeSymbol(NewSymbol);
+        ++NumHugifyPageSizeSymsUpdated;
       }
       goto registerSymbol;
     }
@@ -5613,6 +5634,8 @@ void RewriteInstance::updateELFSymbolTable(
   assert((!NumHotDataSymsUpdated || NumHotDataSymsUpdated == 2) &&
          "either none or both __hot_data_start/__hot_data_end symbols were "
          "expected");
+  assert(NumHugifyPageSizeSymsUpdated <= 1 &&
+         "at most one __bolt_hugify_page_size symbol was expected");
 
   auto AddEmittedSymbol = [&](const StringRef &Name) {
     AddSymbol(Name, getNewValueForSymbol(Name));
@@ -5621,6 +5644,13 @@ void RewriteInstance::updateELFSymbolTable(
   if (opts::HotText && !NumHotTextSymsUpdated) {
     AddEmittedSymbol("__hot_start");
     AddEmittedSymbol("__hot_end");
+  }
+
+  if (opts::HotText && !IsDynSym && !NumHugifyPageSizeSymsUpdated) {
+    ELFSymTy Symbol{};
+    Symbol.st_name = AddToStrTab("__bolt_hugify_page_size");
+    setHugifyPageSizeSymbol(Symbol);
+    Symbols.emplace_back(Symbol);
   }
 
   if (opts::HotData && !NumHotDataSymsUpdated) {

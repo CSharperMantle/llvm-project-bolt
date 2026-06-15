@@ -41,7 +41,8 @@ CHECK-NM:      W  __hot_start
 CHECK-NM:      T main
 CHECK-NM-NEXT: T fib
 CHECK-NM-NEXT: W __hot_end
-CHECK-NM: t __bolt_hugify_start_program
+CHECK-NM:      t __bolt_hugify_start_program
+CHECK-NM-NEXT: R __bolt_hugify_page_size
 CHECK-NM-NEXT: W __bolt_runtime_start
 
 CHECK-NM-NOHUGIFY:      W  __hot_start

@@ -18,6 +18,7 @@
 #include "bolt/Core/FunctionLayout.h"
 #include "bolt/Utils/CommandLineOpts.h"
 #include "bolt/Utils/Utils.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
 #include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
@@ -111,6 +112,25 @@ size_t padFunctionAfter(const BinaryFunction &Function) {
 
 namespace {
 using JumpTable = bolt::JumpTable;
+
+void emitHugifyRuntimeData(MCStreamer &Streamer, BinaryContext &BC) {
+  assert(BC.isELF() && "hugify runtime data is only supported for ELF");
+
+  MCSection *Section = BC.Ctx->getELFSection(
+      ".bolt.hugify.data", ELF::SHT_PROGBITS,
+      BinarySection::getFlags(/*IsReadOnly=*/true, /*IsText=*/false,
+                              /*IsAllocatable=*/true));
+  Section->setAlignment(Align(alignof(uint64_t)));
+  Streamer.switchSection(Section);
+
+  MCSymbol *PageSize = BC.Ctx->getOrCreateSymbol("__bolt_hugify_page_size");
+  Streamer.emitLabel(PageSize);
+  Streamer.emitSymbolAttribute(PageSize, MCSymbolAttr::MCSA_Global);
+  Streamer.emitSymbolAttribute(PageSize, MCSymbolAttr::MCSA_ELF_TypeObject);
+  Streamer.emitELFSize(PageSize,
+                       MCConstantExpr::create(sizeof(uint64_t), *BC.Ctx));
+  Streamer.emitIntValue(BC.PageAlign, sizeof(uint64_t));
+}
 
 class BinaryEmitter {
 private:
@@ -210,6 +230,9 @@ void BinaryEmitter::emitAll(StringRef OrgSecPrefix) {
         static_cast<MCSectionELF *>(BC.MOFI->getDwarfLineStrSection());
     ELFDwarfLineStrSection->setFlags(ELF::SHF_ALLOC);
   }
+
+  if (opts::HotText && BC.isELF())
+    emitHugifyRuntimeData(Streamer, BC);
 
   if (RuntimeLibrary *RtLibrary = BC.getRuntimeLibrary())
     RtLibrary->emitBinary(BC, Streamer);

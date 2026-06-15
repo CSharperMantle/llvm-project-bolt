@@ -34,6 +34,9 @@ extern void __bolt_hugify_start_program();
 extern uint64_t __hot_start;
 extern uint64_t __hot_end;
 
+// The huge page size set by BOLT. Falls back to 2MB if not a power of 2.
+extern uint64_t __bolt_hugify_page_size;
+
 static void getKernelVersion(uint32_t *Val) {
   // release should be in the format: %d.%d.%d
   // major, minor, release
@@ -145,7 +148,9 @@ extern "C" void __bolt_hugify_self_impl() {
   uint8_t *HotStart = (uint8_t *)&__hot_start;
   uint8_t *HotEnd = (uint8_t *)&__hot_end;
   // Make sure the start and end are aligned with huge page address
-  const size_t HugePageBytes = 2L * 1024 * 1024;
+  size_t HugePageBytes = __bolt_hugify_page_size;
+  if ((HugePageBytes & (HugePageBytes - 1)) != 0)
+    HugePageBytes = 2L * 1024 * 1024;
   uint8_t *From = HotStart - ((intptr_t)HotStart & (HugePageBytes - 1));
   uint8_t *To = HotEnd + (HugePageBytes - 1);
   To -= (intptr_t)To & (HugePageBytes - 1);
