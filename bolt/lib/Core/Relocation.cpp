@@ -168,8 +168,12 @@ static bool isSupportedLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_IE_LO12:
   case ELF::R_LARCH_TLS_LD_PC_HI20:
+  case ELF::R_LARCH_TLS_LD_HI20:
   case ELF::R_LARCH_TLS_GD_PC_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_CALL36:
@@ -333,8 +337,12 @@ static size_t getSizeForTypeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_IE_LO12:
   case ELF::R_LARCH_TLS_LD_PC_HI20:
+  case ELF::R_LARCH_TLS_LD_HI20:
   case ELF::R_LARCH_TLS_GD_PC_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_PCREL20_S2:
   case ELF::R_LARCH_TLS_DESC_PC_HI20:
@@ -760,6 +768,9 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
   }
   case ELF::R_LARCH_ABS_HI20:
   case ELF::R_LARCH_GOT_HI20:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_LD_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_TLS_DESC_HI20: {
     Contents &= ~0xfffffffffe00001fULL;
     return SignExtend64<32>(Contents << 7);
@@ -788,6 +799,7 @@ static uint64_t extractValueLoongArch(uint32_t Type, uint64_t Contents,
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_LO12:
   case ELF::R_LARCH_TLS_DESC_PC_LO12:
   case ELF::R_LARCH_TLS_DESC_LO12:
   case ELF::R_LARCH_TLS_DESC_LD:
@@ -911,8 +923,12 @@ static bool isGOTLoongArch(uint32_t Type) {
   case ELF::R_LARCH_GOT64_HI12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_IE_LO12:
   case ELF::R_LARCH_TLS_LD_PC_HI20:
+  case ELF::R_LARCH_TLS_LD_HI20:
   case ELF::R_LARCH_TLS_GD_PC_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_LO12:
   case ELF::R_LARCH_TLS_DESC64_PC_LO20:
@@ -981,8 +997,12 @@ static bool isTLSLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_LE_LO12:
   case ELF::R_LARCH_TLS_IE_PC_HI20:
   case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_IE_LO12:
   case ELF::R_LARCH_TLS_LD_PC_HI20:
+  case ELF::R_LARCH_TLS_LD_HI20:
   case ELF::R_LARCH_TLS_GD_PC_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_LO12:
   case ELF::R_LARCH_TLS_DESC64_PC_LO20:
@@ -1120,13 +1140,17 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_ABS64_HI12:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
-  case ELF::R_LARCH_TLS_LE_HI20:
-  case ELF::R_LARCH_TLS_LE_LO12:
-  case ELF::R_LARCH_TLS_IE_PC_LO12:
   case ELF::R_LARCH_GOT_HI20:
   case ELF::R_LARCH_GOT_LO12:
   case ELF::R_LARCH_GOT64_LO20:
   case ELF::R_LARCH_GOT64_HI12:
+  case ELF::R_LARCH_TLS_LE_HI20:
+  case ELF::R_LARCH_TLS_LE_LO12:
+  case ELF::R_LARCH_TLS_IE_PC_LO12:
+  case ELF::R_LARCH_TLS_IE_HI20:
+  case ELF::R_LARCH_TLS_IE_LO12:
+  case ELF::R_LARCH_TLS_LD_HI20:
+  case ELF::R_LARCH_TLS_GD_HI20:
   case ELF::R_LARCH_TLS_DESC_PC_LO12:
   case ELF::R_LARCH_TLS_DESC_HI20:
   case ELF::R_LARCH_TLS_DESC_LO12:

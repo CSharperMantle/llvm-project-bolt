@@ -233,6 +233,21 @@ LoongArchMCSymbolizer::adjustRelocation(const Relocation &Rel,
       return std::nullopt;
   }
 
+  if (Rel.Type == ELF::R_LARCH_TLS_IE_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_LD_HI20 ||
+      Rel.Type == ELF::R_LARCH_TLS_GD_HI20) {
+    switch (Inst.getOpcode()) {
+    default:
+      return std::nullopt;
+    case LoongArch::LU12I_W:
+      break;
+    }
+  }
+  if (Rel.Type == ELF::R_LARCH_TLS_IE_LO12) {
+    if (!isSImm12AddLikeOpcode(Inst.getOpcode()))
+      return std::nullopt;
+  }
+
   // The linker might perform TLS relocations relaxations, thus changing the
   // instructions. The static relocations might be invalid at this point and we
   // don't have to process these relocations anymore. More information could be
