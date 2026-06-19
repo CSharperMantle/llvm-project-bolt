@@ -992,6 +992,9 @@ static bool isTLSLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC64_LO20:
   case ELF::R_LARCH_TLS_DESC64_HI12:
   case ELF::R_LARCH_TLS_DESC_LD:
+  case ELF::R_LARCH_TLS_LE_HI20_R:
+  case ELF::R_LARCH_TLS_LE_ADD_R:
+  case ELF::R_LARCH_TLS_LE_LO12_R:
   case ELF::R_LARCH_TLS_LD_PCREL20_S2:
   case ELF::R_LARCH_TLS_GD_PCREL20_S2:
   case ELF::R_LARCH_TLS_DESC_PCREL20_S2:
@@ -1131,6 +1134,9 @@ static bool isPCRelativeLoongArch(uint32_t Type) {
   case ELF::R_LARCH_TLS_DESC64_HI12:
   case ELF::R_LARCH_TLS_DESC_LD:
   case ELF::R_LARCH_TLS_DESC_CALL:
+  case ELF::R_LARCH_TLS_LE_HI20_R:
+  case ELF::R_LARCH_TLS_LE_ADD_R:
+  case ELF::R_LARCH_TLS_LE_LO12_R:
   case ELF::R_LARCH_PCADD_LO12:
   case ELF::R_LARCH_GOT_PCADD_LO12:
     return false;
