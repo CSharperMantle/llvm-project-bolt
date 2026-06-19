@@ -1311,7 +1311,7 @@ bool Relocation::isIRelative(uint32_t Type) {
   case Triple::aarch64:
     return Type == ELF::R_AARCH64_IRELATIVE;
   case Triple::riscv64:
-    llvm_unreachable("not implemented");
+    return Type == ELF::R_RISCV_IRELATIVE;
   case Triple::loongarch64:
     return Type == ELF::R_LARCH_IRELATIVE;
   case Triple::x86_64:
@@ -1435,7 +1435,7 @@ uint32_t Relocation::getRelative() {
   case Triple::aarch64:
     return ELF::R_AARCH64_RELATIVE;
   case Triple::riscv64:
-    llvm_unreachable("not implemented");
+    return ELF::R_RISCV_RELATIVE;
   case Triple::loongarch64:
     return ELF::R_LARCH_RELATIVE;
   case Triple::x86_64:
