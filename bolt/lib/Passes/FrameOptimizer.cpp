@@ -224,8 +224,9 @@ Error FrameOptimizerPass::runOnFunctions(BinaryContext &BC) {
   if (opts::FrameOptimization == FOP_NONE)
     return Error::success();
 
-  if (!BC.isX86()) {
-    BC.errs() << "BOLT-ERROR: " << getName() << " is supported only on X86\n";
+  if (!BC.isX86() && !BC.isLoongArch()) {
+    BC.errs() << "BOLT-ERROR: " << getName()
+              << " is supported only on X86 and LoongArch\n";
     exit(1);
   }
 

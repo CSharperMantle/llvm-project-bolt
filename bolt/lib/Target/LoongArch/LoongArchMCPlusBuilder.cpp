@@ -1531,8 +1531,14 @@ public:
   // LoongArch has no st+add sp in one instruction that qualify as a push.
   bool isPush(const MCInst &Inst) const override { return false; }
 
+  // Never used. See isPush().
+  int getPushSize(const MCInst &Inst) const override { return 0; }
+
   // LoongArch has no ld+add sp in one instruction that qualify as a pop.
   bool isPop(const MCInst &Inst) const override { return false; }
+
+  // Never used. See isPop().
+  int getPopSize(const MCInst &Inst) const override { return 0; }
 
   uint16_t getMinFunctionAlignment() const override { return 4; }
 
@@ -1854,6 +1860,25 @@ public:
           DataExtractor(ConstantData, true, 8).getSigned(&Offset, DataSize);
       NewInsts = createLoadImmediate(DestReg, static_cast<uint64_t>(ImmVal));
     }
+    return true;
+  }
+
+  bool replaceMemOperandWithReg(MCInst &Inst, MCPhysReg RegNum) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    Reg Rd;
+    if (!matchInst(Inst, LoongArch::LD_D, Rd, Reg(LoongArch::R3), Imm()) &&
+        !matchInst(Inst, LoongArch::LD_D, Rd, Reg(LoongArch::R22), Imm()) &&
+        !matchInst(Inst, LoongArch::LDPTR_D, Rd, Reg(LoongArch::R3), Imm()) &&
+        !matchInst(Inst, LoongArch::LDPTR_D, Rd, Reg(LoongArch::R22), Imm()))
+      return false;
+
+    MCInst TmpInst = MCInstBuilder(LoongArch::OR)
+                         .addReg(Rd.get())
+                         .addReg(RegNum)
+                         .addReg(LoongArch::R0);
+    std::swap(TmpInst, Inst);
+    moveAnnotations(std::move(TmpInst), Inst);
     return true;
   }
 
@@ -2225,6 +2250,329 @@ public:
 
   InstructionListType createInstrNumFuncsGetter(MCContext *Ctx) const override {
     return createGetter(Ctx, "__bolt_instr_num_funcs");
+  }
+
+  bool isRegToRegMove(const MCInst &Inst, MCPhysReg &From,
+                      MCPhysReg &To) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    Reg Rd, Rs;
+    // move $rd, $rs == or $rd, $rs, $zero
+    if (matchInst(Inst, LoongArch::OR, Rd, Rs, Reg(LoongArch::R0))) {
+      To = Rd.get();
+      From = Rs.get();
+      return true;
+    }
+    return false;
+  }
+
+  bool isRedundantMove(const MCInst &Inst) const override {
+    MCPhysReg From, To;
+    return isRegToRegMove(Inst, From, To) && From == To;
+  }
+
+  bool
+  evaluateStackOffsetExpr(const MCInst &Inst, int64_t &Output,
+                          std::pair<MCPhysReg, int64_t> Input1,
+                          std::pair<MCPhysReg, int64_t> Input2) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    auto getInputVal = [&](MCPhysReg Reg) -> ErrorOr<int64_t> {
+      if (Reg == Input1.first)
+        return Input1.second;
+      if (Reg == Input2.first)
+        return Input2.second;
+      return make_error_code(errc::result_out_of_range);
+    };
+
+    Reg SrcReg;
+    Imm Offset;
+    if (matchInst(Inst, LoongArch::ADDI_D, Reg(), SrcReg, Offset)) {
+      if (ErrorOr<int64_t> InputVal = getInputVal(SrcReg.get())) {
+        Output = *InputVal + Offset.get();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool escapesVariable(const MCInst &Inst,
+                       bool HasFramePointer) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    const BitVector SPAliases = getAliases(LoongArch::R3);
+    const BitVector SPFPAliases = SPAliases | getAliases(LoongArch::R22);
+    const BitVector &StackBaseAliases =
+        HasFramePointer ? SPFPAliases : SPAliases;
+
+    const MCInstrDesc &MCII = Info->get(Inst.getOpcode());
+    const ArrayRef<MCOperand> Operands = Inst.getOperands();
+
+    // Guard `ld[ptr].? x, $rs, x` and `st[ptr].? x, $rs, x` where $rs is the
+    // stack base
+    if ((MCII.mayLoad() || MCII.mayStore()) && Operands.size() >= 3 &&
+        Operands[1].isReg() && StackBaseAliases[Operands[1].getReg()])
+      return false;
+
+    // Skip instructions defining the stack base
+    const unsigned NumDefs = MCII.getNumDefs();
+    for (const auto &Operand : Operands.take_front(NumDefs))
+      if (Operand.isReg() && StackBaseAliases[Operand.getReg()])
+        return false;
+    // For remaining source operands, if any is the stack base, then value
+    // escapes
+    for (const auto &Operand : Operands.drop_front(NumDefs))
+      if (Operand.isReg() && StackBaseAliases[Operand.getReg()])
+        return true;
+
+    return false;
+  }
+
+  bool isStackAccess(const MCInst &Inst, bool &IsLoad, bool &IsStore,
+                     bool &IsStoreFromReg, MCPhysReg &Reg, int32_t &SrcImm,
+                     uint16_t &StackPtrReg, int64_t &StackOffset, uint8_t &Size,
+                     bool &IsSimple, bool &IsIndexed) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    const unsigned Opcode = Inst.getOpcode();
+
+    uint8_t AccessSize = 0;
+    bool IsLoadOp = false;
+    bool IsIndexedOp = false;
+    bool IsFPUOp = false;
+    switch (Opcode) {
+    // Scalar immediate.
+    case LoongArch::LD_D:
+    case LoongArch::LDPTR_D:
+      AccessSize = 8;
+      IsLoadOp = true;
+      break;
+    case LoongArch::ST_D:
+    case LoongArch::STPTR_D:
+      AccessSize = 8;
+      break;
+    case LoongArch::LD_W:
+    case LoongArch::LD_WU:
+    case LoongArch::LDPTR_W:
+      AccessSize = 4;
+      IsLoadOp = true;
+      break;
+    case LoongArch::ST_W:
+    case LoongArch::STPTR_W:
+      AccessSize = 4;
+      break;
+    case LoongArch::LD_H:
+    case LoongArch::LD_HU:
+      AccessSize = 2;
+      IsLoadOp = true;
+      break;
+    case LoongArch::ST_H:
+      AccessSize = 2;
+      break;
+    case LoongArch::LD_B:
+    case LoongArch::LD_BU:
+      AccessSize = 1;
+      IsLoadOp = true;
+      break;
+    case LoongArch::ST_B:
+      AccessSize = 1;
+      break;
+    // Scalar indexed.
+    case LoongArch::LDX_D:
+      AccessSize = 8;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::STX_D:
+      AccessSize = 8;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::LDX_W:
+    case LoongArch::LDX_WU:
+      AccessSize = 4;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::STX_W:
+      AccessSize = 4;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::LDX_H:
+    case LoongArch::LDX_HU:
+      AccessSize = 2;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::STX_H:
+      AccessSize = 2;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::LDX_B:
+    case LoongArch::LDX_BU:
+      AccessSize = 1;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      break;
+    case LoongArch::STX_B:
+      AccessSize = 1;
+      IsIndexedOp = true;
+      break;
+    // FPU immediate.
+    case LoongArch::FLD_D:
+      AccessSize = 8;
+      IsLoadOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FST_D:
+      AccessSize = 8;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FLD_S:
+      AccessSize = 4;
+      IsLoadOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FST_S:
+      AccessSize = 4;
+      IsFPUOp = true;
+      break;
+    case LoongArch::VLD:
+      AccessSize = 16;
+      IsLoadOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::VST:
+      AccessSize = 16;
+      IsFPUOp = true;
+      break;
+    case LoongArch::XVLD:
+      AccessSize = 32;
+      IsLoadOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::XVST:
+      AccessSize = 32;
+      IsFPUOp = true;
+      break;
+    // FPU indexed.
+    case LoongArch::FLDX_D:
+      AccessSize = 8;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FSTX_D:
+      AccessSize = 8;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FLDX_S:
+      AccessSize = 4;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::FSTX_S:
+      AccessSize = 4;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::VLDX:
+      AccessSize = 16;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::VSTX:
+      AccessSize = 16;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::XVLDX:
+      AccessSize = 32;
+      IsLoadOp = true;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    case LoongArch::XVSTX:
+      AccessSize = 32;
+      IsIndexedOp = true;
+      IsFPUOp = true;
+      break;
+    default:
+      return false;
+    }
+
+    // Extract Rd, Rj, Off/Rk
+    LowLevelInstMatcherDSL::Reg Rd, Rj, Rk;
+    LowLevelInstMatcherDSL::Imm Off;
+    if (!IsIndexedOp && !matchInst(Inst, Opcode, Rd, Rj, Off))
+      return false;
+    if (IsIndexedOp && !matchInst(Inst, Opcode, Rd, Rj, Rk))
+      return false;
+
+    const MCPhysReg BaseReg = Rj.get();
+    if (BaseReg != LoongArch::R3 && BaseReg != LoongArch::R22)
+      return false;
+
+    IsLoad = IsLoadOp;
+    IsStore = !IsLoadOp;
+    IsStoreFromReg = !IsLoadOp;
+    Reg = Rd.get();
+    SrcImm = 0; // Never used.
+    StackPtrReg = BaseReg;
+    StackOffset = IsIndexedOp ? 0 : Off.get();
+    Size = AccessSize;
+    IsSimple = !IsFPUOp;
+    IsIndexed = IsIndexedOp;
+
+    return true;
+  }
+
+  bool addToImm(MCInst &Inst, int64_t &Amt, MCContext *Ctx) const override {
+    for (unsigned I = 0; I < Inst.getNumOperands(); ++I) {
+      MCOperand &Operand = Inst.getOperand(I);
+      if (!Operand.isImm())
+        continue;
+      const int64_t NewVal = Operand.getImm() + Amt;
+      // Be conservative and reject anything larger than si12
+      if (!isInt<12>(NewVal))
+        return false;
+      Operand.setImm(NewVal);
+      Amt = NewVal;
+      return true;
+    }
+    return false;
+  }
+
+  bool isStackAdjustment(const MCInst &Inst) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::ADDI_D, Reg(LoongArch::R3),
+                     Reg(LoongArch::R3), Imm());
+  }
+
+  void createSaveToStack(MCInst &Inst, const MCPhysReg &StackReg, int Offset,
+                         const MCPhysReg &SrcReg, int Size) const override {
+    storeReg(Inst, SrcReg, StackReg, Offset);
+  }
+
+  void createRestoreFromStack(MCInst &Inst, const MCPhysReg &StackReg,
+                              int Offset, const MCPhysReg &DstReg,
+                              int Size) const override {
+    loadReg(Inst, DstReg, StackReg, Offset);
+  }
+
+  bool canEncodeStackAccessOffset(int64_t Offset) const override {
+    return isInt<12>(Offset);
+  }
+
+  bool requiresAlignedAddress(const MCInst &Inst) const override {
+    return false;
+  }
+
+  bool isSUB(const MCInst &Inst) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    return matchInst(Inst, LoongArch::SUB_W) ||
+           matchInst(Inst, LoongArch::SUB_D);
   }
 
 private:
