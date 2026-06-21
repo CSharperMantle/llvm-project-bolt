@@ -771,7 +771,7 @@ void SplitFunctions::splitFunction(BinaryFunction &BF, SplitStrategy &S) {
   size_t OriginalHotSize;
   size_t HotSize;
   size_t ColdSize;
-  if (BC.isX86()) {
+  if (BC.isX86() || BC.isLoongArch()) {
     std::tie(OriginalHotSize, ColdSize) = BC.calculateEmittedSize(BF);
     LLVM_DEBUG(dbgs() << "Estimated size for function " << BF
                       << " pre-split is <0x"
@@ -921,7 +921,7 @@ void SplitFunctions::splitFunction(BinaryFunction &BF, SplitStrategy &S) {
   }
 
   // Check the new size to see if it's worth splitting the function.
-  if (BC.isX86() && LayoutUpdated) {
+  if ((BC.isX86() || BC.isLoongArch()) && LayoutUpdated) {
     std::tie(HotSize, ColdSize) = BC.calculateEmittedSize(BF);
     LLVM_DEBUG(dbgs() << "Estimated size for function " << BF
                       << " post-split is <0x" << Twine::utohexstr(HotSize)
