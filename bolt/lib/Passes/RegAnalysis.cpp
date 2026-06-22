@@ -142,13 +142,13 @@ bool RegAnalysis::isConservative(BitVector &Vec) const {
 
 void RegAnalysis::getInstUsedRegsList(const MCInst &Inst, BitVector &RegSet,
                                       bool GetClobbers) const {
-  if (!BC.MIB->isCall(Inst)) {
-    if (GetClobbers)
-      BC.MIB->getClobberedRegs(Inst, RegSet);
-    else
-      BC.MIB->getUsedRegs(Inst, RegSet);
+  if (GetClobbers)
+    BC.MIB->getClobberedRegs(Inst, RegSet);
+  else
+    BC.MIB->getUsedRegs(Inst, RegSet);
+
+  if (!BC.MIB->isCall(Inst))
     return;
-  }
 
   // If no call graph supplied...
   if (RegsKilledMap.size() == 0) {
