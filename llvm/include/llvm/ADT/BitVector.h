@@ -838,6 +838,14 @@ private:
       clear_unused_bits();
   }
 
+  friend BitVector operator|(BitVector Left, const BitVector &Right) {
+    return Left |= Right;
+  }
+
+  friend BitVector operator&(BitVector Left, const BitVector &Right) {
+    return Left &= Right;
+  }
+
 public:
   /// Return the size (in bytes) of the bit vector.
   size_type getMemorySize() const { return Bits.size() * sizeof(BitWord); }
