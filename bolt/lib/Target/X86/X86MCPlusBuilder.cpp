@@ -1562,10 +1562,13 @@ public:
     // Modify the instruction.
     MCOperand RegOp = MCOperand::createReg(RegNum);
     MCOperand TargetOp = Inst.getOperand(0);
-    Inst.clear();
-    Inst.setOpcode(NewOpcode);
-    Inst.addOperand(TargetOp);
-    Inst.addOperand(RegOp);
+    MCInst TmpInst;
+    TmpInst.clear();
+    TmpInst.setOpcode(NewOpcode);
+    TmpInst.addOperand(TargetOp);
+    TmpInst.addOperand(RegOp);
+    std::swap(TmpInst, Inst);
+    moveAnnotations(std::move(TmpInst), Inst);
 
     return true;
   }
