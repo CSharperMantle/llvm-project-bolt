@@ -853,6 +853,14 @@ public:
     return true;
   }
 
+  bool convertTailCallToJmp(MCInst &Inst) override {
+    removeAnnotation(Inst, MCPlus::MCAnnotation::kTailCall);
+    clearOffset(Inst);
+    if (getConditionalTailCall(Inst))
+      unsetConditionalTailCall(Inst);
+    return true;
+  }
+
   void createReturn(MCInst &Inst) const override {
     Inst = MCInstBuilder(LoongArch::JIRL)
                .addReg(LoongArch::R0)
