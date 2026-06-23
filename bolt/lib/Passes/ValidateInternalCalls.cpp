@@ -243,7 +243,7 @@ bool ValidateInternalCalls::analyzeFunction(BinaryFunction &Function) const {
         return false;
       }
       if (!FIE.IsLoad || FIE.StackPtrReg != BC.MIB->getStackPointer() ||
-          StackOffset != 0) {
+          StackOffset != 0 || IsIndexed) {
         LLVM_DEBUG({
           dbgs() << "Target instruction does not fetch return address - not "
                     "simple: "
