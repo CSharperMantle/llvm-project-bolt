@@ -1031,15 +1031,25 @@ public:
   /// Return registered PLT entry BinaryData with the given \p Name
   /// or nullptr if no global PLT symbol with that name exists.
   const BinaryData *getPLTBinaryDataByName(StringRef Name) const {
+    // If the name already ends with "@PLT", try it directly.
+    if (Name.ends_with("@PLT"))
+      if (const BinaryData *Data = getBinaryDataByName(Name))
+        return Data;
+
     if (const BinaryData *Data = getBinaryDataByName(Name.str() + "@PLT"))
       return Data;
 
     // The symbol name might contain versioning information e.g
     // memcpy@@GLIBC_2.17. Remove it and try to locate binary data
     // without it.
-    size_t At = Name.find("@");
+    size_t At = Name.find('@');
     if (At != std::string::npos)
       return getBinaryDataByName(Name.str().substr(0, At) + "@PLT");
+
+    // Handle LLVM-mangled names like "$plt".
+    size_t Dollar = Name.find('$');
+    if (Dollar != std::string::npos)
+      return getBinaryDataByName(Name.str().substr(0, Dollar) + "@PLT");
 
     return nullptr;
   }
