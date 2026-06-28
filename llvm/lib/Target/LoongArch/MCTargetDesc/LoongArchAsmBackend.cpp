@@ -88,46 +88,51 @@ static void reportOutOfRangeError(MCContext &Ctx, SMLoc Loc, unsigned N) {
                            ", " + Twine(llvm::maxIntN(N)) + "]");
 }
 
-static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
-                                 MCContext &Ctx) {
+// Returns (NewValue, Mask).
+static std::pair<uint64_t, uint64_t>
+adjustFixupValue(const MCFixup &Fixup, uint64_t Value, MCContext &Ctx) {
   switch (Fixup.getKind()) {
   default:
     llvm_unreachable("Unknown fixup kind");
   case FK_Data_1:
+    return {Value, 0xff};
   case FK_Data_2:
+    return {Value, 0xffff};
   case FK_Data_4:
+    return {Value, 0xffffffff};
   case FK_Data_8:
-  case FK_Data_leb128:
-    return Value;
+    return {Value, 0xffffffffffffffff};
   case LoongArch::fixup_loongarch_b16: {
     if (!isInt<18>(Value))
       reportOutOfRangeError(Ctx, Fixup.getLoc(), 18);
     if (Value % 4)
       Ctx.reportError(Fixup.getLoc(), "fixup value must be 4-byte aligned");
-    return (Value >> 2) & 0xffff;
+    return {(Value >> 2) & 0xffff, 0xffff};
   }
   case LoongArch::fixup_loongarch_b21: {
     if (!isInt<23>(Value))
       reportOutOfRangeError(Ctx, Fixup.getLoc(), 23);
     if (Value % 4)
       Ctx.reportError(Fixup.getLoc(), "fixup value must be 4-byte aligned");
-    return ((Value & 0x3fffc) << 8) | ((Value >> 18) & 0x1f);
+    return {((Value & 0x3fffc) << 8) | ((Value >> 18) & 0x1f),
+            (0x3fffc << 8) | 0x1f};
   }
   case LoongArch::fixup_loongarch_b26: {
     if (!isInt<28>(Value))
       reportOutOfRangeError(Ctx, Fixup.getLoc(), 28);
     if (Value % 4)
       Ctx.reportError(Fixup.getLoc(), "fixup value must be 4-byte aligned");
-    return ((Value & 0x3fffc) << 8) | ((Value >> 18) & 0x3ff);
+    return {((Value & 0x3fffc) << 8) | ((Value >> 18) & 0x3ff),
+            (0x3fffc << 8) | 0x3ff};
   }
   case LoongArch::fixup_loongarch_abs_hi20:
-    return (Value >> 12) & 0xfffff;
+    return {(Value >> 12) & 0xfffff, 0xfffff};
   case LoongArch::fixup_loongarch_abs_lo12:
-    return Value & 0xfff;
+    return {Value & 0xfff, 0xfff};
   case LoongArch::fixup_loongarch_abs64_lo20:
-    return (Value >> 32) & 0xfffff;
+    return {(Value >> 32) & 0xfffff, 0xfffff};
   case LoongArch::fixup_loongarch_abs64_hi12:
-    return (Value >> 52) & 0xfff;
+    return {(Value >> 52) & 0xfff, 0xfff};
   }
 }
 
@@ -158,10 +163,11 @@ void LoongArchAsmBackend::applyFixup(const MCFragment &F, const MCFixup &Fixup,
     return fixupLeb128(Ctx, Fixup, Data, Value);
 
   // Apply any target-specific value adjustments.
-  Value = adjustFixupValue(Fixup, Value, Ctx);
+  auto [NewValue, Mask] = adjustFixupValue(Fixup, Value, Ctx);
 
   // Shift the value into position.
-  Value <<= Info.TargetOffset;
+  NewValue <<= Info.TargetOffset;
+  Mask <<= Info.TargetOffset;
 
   unsigned NumBytes = alignTo(Info.TargetSize + Info.TargetOffset, 8) / 8;
 
@@ -170,7 +176,8 @@ void LoongArchAsmBackend::applyFixup(const MCFragment &F, const MCFixup &Fixup,
   // For each byte of the fragment that the fixup touches, mask in the
   // bits from the fixup value.
   for (unsigned I = 0; I != NumBytes; ++I) {
-    Data[I] |= uint8_t((Value >> (I * 8)) & 0xff);
+    Data[I] &= ~static_cast<uint8_t>((Mask >> (I * 8)) & 0xff);
+    Data[I] |= static_cast<uint8_t>((NewValue >> (I * 8)) & 0xff);
   }
 }
 
