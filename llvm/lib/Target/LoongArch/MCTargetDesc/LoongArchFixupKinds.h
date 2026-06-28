@@ -34,6 +34,8 @@ enum Fixups {
   fixup_loongarch_abs64_lo20,
   // 12-bit fixup corresponding to %abs_hi12(foo) for instruction lu52i.d.
   fixup_loongarch_abs64_hi12,
+  // 36-bit fixup corresponding to %call36(foo) for sequence pcaddu18i+jirl.
+  fixup_loongarch_call36,
 
   // Used as a sentinel, must be the last of the fixup which can be handled by
   // LoongArchAsmBackend::applyFixup.

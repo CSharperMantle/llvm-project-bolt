@@ -1652,6 +1652,9 @@ public:
     case MCFixupKind(LoongArch::fixup_loongarch_b26):
       RelType = ELF::R_LARCH_B26;
       break;
+    case MCFixupKind(LoongArch::fixup_loongarch_call36):
+      RelType = ELF::R_LARCH_CALL36;
+      break;
     }
 
     auto [RelSymbol, RelAddend] = extractFixupExpr(Fixup);
