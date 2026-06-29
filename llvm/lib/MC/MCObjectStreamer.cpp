@@ -433,6 +433,25 @@ void MCObjectStreamer::emitInstToData(const MCInst &Inst,
   SmallString<16> Content;
   SmallVector<MCFixup, 1> Fixups;
   getAssembler().getEmitter().encodeInstruction(Inst, Content, Fixups, STI);
+
+  // If any fixup spans beyond this instruction's own encoded bytes (e.g.
+  // LoongArch R_LARCH_CALL36 covers pcaddu18i+jirl = 8 bytes, but is attached
+  // to only the pcaddu18i instruction), ensure enough headroom for the full
+  // span before appending so as to avoid breaking up the fragment.
+  size_t MaxSpan = Content.size();
+  for (const auto &Fup : Fixups) {
+    const MCFixupKindInfo Info =
+        getAssembler().getBackend().getFixupKindInfo(Fup.getKind());
+    if (Info.TargetSize == 0)
+      continue;
+    const unsigned NumBytes =
+        alignTo(Info.TargetSize + Info.TargetOffset, 8) / 8;
+    MaxSpan =
+        std::max(MaxSpan, static_cast<size_t>(Fup.getOffset() + NumBytes));
+  }
+  if (MaxSpan > Content.size())
+    ensureHeadroom(MaxSpan);
+
   appendContents(Content);
   if (CurFrag != F) {
     F = CurFrag;
