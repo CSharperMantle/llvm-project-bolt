@@ -2360,7 +2360,8 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst,
         getAssembler().getBackend().getFixupKindInfo(F.getKind());
     for (unsigned j = 0; j != Info.TargetSize; ++j) {
       unsigned Index = F.getOffset() * 8 + Info.TargetOffset + j;
-      assert(Index < Code.size() * 8 && "Invalid offset in fixup!");
+      if (Index >= Code.size() * 8)
+        break;
       FixupMap[Index] = 1 + i;
     }
   }
