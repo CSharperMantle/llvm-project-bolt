@@ -105,7 +105,7 @@ private:
       uint32_t RawInstr = *(little32_t *)FixupPtr;
       uint32_t Imm = static_cast<uint32_t>(Value >> 2);
       uint32_t Imm15_0 = extractBits(Imm, /*Hi=*/15, /*Lo=*/0) << 10;
-      *(little32_t *)FixupPtr = RawInstr | Imm15_0;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfc0003ff) | Imm15_0;
       break;
     }
     case Branch21PCRel: {
@@ -121,7 +121,7 @@ private:
       uint32_t Imm = static_cast<uint32_t>(Value >> 2);
       uint32_t Imm15_0 = extractBits(Imm, /*Hi=*/15, /*Lo=*/0) << 10;
       uint32_t Imm20_16 = extractBits(Imm, /*Hi=*/20, /*Lo=*/16);
-      *(little32_t *)FixupPtr = RawInstr | Imm15_0 | Imm20_16;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfc0003e0) | Imm15_0 | Imm20_16;
       break;
     }
     case Branch26PCRel: {
@@ -137,7 +137,7 @@ private:
       uint32_t Imm = static_cast<uint32_t>(Value >> 2);
       uint32_t Imm15_0 = extractBits(Imm, /*Hi=*/15, /*Lo=*/0) << 10;
       uint32_t Imm25_16 = extractBits(Imm, /*Hi=*/25, /*Lo=*/16);
-      *(little32_t *)FixupPtr = RawInstr | Imm15_0 | Imm25_16;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfc000000) | Imm15_0 | Imm25_16;
       break;
     }
     case Delta32: {
@@ -171,7 +171,7 @@ private:
 
       uint32_t RawInstr = *(little32_t *)FixupPtr;
       uint32_t Imm31_12 = extractBits(PageDelta, /*Hi=*/31, /*Lo=*/12) << 5;
-      *(little32_t *)FixupPtr = RawInstr | Imm31_12;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Imm31_12;
       break;
     }
     case PageOffset12:
@@ -180,7 +180,7 @@ private:
 
       uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
       uint32_t Imm11_0 = TargetOffset << 10;
-      *(ulittle32_t *)FixupPtr = RawInstr | Imm11_0;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xffc003ff) | Imm11_0;
       break;
     }
     case PCRel20S2: {
@@ -207,7 +207,7 @@ private:
 
       uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
       uint32_t Imm31_12 = extractBits(Delta, /*Hi=*/31, /*Lo=*/12) << 5;
-      *(ulittle32_t *)FixupPtr = RawInstr | Imm31_12;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Imm31_12;
       break;
     }
     case PCAddLo12: {
@@ -220,7 +220,7 @@ private:
 
       uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
       uint32_t Imm11_0 = extractBits(Delta, /*Hi=*/11, /*Lo=*/0) << 10;
-      *(ulittle32_t *)FixupPtr = RawInstr | Imm11_0;
+      *(ulittle32_t *)FixupPtr = (RawInstr & 0xffc003ff) | Imm11_0;
       break;
     }
     case Call30PCRel: {
@@ -234,10 +234,10 @@ private:
 
       uint32_t Pcaddu12i = *(little32_t *)FixupPtr;
       uint32_t Hi20 = extractBits(Value, /*Hi=*/31, /*Lo=*/12) << 5;
-      *(little32_t *)FixupPtr = Pcaddu12i | Hi20;
+      *(little32_t *)FixupPtr = (Pcaddu12i & 0xfe00001f) | Hi20;
       uint32_t Jirl = *(little32_t *)(FixupPtr + 4);
       uint32_t Lo10 = extractBits(Value, /*Hi=*/11, /*Lo=*/2) << 10;
-      *(little32_t *)(FixupPtr + 4) = Jirl | Lo10;
+      *(little32_t *)(FixupPtr + 4) = (Jirl & 0xfc0003ff) | Lo10;
       break;
     }
     case Call36PCRel: {
@@ -251,10 +251,10 @@ private:
 
       uint32_t Pcaddu18i = *(little32_t *)FixupPtr;
       uint32_t Hi20 = extractBits(Value + (1 << 17), /*Hi=*/37, /*Lo=*/18) << 5;
-      *(little32_t *)FixupPtr = Pcaddu18i | Hi20;
+      *(little32_t *)FixupPtr = (Pcaddu18i & 0xfe00001f) | Hi20;
       uint32_t Jirl = *(little32_t *)(FixupPtr + 4);
       uint32_t Lo16 = extractBits(Value, /*Hi=*/17, /*Lo=*/2) << 10;
-      *(little32_t *)(FixupPtr + 4) = Jirl | Lo16;
+      *(little32_t *)(FixupPtr + 4) = (Jirl & 0xfc0003ff) | Lo16;
       break;
     }
     case Add6: {
@@ -369,7 +369,7 @@ private:
       uint32_t RawInstr = *(little32_t *)FixupPtr;
       uint32_t Imm51_32 = extractBits(PageDelta >> 32, /*Hi=*/19, /*Lo=*/0)
                           << 5;
-      *(little32_t *)FixupPtr = RawInstr | Imm51_32;
+      *(little32_t *)FixupPtr = (RawInstr & 0xfe00001f) | Imm51_32;
       break;
     }
     case Page64Hi12:
@@ -385,7 +385,7 @@ private:
       uint32_t RawInstr = *(little32_t *)FixupPtr;
       uint32_t Imm63_52 = extractBits(PageDelta >> 32, /*Hi=*/31, /*Lo=*/20)
                           << 10;
-      *(little32_t *)FixupPtr = RawInstr | Imm63_52;
+      *(little32_t *)FixupPtr = (RawInstr & 0xffc003ff) | Imm63_52;
       break;
     }
     case AbsHi20: {
