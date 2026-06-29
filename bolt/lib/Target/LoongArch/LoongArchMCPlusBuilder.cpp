@@ -1358,6 +1358,24 @@ public:
 #undef CHECK_
   }
 
+  bool matchLoongArchCall36Pattern(const MCInst &Jirl, const MCInst &Pcaddu18i,
+                                   uint64_t Pcaddu18iAddr,
+                                   uint64_t &Target) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    Reg AddrReg;
+    Imm Pcaddu18iOffset;
+    if (!matchInst(Pcaddu18i, LoongArch::PCADDU18I, AddrReg, Pcaddu18iOffset))
+      return false;
+
+    Imm JirlOffset;
+    if (!matchInst(Jirl, LoongArch::JIRL, Skip(), AddrReg, JirlOffset))
+      return false;
+
+    Target = (Pcaddu18iAddr + (Pcaddu18iOffset.get() << 18)) + JirlOffset.get();
+    return true;
+  }
+
   bool replaceImmWithSymbolRef(MCInst &Inst, const MCSymbol *Symbol,
                                int64_t Addend, MCContext *Ctx, int64_t &Value,
                                uint32_t RelType) const override {

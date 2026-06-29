@@ -2310,6 +2310,10 @@ public:
   // adjustments.
   void handleAArch64IndirectCall(MCInst &Instruction, const uint64_t Offset);
 
+  // Check for stray indirect calls, currently %call36 to local symbols, which
+  // lack relocations and need manual adjustments.
+  void handleLoongArchIndirectCall(MCInst &Instruction, const uint64_t Offset);
+
   /// Analyze instruction to identify a function reference.
   void analyzeInstructionForFuncReference(const MCInst &Inst);
 

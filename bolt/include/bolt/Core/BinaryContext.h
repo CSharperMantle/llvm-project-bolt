@@ -1148,6 +1148,9 @@ public:
   void addAdrpAddRelocAArch64(BinaryFunction &BF, MCInst &LoadLowBits,
                               MCInst &LoadHiBits, uint64_t Target);
 
+  void addCall36RelocLoongArch(BinaryFunction &BF, MCInst &Pcaddu18i,
+                               MCInst &Jirl, uint64_t Target);
+
   /// Return true if AARch64 veneer was successfully matched at a given
   /// \p Address and register veneer binary function if \p MatchOnly
   /// argument is false.

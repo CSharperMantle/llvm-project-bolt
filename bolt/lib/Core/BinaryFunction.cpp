@@ -1289,6 +1289,31 @@ void BinaryFunction::handleAArch64IndirectCall(MCInst &Instruction,
   }
 }
 
+void BinaryFunction::handleLoongArchIndirectCall(MCInst &Instruction,
+                                                 const uint64_t Offset) {
+  if (Offset < 4)
+    return;
+
+  const uint64_t PrevOffset = Offset - 4;
+  const auto PrevIt = Instructions.find(PrevOffset);
+  if (PrevIt == Instructions.end())
+    return;
+
+  uint64_t TargetAddress;
+
+  // > Used for medium code model function call sequence `pcaddu18i + jirl`,
+  // > `%call36(symbol)`. The two instructions must be adjacent.
+  // https://github.com/loongson/la-abi-specs/blob/44ef5f63e1755e1a165915ea3b2d98d35f68eed0/laelf.adoc?plain=1#L744-L746
+  if (BC.MIB->matchLoongArchCall36Pattern(Instruction, PrevIt->second,
+                                          getAddress() + PrevOffset,
+                                          TargetAddress)) {
+    BC.addCall36RelocLoongArch(*this, PrevIt->second, Instruction,
+                               TargetAddress);
+    if (!containsAddress(TargetAddress))
+      BC.addInterproceduralReference(this, TargetAddress);
+  }
+}
+
 std::optional<MCInst>
 BinaryFunction::disassembleInstructionAtOffset(uint64_t Offset) const {
   assert(CurrentState == State::Empty && "Function should not be disassembled");
@@ -1473,6 +1498,24 @@ Error BinaryFunction::disassemble() {
       } else {
         // Could not evaluate branch. Should be an indirect call or an
         // indirect branch. Bail out on the latter case.
+
+        if (BC.isLoongArch()) {
+          // On LoongArch, resolve some indirect call pairs that lack
+          // relocations. Currently, this covers %call36.
+          if ((MIB->isCall(Instruction) ||
+               MIB->isIndirectBranch(Instruction))) {
+            if (Offset >= 4 && !getRelocationAt(Offset) &&
+                !getRelocationAt(Offset - 4)) {
+              LLVM_DEBUG({
+                dbgs() << "BOLT-DEBUG: relocation-less LoongArch call pair "
+                          "found at 0x"
+                       << Twine::utohexstr(AbsoluteInstrAddr) << '\n';
+              });
+              handleLoongArchIndirectCall(Instruction, Offset);
+            }
+          }
+        }
+
         if (MIB->isIndirectBranch(Instruction))
           handleIndirectBranch(Instruction, Size, Offset);
         // Indirect call. We only need to fix it if the operand is RIP-relative.

@@ -1357,6 +1357,19 @@ void BinaryContext::addAdrpAddRelocAArch64(BinaryFunction &BF,
                                Val, ELF::R_AARCH64_ADD_ABS_LO12_NC);
 }
 
+void BinaryContext::addCall36RelocLoongArch(BinaryFunction &BF,
+                                            MCInst &Pcaddu18i, MCInst &Jirl,
+                                            uint64_t Target) {
+  const auto [TargetSymbol, Addend] = handleAddressRef(Target, BF,
+                                                       /*IsPCRel*/ true);
+  int64_t Val;
+  MIB->replaceImmWithSymbolRef(Pcaddu18i, TargetSymbol, Addend, Ctx.get(), Val,
+                               ELF::R_LARCH_CALL36);
+  // Zero JIRL's offset since the %call36 fixup on PCADDU18I covers both
+  // instructions anyway.
+  Jirl.getOperand(2) = MCOperand::createImm(0);
+}
+
 bool BinaryContext::handleAArch64Veneer(uint64_t Address, bool MatchOnly) {
   BinaryFunction *TargetFunction = getBinaryFunctionContainingAddress(Address);
   if (TargetFunction)

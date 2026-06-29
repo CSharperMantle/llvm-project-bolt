@@ -1872,6 +1872,16 @@ public:
     llvm_unreachable("not implemented");
   }
 
+  /// Check if \p Jirl and \p Pcaddu18i form a LoongArch CALL36 direct call
+  /// sequence. If so, compute the target address from the immediates and return
+  /// true.
+  virtual bool matchLoongArchCall36Pattern(const MCInst &Jirl,
+                                           const MCInst &Pcaddu18i,
+                                           uint64_t Pcaddu18iAddr,
+                                           uint64_t &Target) const {
+    llvm_unreachable("not implemented");
+  }
+
   /// Match function \p BF to a long veneer for absolute code. Return true if
   /// the match was successful and populate \p TargetAddress with an address of
   /// the function veneer jumps to.
