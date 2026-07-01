@@ -145,8 +145,9 @@ class LongJmpPass : public BinaryFunctionPass {
   Error relaxStub(BinaryBasicBlock &StubBB, bool &Modified);
 
   /// Helper to resolve a symbol address according to our tentative layout
-  uint64_t getSymbolAddress(const BinaryContext &BC, const MCSymbol *Target,
-                            const BinaryBasicBlock *TgtBB) const;
+  std::optional<uint64_t> getSymbolAddress(const BinaryContext &BC,
+                                           const MCSymbol *Target,
+                                           const BinaryBasicBlock *TgtBB) const;
 
   /// Relax function by adding necessary stubs or relaxing existing stubs
   Error relax(BinaryFunction &BF, bool &Modified);

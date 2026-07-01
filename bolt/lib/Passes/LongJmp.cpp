@@ -456,12 +456,15 @@ bool LongJmpPass::usesStub(const BinaryFunction &Func,
   return false;
 }
 
-uint64_t LongJmpPass::getSymbolAddress(const BinaryContext &BC,
-                                       const MCSymbol *Target,
-                                       const BinaryBasicBlock *TgtBB) const {
+std::optional<uint64_t>
+LongJmpPass::getSymbolAddress(const BinaryContext &BC, const MCSymbol *Target,
+                              const BinaryBasicBlock *TgtBB) const {
   if (TgtBB) {
     auto Iter = BBAddresses.find(TgtBB);
-    assert(Iter != BBAddresses.end() && "Unrecognized BB");
+    if (Iter == BBAddresses.end()) {
+      LLVM_DEBUG(dbgs() << "Unrecognized BB");
+      return std::nullopt;
+    }
     return Iter->second;
   }
   uint64_t EntryID = 0;
@@ -471,7 +474,10 @@ uint64_t LongJmpPass::getSymbolAddress(const BinaryContext &BC,
     // Look at BinaryContext's resolution for this symbol - this is a symbol not
     // mapped to a BinaryFunction
     ErrorOr<uint64_t> ValueOrError = BC.getSymbolValue(*Target);
-    assert(ValueOrError && "Unrecognized symbol");
+    if (!ValueOrError) {
+      LLVM_DEBUG(dbgs() << "Unrecognized symbol: " << Target->getName());
+      return std::nullopt;
+    }
     return *ValueOrError;
   }
   return Iter->second;
@@ -494,10 +500,13 @@ Error LongJmpPass::relaxStub(BinaryBasicBlock &StubBB, bool &Modified) {
   const MCSymbol *RealTargetSym = BC.MIB->getTargetSymbol(*StubBB.begin());
   BinaryBasicBlock *TgtBB = Func.getBasicBlockForLabel(RealTargetSym);
   BinaryFunction *TargetFunction = BC.getFunctionForSymbol(RealTargetSym);
-  uint64_t TgtAddress = getSymbolAddress(BC, RealTargetSym, TgtBB);
+  std::optional<uint64_t> TgtAddress =
+      getSymbolAddress(BC, RealTargetSym, TgtBB);
+  assert(TgtAddress && "Unknown symbol RealTargetSym; Can't get TgtAddress");
   uint64_t DotAddress = BBAddresses[&StubBB];
-  uint64_t PCRelTgtAddress = DotAddress > TgtAddress ? DotAddress - TgtAddress
-                                                     : TgtAddress - DotAddress;
+  uint64_t PCRelTgtAddress = DotAddress > *TgtAddress
+                                 ? DotAddress - *TgtAddress
+                                 : *TgtAddress - DotAddress;
 
   auto applyBTIFixup = [&](BinaryFunction *TargetFunction,
                            BinaryBasicBlock *RealTgtBB) {
@@ -602,8 +611,11 @@ bool LongJmpPass::needsStub(const BinaryBasicBlock &BB, const MCInst &Inst,
   int64_t MaxVal = (1ULL << BitsAvail) - 1;
   int64_t MinVal = -(1ULL << BitsAvail);
 
-  uint64_t PCRelTgtAddress = getSymbolAddress(BC, TgtSym, TgtBB);
-  int64_t PCOffset = (int64_t)(PCRelTgtAddress - DotAddress);
+  std::optional<uint64_t> PCRelTgtAddress = getSymbolAddress(BC, TgtSym, TgtBB);
+  if (!PCRelTgtAddress)
+    return false;
+
+  int64_t PCOffset = (int64_t)(*PCRelTgtAddress - DotAddress);
 
   return PCOffset < MinVal || PCOffset > MaxVal;
 }
