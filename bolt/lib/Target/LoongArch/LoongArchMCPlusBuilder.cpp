@@ -2222,6 +2222,45 @@ public:
     return Insts;
   }
 
+  InstructionListType
+  createInstrumentedLoadHandlerBody(const MCSymbol *LoadCounterFuncPtr,
+                                    MCContext *Ctx) override {
+    // Called by the snippet with $a0=eff_addr, $a1=LoadSiteID.
+    //
+    //    spill   $ra, Scratch
+    //    materializeAddress Scratch, LoadCounterFuncPtr
+    //    ld.d    Scratch, Scratch, 0
+    //    beqz    Scratch, 1f
+    //    jirl    $ra, Scratch, 0
+    // 1:
+    //    nop     # for convenient binding
+    //    reload  $ra, Scratch
+    //    ret
+    InstructionListType Insts;
+    constexpr MCPhysReg Scratch = LoongArch::R12; // $t0
+
+    MCSymbol *const SkipLabel = Ctx->createTempSymbol();
+
+    spillRegs(Insts, {LoongArch::R1, Scratch});
+    InstructionListType Addr =
+        materializeAddress(LoadCounterFuncPtr, Ctx, Scratch);
+    Insts.insert(Insts.end(), Addr.begin(), Addr.end());
+    Insts.emplace_back();
+    loadReg(Insts.back(), Scratch, Scratch, 0);
+    Insts.emplace_back();
+    createRegCmpJZ(Insts.back(), Scratch, SkipLabel, Ctx);
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), false, Scratch, 0);
+    Insts.emplace_back();
+    createNoop(Insts.back());
+    setInstLabel(Insts.back(), SkipLabel);
+    reloadRegs(Insts, {LoongArch::R1, Scratch});
+    Insts.emplace_back();
+    createReturn(Insts.back());
+
+    return Insts;
+  }
+
   InstructionListType createInstrumentedIndCallHandlerExitBB() const override {
     InstructionListType Insts;
 
@@ -2255,6 +2294,89 @@ public:
     Insts.emplace_back();
     createIndirectCallInst(Insts.back(), true, LoongArch::R12, 0);
 
+    return Insts;
+  }
+
+  InstructionListType createInstrumentedLoad(MCInst &&LoadInst,
+                                             MCSymbol *HandlerFuncAddr,
+                                             int LoadSiteID,
+                                             MCContext *Ctx) override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    // Inserted BEFORE the original load. Computes the load's effective
+    // address, calls __bolt_instr_load(LoadSiteID, eff_addr), then the
+    // original load executes with its inputs (rj, rk) restored.
+    //
+    // For `ld.d Rd, Rj, Offset`:
+    //   spill    $ra, $a0, $a1, Rj, Scratch, $zero
+    //   addi.d   $a0, Rj, Offset
+    //   createLoadImmediate $a1, LoadSiteID
+    //   materializeAddress Scratch, HandlerFuncAddr
+    //   jirl     $ra, Scratch, 0
+    //   reload   $ra, $a0, $a1, Rj, Scratch, $zero
+    //   # then the original load
+    //
+    // For `ldx.d rd, rj, rk`:
+    //   spill    $ra, $a0, $a1, Rj, Rk, Scratch
+    //   add.d    $a0, Rj, Rk
+    //   createLoadImmediate $a1, LoadSiteID
+    //   materializeAddress Scratch, HandlerFuncAddr
+    //   jirl     $ra, Scratch, 0
+    //   reload   $ra, $a0, $a1, Rj, Rk, Scratch
+    //   # the the original load
+    constexpr MCPhysReg Scratch = LoongArch::R12; // $t0
+
+    InstructionListType Insts;
+
+    bool IsIndexed = false;
+    MCRegister Rj, Rk;
+    int64_t Offset;
+    Reg RdReg, RjReg, RkReg;
+    Imm OffsetImm;
+    if (matchInst(LoadInst, LoongArch::LD_D, Reg(), RjReg, OffsetImm)) {
+      Rj = RjReg.get();
+      Offset = OffsetImm.get();
+    } else if (matchInst(LoadInst, LoongArch::LDX_D, Reg(), RjReg, RkReg) ||
+               matchInst(LoadInst, LoongArch::LDX_W, Reg(), RjReg, RkReg)) {
+      Rj = RjReg.get();
+      Rk = RkReg.get();
+      IsIndexed = true;
+    } else {
+      llvm_unreachable("Unrecognized load in createInstrumentedLoad; check "
+                       "analyzeIndirectBranch");
+      return Insts;
+    }
+
+    if (IsIndexed) {
+      spillRegs(Insts,
+                {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj, Rk, Scratch});
+      Insts.emplace_back(MCInstBuilder(LoongArch::ADD_D)
+                             .addReg(LoongArch::R4)
+                             .addReg(Rj)
+                             .addReg(Rk));
+    } else {
+      spillRegs(Insts, {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj,
+                        Scratch, LoongArch::R0});
+      Insts.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
+                             .addReg(LoongArch::R4)
+                             .addReg(Rj)
+                             .addImm(Offset));
+    }
+    InstructionListType LoadID = createLoadImmediate(LoongArch::R5, LoadSiteID);
+    Insts.insert(Insts.end(), LoadID.begin(), LoadID.end());
+    InstructionListType Addr =
+        materializeAddress(HandlerFuncAddr, Ctx, Scratch);
+    Insts.insert(Insts.end(), Addr.begin(), Addr.end());
+    Insts.emplace_back();
+    createIndirectCallInst(Insts.back(), false, Scratch, 0);
+
+    if (IsIndexed) {
+      reloadRegs(Insts, {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj, Rk,
+                         Scratch});
+    } else {
+      reloadRegs(Insts, {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj,
+                         Scratch, LoongArch::R0});
+    }
     return Insts;
   }
 

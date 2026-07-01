@@ -178,10 +178,12 @@ void InstrumentationRuntimeLibrary::emitBinary(BinaryContext &BC,
   emitIntValue("__bolt_num_counters", Summary->Counters.size());
   emitValue(Summary->IndCallCounterFuncPtr, nullptr);
   emitValue(Summary->IndTailCallCounterFuncPtr, nullptr);
+  emitValue(Summary->LoadCounterFuncPtr, nullptr);
   emitIntValue("__bolt_instr_num_ind_calls",
                Summary->IndCallDescriptions.size());
   emitIntValue("__bolt_instr_num_ind_targets",
                Summary->IndCallTargetDescriptions.size());
+  emitIntValue("__bolt_instr_num_loads", Summary->LoadDescriptions.size());
   emitIntValue("__bolt_instr_num_funcs", Summary->FunctionDescriptions.size());
   emitString("__bolt_instr_filename", opts::InstrumentationFilename);
   emitString("__bolt_instr_binpath", opts::InstrumentationBinpath);
@@ -278,6 +280,14 @@ std::string InstrumentationRuntimeLibrary::buildTables(BinaryContext &BC) {
     uint64_t TargetFuncAddress =
         getOutputAddress(*Desc.Target, Desc.ToLoc.Offset);
     OS.write(reinterpret_cast<const char *>(&TargetFuncAddress), 8);
+  }
+
+  const size_t LDSize =
+      Summary->LoadDescriptions.size() * sizeof(LoadDescription);
+  OS.write(reinterpret_cast<const char *>(&LDSize), 4);
+  for (const LoadDescription &Desc : Summary->LoadDescriptions) {
+    OS.write(reinterpret_cast<const char *>(&Desc.FromLoc.FuncString), 4);
+    OS.write(reinterpret_cast<const char *>(&Desc.FromLoc.Offset), 4);
   }
 
   uint32_t FuncDescSize = Summary->getFDSize();

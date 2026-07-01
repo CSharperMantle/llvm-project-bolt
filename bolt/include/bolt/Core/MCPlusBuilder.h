@@ -2435,6 +2435,18 @@ public:
     return InstructionListType();
   }
 
+  /// Create an inline sequence that records the effective address of a load
+  /// instruction (e.g. a jump-table entry load or vtable slot load) and calls
+  /// a runtime handler. The handler receives (LoadSiteID, eff_addr) in
+  /// registers.
+  virtual InstructionListType createInstrumentedLoad(MCInst &&LoadInst,
+                                                     MCSymbol *HandlerFuncAddr,
+                                                     int LoadSiteID,
+                                                     MCContext *Ctx) {
+    llvm_unreachable("not implemented");
+    return InstructionListType();
+  }
+
   virtual InstructionListType createInstrumentedIndCallHandlerExitBB() const {
     llvm_unreachable("not implemented");
     return InstructionListType();
@@ -2450,6 +2462,13 @@ public:
   createInstrumentedIndCallHandlerEntryBB(const MCSymbol *InstrTrampoline,
                                           const MCSymbol *IndCallHandler,
                                           MCContext *Ctx) {
+    llvm_unreachable("not implemented");
+    return InstructionListType();
+  }
+
+  virtual InstructionListType
+  createInstrumentedLoadHandlerBody(const MCSymbol *LoadCounterFuncPtr,
+                                    MCContext *Ctx) {
     llvm_unreachable("not implemented");
     return InstructionListType();
   }

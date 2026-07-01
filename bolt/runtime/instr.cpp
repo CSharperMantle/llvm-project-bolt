@@ -81,6 +81,8 @@ extern uint32_t __bolt_num_counters;
 extern uint32_t __bolt_instr_num_ind_calls;
 // Number of indirect call target descriptions
 extern uint32_t __bolt_instr_num_ind_targets;
+// Number of load site descriptions
+extern uint32_t __bolt_instr_num_loads;
 // Number of function descriptions
 extern uint32_t __bolt_instr_num_funcs;
 // Time to sleep across dumps (when we write the fdata profile to disk)
@@ -107,6 +109,7 @@ extern bool __bolt_instr_use_pid;
 // TODO: We need better linking support to make that happen.
 extern void (*__bolt_ind_call_counter_func_pointer)();
 extern void (*__bolt_ind_tailcall_counter_func_pointer)();
+extern void (*__bolt_load_counter_func_pointer)();
 // Function pointers to init/fini trampoline routines in the binary, so we can
 // resume regular execution of these functions that we hooked
 extern void __bolt_start_trampoline();
@@ -459,6 +462,9 @@ using IndirectCallHashTable = SimpleHashTable<>;
 IndirectCallHashTable *GlobalIndCallCounters{
     reinterpret_cast<IndirectCallHashTable *>(1)};
 
+using LoadHashTable = SimpleHashTable<>;
+LoadHashTable *GlobalLoadCounters{reinterpret_cast<LoadHashTable *>(1)};
+
 /// Don't allow reentrancy in the fdata writing phase - only one thread writes
 /// it
 Mutex *GlobalWriteProfileMutex{reinterpret_cast<Mutex *>(1)};
@@ -572,6 +578,7 @@ struct FunctionDescription {
 struct ProfileWriterContext {
   const IndCallDescription *IndCallDescriptions;
   const IndCallTargetDescription *IndCallTargets;
+  const IndCallDescription *LoadDescriptions;
   const uint8_t *FuncDescriptions;
   const char *Strings; // String table with function names used in this binary
   int FileDesc;   // File descriptor for the file on disk backing this
@@ -776,18 +783,25 @@ ProfileWriterContext readDescriptions(const uint8_t *BinContents,
         *reinterpret_cast<const uint32_t *>(BinContents + Shdr->sh_offset + 20);
     uint32_t IndCallTargetDescSize = *reinterpret_cast<const uint32_t *>(
         BinContents + Shdr->sh_offset + 24 + IndCallDescSize);
-    uint32_t FuncDescSize = *reinterpret_cast<const uint32_t *>(
+    uint32_t LoadDescSize = *reinterpret_cast<const uint32_t *>(
         BinContents + Shdr->sh_offset + 28 + IndCallDescSize +
         IndCallTargetDescSize);
+    uint32_t FuncDescSize = *reinterpret_cast<const uint32_t *>(
+        BinContents + Shdr->sh_offset + 32 + IndCallDescSize +
+        IndCallTargetDescSize + LoadDescSize);
     Result.IndCallDescriptions = reinterpret_cast<const IndCallDescription *>(
         BinContents + Shdr->sh_offset + 24);
     Result.IndCallTargets = reinterpret_cast<const IndCallTargetDescription *>(
         BinContents + Shdr->sh_offset + 28 + IndCallDescSize);
-    Result.FuncDescriptions = BinContents + Shdr->sh_offset + 32 +
-                              IndCallDescSize + IndCallTargetDescSize;
-    Result.Strings = reinterpret_cast<const char *>(
+    Result.LoadDescriptions = reinterpret_cast<const IndCallDescription *>(
         BinContents + Shdr->sh_offset + 32 + IndCallDescSize +
-        IndCallTargetDescSize + FuncDescSize);
+        IndCallTargetDescSize);
+    Result.FuncDescriptions = BinContents + Shdr->sh_offset + 36 +
+                              IndCallDescSize + IndCallTargetDescSize +
+                              LoadDescSize;
+    Result.Strings = reinterpret_cast<const char *>(
+        BinContents + Shdr->sh_offset + 36 + IndCallDescSize +
+        IndCallTargetDescSize + LoadDescSize + FuncDescSize);
     return Result;
   }
   const char ErrMsg[] =
@@ -1474,6 +1488,44 @@ void visitCallFlowEntry(CallFlowHashTable::MapEntry &Entry, int FD,
   __write(FD, LineBuf, Ptr - LineBuf);
 }
 
+/// Write a single load-site <eff_addr, count> pair to the fdata file.
+/// Format: <site Loc> 3 [unknown] <eff_addr-hex> <count>
+void visitLoadCounter(LoadHashTable::MapEntry &Entry, int FD, int LoadSiteID,
+                      ProfileWriterContext *Ctx) {
+  if (Entry.Val == 0)
+    return;
+  char LineBuf[BufSize];
+  char *Ptr = LineBuf;
+  // MemInfo location flags: 4 = global symbol (load site),
+  // 3 = non-symbol raw address (eff_addr).
+  // Can't use serializeLoc() because it emits flag 1 (call/edge locations).
+  const Location &Loc = Ctx->LoadDescriptions[LoadSiteID];
+  Ptr = strCopy(Ptr, "4 ", BufSize);
+  const char *Str = Ctx->Strings + Loc.FunctionName;
+  while (*Str) {
+    *Ptr++ = *Str++;
+    if (Ptr - LineBuf >= BufSize - 40)
+      break;
+  }
+  *Ptr++ = ' ';
+  Ptr = intToStr(Ptr, Loc.Offset, 16);
+  *Ptr++ = ' ';
+  Ptr = strCopy(Ptr, "3 [unknown] ", BufSize - (Ptr - LineBuf) - 40);
+  Ptr = intToStr(Ptr, Entry.Key - TextBaseAddress, 16);
+  *Ptr++ = ' ';
+  Ptr = intToStr(Ptr, Entry.Val, 10);
+  *Ptr++ = '\n';
+  __write(FD, LineBuf, Ptr - LineBuf);
+}
+
+/// Write to \p FD all of the load profiles.
+void writeLoadProfile(int FD, ProfileWriterContext &Ctx) {
+  for (int I = 0; I < __bolt_instr_num_loads; ++I) {
+    DEBUG(reportNumber("LoadSite #", I, 10));
+    GlobalLoadCounters[I].forEachElement(visitLoadCounter, FD, I, &Ctx);
+  }
+}
+
 /// Open fdata file for writing and return a valid file descriptor, aborting
 /// program upon failure.
 int openProfile() {
@@ -1520,6 +1572,8 @@ extern "C" void __bolt_instr_clear_counters() {
          __bolt_num_counters * 8);
   for (int I = 0; I < __bolt_instr_num_ind_calls; ++I)
     GlobalIndCallCounters[I].resetCounters();
+  for (int I = 0; I < __bolt_instr_num_loads; ++I)
+    GlobalLoadCounters[I].resetCounters();
 }
 
 /// This is the entry point for profile writing.
@@ -1572,6 +1626,7 @@ __bolt_instr_data_dump(int FD, const char *LibPath = nullptr,
 
   writeIndirectCallProfile(FD, Ctx);
   Ctx.CallFlowTable->forEachElement(visitCallFlowEntry, FD, &Ctx);
+  writeLoadProfile(FD, Ctx);
 
   __fsync(FD);
   if (Ctx.FileDesc != -1) {
@@ -1634,12 +1689,14 @@ out:;
 
 extern "C" void __bolt_instr_indirect_call();
 extern "C" void __bolt_instr_indirect_tailcall();
+extern "C" void __bolt_instr_load_handler();
 extern "C" void __bolt_instr_start();
 
 /// Initialization code
 extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void __bolt_instr_setup() {
   __bolt_ind_call_counter_func_pointer = __bolt_instr_indirect_call;
   __bolt_ind_tailcall_counter_func_pointer = __bolt_instr_indirect_tailcall;
+  __bolt_load_counter_func_pointer = __bolt_instr_load_handler;
   TextBaseAddress = getTextBaseAddress();
 
   const uint64_t CountersStart =
@@ -1673,6 +1730,9 @@ extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void __bolt_instr_setup() {
   if (__bolt_instr_num_ind_calls > 0)
     GlobalIndCallCounters =
         new (*GlobalAlloc, 0) IndirectCallHashTable[__bolt_instr_num_ind_calls];
+  if (__bolt_instr_num_loads > 0)
+    GlobalLoadCounters =
+        new (*GlobalAlloc, 0) LoadHashTable[__bolt_instr_num_loads];
 
   if (__bolt_instr_sleep_time != 0) {
     // Separate instrumented process to the own process group
@@ -1688,6 +1748,11 @@ extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void __bolt_instr_setup() {
 extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void
 instrumentIndirectCall(uint64_t Target, uint64_t IndCallID) {
   GlobalIndCallCounters[IndCallID].incrementVal(Target, *GlobalAlloc);
+}
+
+extern "C" BOLT_FORCE_ALIGN_ARG_POINTER void
+instrumentLoad(uint64_t EffAddr, uint64_t LoadSiteID) {
+  GlobalLoadCounters[LoadSiteID].incrementVal(EffAddr, *GlobalAlloc);
 }
 
 #ifdef HAVE_ATTR_NAKED
@@ -1792,6 +1857,25 @@ extern "C" BOLT_NAKED void __bolt_instr_indirect_tailcall()
 #endif
 }
 
+extern "C" BOLT_NAKED void __bolt_instr_load_handler() {
+#if defined(__loongarch__)
+  // clang-format off
+  // Args: $a0 = EffAddr, $a1 = LoadSiteID (set by snippet before jirl).
+  // SAVE_ALL saves them to stack at offsets 8*4 and 8*5.
+  __asm__ __volatile__(
+                      SAVE_ALL
+                      "ld.d   $a0, $sp, (8*4)         \n"
+                      "ld.d   $a1, $sp, (8*5)         \n"
+                      "bl     instrumentLoad          \n"
+                      RESTORE_ALL
+                      "ret                            \n");
+  // clang-format on
+#else
+#warning "__bolt_instr_load_handler is not implemented on this arch"
+  __builtin_unreachable();
+#endif
+}
+
 /// This is hooking ELF's entry, it needs to save all machine state.
 extern "C" BOLT_NAKED void __bolt_instr_start()
 {
@@ -1881,6 +1965,14 @@ __asm__(".globl __bolt_instr_start                              \n"
 
         ".size __bolt_instr_start,                                "
         "      .-__bolt_instr_start                             \n");
+
+#warning "__bolt_instr_load_handler is not implemented on this arch"
+__asm__(".globl __bolt_instr_load_handler                       \n"
+        ".type __bolt_instr_load_handler, @function             \n"
+        "__bolt_instr_load_handler:                             \n"
+        "ret                                                    \n"
+        ".size __bolt_instr_load_handler,                         "
+        "      .-__bolt_instr_load_handler                      \n");
 // clang-format on
 
 #elif defined(__riscv)
@@ -1932,6 +2024,14 @@ __asm__(".globl __bolt_instr_start                              \n"
 
         ".size __bolt_instr_start,                                "
         "      .-__bolt_instr_start                             \n");
+
+#warning "__bolt_instr_load_handler is not implemented on this arch"
+__asm__(".globl __bolt_instr_load_handler                       \n"
+        ".type __bolt_instr_load_handler, @function             \n"
+        "__bolt_instr_load_handler:                             \n"
+        "ret                                                    \n"
+        ".size __bolt_instr_load_handler,                         "
+        "      .-__bolt_instr_load_handler                      \n");
 // clang-format on
 
 #elif defined(__loongarch__) && (__loongarch_grlen == 64)
@@ -1978,6 +2078,20 @@ __asm__(".globl __bolt_instr_start                              \n"
 
         ".size __bolt_instr_start,                                "
         "      .-__bolt_instr_start                             \n");
+
+__asm__(".globl __bolt_instr_load_handler                       \n"
+        ".type __bolt_instr_load_handler, @function             \n"
+        "__bolt_instr_load_handler:                             \n"
+
+        SAVE_ALL
+        "ld.d   $a0, $sp, (8*4)                                 \n"
+        "ld.d   $a1, $sp, (8*5)                                 \n"
+        "bl     instrumentLoad                                  \n"
+        RESTORE_ALL
+        "ret                                                    \n"
+
+        ".size __bolt_instr_load_handler,                         "
+        "      .-__bolt_instr_load_handler                      \n");
 // clang-format on
 
 #else
@@ -2022,6 +2136,14 @@ __asm__(".globl __bolt_instr_start                              \n"
 
         ".size __bolt_instr_start,                                "
         "      .-__bolt_instr_start                             \n");
+
+#warning "__bolt_instr_load_handler is not implemented on this arch"
+__asm__(".globl __bolt_instr_load_handler                       \n"
+        ".type __bolt_instr_load_handler, @function             \n"
+        "__bolt_instr_load_handler:                             \n"
+        "ret                                                    \n"
+        ".size __bolt_instr_load_handler,                         "
+        "      .-__bolt_instr_load_handler                      \n");
 // clang-format on
 
 #endif

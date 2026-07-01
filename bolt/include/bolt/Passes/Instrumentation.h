@@ -51,6 +51,7 @@ private:
                                 uint32_t From);
   void createIndCallTargetDescription(const BinaryFunction &ToFunction,
                                       uint32_t To);
+  void createLoadDescription(const BinaryFunction &FromFunction, uint32_t From);
   bool createCallDescription(FunctionDescription &FuncDesc,
                              const BinaryFunction &FromFunction, uint32_t From,
                              uint32_t FromNodeID,
@@ -99,6 +100,10 @@ private:
                                 BinaryBasicBlock::iterator &Iter,
                                 BinaryFunction &FromFunction, uint32_t From);
 
+  void instrumentLoadTarget(BinaryBasicBlock &BB,
+                            BinaryBasicBlock::iterator &Iter,
+                            BinaryFunction &FromFunction, uint32_t LoadOffset);
+
   void createAuxiliaryFunctions(BinaryContext &BC);
 
   uint32_t getFDSize() const;
@@ -124,6 +129,9 @@ private:
   /// Indirect call instrumentation functions
   BinaryFunction *IndCallHandlerExitBBFunction;
   BinaryFunction *IndTailCallHandlerExitBBFunction;
+
+  /// Load instrumentation handler
+  BinaryFunction *LoadHandlerFunction{nullptr};
 };
 } // namespace bolt
 } // namespace llvm

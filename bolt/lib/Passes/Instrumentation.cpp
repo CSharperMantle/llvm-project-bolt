@@ -89,6 +89,13 @@ cl::opt<bool> InstrumentCalls("instrument-calls",
                                        "control flow activity (default: true)"),
                               cl::init(true), cl::Optional,
                               cl::cat(BoltInstrCategory));
+
+cl::opt<bool> InstrumentLoadProfiles(
+    "instrument-load-profiles",
+    cl::desc("record load-target addresses for jump-table and vtable loads "
+             "to enable jump-table ICP and vtable method-load elimination "
+             "without LBR (default: false)"),
+    cl::init(false), cl::Optional, cl::cat(BoltInstrCategory));
 } // namespace opts
 
 namespace llvm {
@@ -230,6 +237,14 @@ void Instrumentation::createIndCallTargetDescription(
   Summary->IndCallTargetDescriptions.emplace_back(ICD);
 }
 
+void Instrumentation::createLoadDescription(const BinaryFunction &FromFunction,
+                                            uint32_t From) {
+  LoadDescription LD;
+  LD.FromLoc.FuncString = getFunctionNameIndex(FromFunction);
+  LD.FromLoc.Offset = From;
+  Summary->LoadDescriptions.emplace_back(LD);
+}
+
 bool Instrumentation::createEdgeDescription(FunctionDescription &FuncDesc,
                                             const BinaryFunction &FromFunction,
                                             uint32_t From, uint32_t FromNodeID,
@@ -314,6 +329,24 @@ void Instrumentation::instrumentIndirectTarget(BinaryBasicBlock &BB,
   Iter = BB.eraseInstruction(Iter);
   Iter = insertInstructions(CounterInstrs, BB, Iter);
   --Iter;
+}
+
+void Instrumentation::instrumentLoadTarget(BinaryBasicBlock &BB,
+                                           BinaryBasicBlock::iterator &Iter,
+                                           BinaryFunction &FromFunction,
+                                           uint32_t LoadOffset) {
+  MCInst LoadInst = *Iter;
+
+  BinaryContext &BC = FromFunction.getBinaryContext();
+  auto L = BC.scopeLock();
+  const size_t LoadSiteID = Summary->LoadDescriptions.size();
+  createLoadDescription(FromFunction, LoadOffset);
+
+  InstructionListType Snippet = BC.MIB->createInstrumentedLoad(
+      std::move(*Iter), LoadHandlerFunction->getSymbol(), LoadSiteID, &*BC.Ctx);
+  Iter = BB.eraseInstruction(Iter);
+  Iter = insertInstructions(Snippet, BB, Iter);
+  Iter = BB.insertInstruction(Iter, std::move(LoadInst));
 }
 
 bool Instrumentation::instrumentOneTarget(
@@ -536,6 +569,33 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
               &*Succ, Succ->getInputOffset(), IsLeafFunction, IsInvokeBlock,
               FuncDesc, BBToID[&BB], BBToID[&*Succ]);
         }
+
+        if (opts::InstrumentLoadProfiles) {
+          MCInst *MemLocInstr = nullptr;
+          MCInst *PCRelBaseOut = nullptr;
+          MCInst *FixedEntryLoadInst = nullptr;
+          unsigned BaseReg = 0, IndexReg = 0;
+          int64_t DispValue = 0;
+          const MCExpr *DispExpr = nullptr;
+          const IndirectBranchType JTType = BC.MIB->analyzeIndirectBranch(
+              *I, BB.begin(), I, BC.AsmInfo->getCodePointerSize(), MemLocInstr,
+              BaseReg, IndexReg, DispValue, DispExpr, PCRelBaseOut,
+              FixedEntryLoadInst);
+          (void)JTType;
+          if (MemLocInstr) {
+            // getOffset() is only meaningful for call/branch/return/prefix
+            // instructions. Use findInstruction() + computeCodeSize() instead.
+            auto LoadIter = BB.findInstruction(MemLocInstr);
+            assert(LoadIter != BB.end() && "MemLocInstr not found in BB");
+            const uint32_t LoadOffset =
+                BB.getInputOffset() + BC.computeCodeSize(BB.begin(), LoadIter);
+            instrumentLoadTarget(BB, LoadIter, Function, LoadOffset);
+            // Mark this BB as done.
+            // FIXME: Reason about the validity of this carefully.
+            I = std::prev(BB.end());
+            continue;
+          }
+        }
         continue;
       }
 
@@ -636,6 +696,8 @@ Error Instrumentation::runOnFunctions(BinaryContext &BC) {
       BC.Ctx->getOrCreateSymbol("__bolt_ind_call_counter_func_pointer");
   Summary->IndTailCallCounterFuncPtr =
       BC.Ctx->getOrCreateSymbol("__bolt_ind_tailcall_counter_func_pointer");
+  Summary->LoadCounterFuncPtr =
+      BC.Ctx->getOrCreateSymbol("__bolt_load_counter_func_pointer");
 
   createAuxiliaryFunctions(BC);
 
@@ -741,6 +803,12 @@ void Instrumentation::createAuxiliaryFunctions(BinaryContext &BC) {
           Summary->IndTailCallCounterFuncPtr,
           IndTailCallHandlerExitBB->getSymbol(), &*BC.Ctx));
 
+  if (opts::InstrumentLoadProfiles)
+    LoadHandlerFunction =
+        createSimpleFunction("__bolt_instr_load_handler_func",
+                             BC.MIB->createInstrumentedLoadHandlerBody(
+                                 Summary->LoadCounterFuncPtr, &*BC.Ctx));
+
   createSimpleFunction("__bolt_num_counters_getter",
                        BC.MIB->createNumCountersGetter(BC.Ctx.get()));
   createSimpleFunction("__bolt_instr_locations_getter",
@@ -789,6 +857,8 @@ void Instrumentation::setupRuntimeLibrary(BinaryContext &BC) {
             << Summary->IndCallTargetDescriptions.size() << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of function descriptors: "
             << Summary->FunctionDescriptions.size() << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of load site descriptors: "
+            << Summary->LoadDescriptions.size() << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of branch counters: "
             << BranchCounters << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of ST leaf node counters: "
@@ -807,7 +877,8 @@ void Instrumentation::setupRuntimeLibrary(BinaryContext &BC) {
                 Summary->IndCallDescriptions.size() *
                     sizeof(IndCallDescription) +
                 Summary->IndCallTargetDescriptions.size() *
-                    sizeof(IndCallTargetDescription))
+                    sizeof(IndCallTargetDescription) +
+                Summary->LoadDescriptions.size() * sizeof(LoadDescription))
             << " bytes in file\n";
   BC.outs() << "BOLT-INSTRUMENTER: Profile will be saved to file "
             << opts::InstrumentationFilename << "\n";

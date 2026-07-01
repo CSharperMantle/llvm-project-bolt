@@ -64,6 +64,12 @@ struct IndCallTargetDescription {
   const BinaryFunction *Target;
 };
 
+// This is an instrumented load site (e.g. a jump-table entry load or a vtable
+// slot load). This is the load-only analogue of IndCallDescription.
+struct LoadDescription {
+  LocDescription FromLoc;
+};
+
 // Intra-function control flow transfer instrumentation
 struct EdgeDescription {
   LocDescription FromLoc;
@@ -110,6 +116,7 @@ struct InstrumentationSummary {
   /// Pointer to runtime instrumentation handlers
   MCSymbol *IndCallCounterFuncPtr;
   MCSymbol *IndTailCallCounterFuncPtr;
+  MCSymbol *LoadCounterFuncPtr;
 
   /// Intra-function control flow and direct calls
   std::vector<FunctionDescription> FunctionDescriptions;
@@ -117,6 +124,9 @@ struct InstrumentationSummary {
   /// Inter-function control flow via indirect calls
   std::vector<IndCallDescription> IndCallDescriptions;
   std::vector<IndCallTargetDescription> IndCallTargetDescriptions;
+
+  /// Instrumented load sites
+  std::vector<LoadDescription> LoadDescriptions;
 
   static constexpr uint64_t NUM_SERIALIZED_CONTAINERS = 4;
   static constexpr uint64_t SERIALIZED_CONTAINER_SIZE =
