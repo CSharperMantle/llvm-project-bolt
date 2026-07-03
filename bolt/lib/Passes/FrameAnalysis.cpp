@@ -148,6 +148,11 @@ class FrameAccessAnalysis {
     } else if (FIE.StackPtrReg ==
                *BC.MRI->getLLVMRegNum(CfaReg, /*isEH=*/false)) {
       FIE.StackOffset = CfaOffset + StackOffset;
+    } else if (!SPT.HasFramePointer &&
+               FIE.StackPtrReg == BC.MIB->getFramePointer()) {
+      LLVM_DEBUG(
+          dbgs() << "Found access via FP while !HasFramePointer; Skipping\n");
+      return true;
     } else {
       LLVM_DEBUG(
           dbgs() << "Found stack access with reg different than cfa reg.\n");
