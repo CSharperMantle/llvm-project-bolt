@@ -51,7 +51,7 @@ protected:
   // stack offsets, one for an external call and another for an internal call).
   std::pair<int, int> getStartingStateAtBB(const BinaryBasicBlock &BB) {
     if (&BB == &*Func.begin())
-      return std::make_pair(-8, getEmpty());
+      return std::make_pair(BC.MIB->getInitialCFAOffset(), getEmpty());
     return std::make_pair(getEmpty(), getEmpty());
   }
 

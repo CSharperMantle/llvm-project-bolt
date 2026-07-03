@@ -3630,6 +3630,8 @@ public:
     return Results;
   }
 
+  int64_t getInitialCFAOffset() const override { return -8; }
+
 private:
   void createMove(MCInst &Inst, const MCSymbol *Src, unsigned Reg,
                   MCContext *Ctx) const {

@@ -853,6 +853,8 @@ public:
 
     return Insts;
   }
+
+  int64_t getInitialCFAOffset() const override { return 0; }
 };
 
 } // end anonymous namespace

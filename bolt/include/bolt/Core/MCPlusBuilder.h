@@ -2522,6 +2522,12 @@ public:
     return 2;
   }
 
+  /// Returns the initial CFA offset when entering a function.
+  virtual int64_t getInitialCFAOffset() const {
+    llvm_unreachable("not implemented");
+    return 0;
+  }
+
   // AliasMap caches a mapping of registers to the set of registers that
   // alias (are sub or superregs of itself, including itself).
   std::vector<BitVector> AliasMap;

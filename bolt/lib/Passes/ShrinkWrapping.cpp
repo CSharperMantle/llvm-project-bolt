@@ -353,8 +353,9 @@ void StackLayoutModifier::classifyStackAccesses() {
 
 void StackLayoutModifier::classifyCFIs() {
   std::stack<std::pair<int64_t, uint16_t>> CFIStack;
-  int64_t CfaOffset = -8;
-  uint16_t CfaReg = 7;
+  int64_t CfaOffset = BC.MIB->getInitialCFAOffset();
+  uint16_t CfaReg =
+      BC.MRI->getDwarfRegNum(BC.MIB->getStackPointer(), /*isEH=*/false);
 
   auto recordAccess = [&](MCInst *Inst, int64_t Offset) {
     const uint16_t Reg = *BC.MRI->getLLVMRegNum(CfaReg, /*isEH=*/false);
@@ -1077,7 +1078,8 @@ bool ShrinkWrapping::validatePushPopsMode(unsigned CSR, MCInst *BestPosSave,
   // Abort if we are inserting a push into an entry BB (offset -8) and this
   // func sets up a frame pointer.
   if (!SLM.canInsertRegion(BestPosSave) || SaveOffset == SPT.SUPERPOSITION ||
-      SaveOffset == SPT.EMPTY || (SaveOffset == -8 && SPT.HasFramePointer)) {
+      SaveOffset == SPT.EMPTY ||
+      (SaveOffset == BC.MIB->getInitialCFAOffset() && SPT.HasFramePointer)) {
     LLVM_DEBUG({
       dbgs() << "Reg " << CSR
              << " cannot insert region or we are "
@@ -1601,7 +1603,7 @@ void ShrinkWrapping::rebuildCFIForSP() {
     }
   }
 
-  int PrevSPVal = -8;
+  int PrevSPVal = BC.MIB->getInitialCFAOffset();
   BinaryBasicBlock *PrevBB = nullptr;
   StackPointerTracking &SPT = Info.getStackPointerTracking();
   for (BinaryBasicBlock *BB : BF.getLayout().blocks()) {
