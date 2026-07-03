@@ -156,7 +156,10 @@ protected:
         return SUPERPOSITION;
       }
 
-      if (!HasFramePointer && MIB->escapesVariable(Point, false))
+      // Disable this heuristic on non-X86. Archs like LoongArch use $fp as a
+      // GPR more aggressively, so it's better to be safe than sorry.
+      if (this->BC.isX86() && !HasFramePointer &&
+          MIB->escapesVariable(Point, false))
         HasFramePointer = true;
       return static_cast<int>(Output);
     }
