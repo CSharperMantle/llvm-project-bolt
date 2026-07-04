@@ -2332,11 +2332,17 @@ public:
     bool IsIndexed = false;
     MCRegister Rj, Rk;
     int64_t Offset;
+    Expr OffsetExpr;
     Reg RdReg, RjReg, RkReg;
     Imm OffsetImm;
     if (matchInst(LoadInst, LoongArch::LD_D, Reg(), RjReg, OffsetImm)) {
       Rj = RjReg.get();
       Offset = OffsetImm.get();
+    } else if (matchInst(LoadInst, LoongArch::LD_D, Reg(), RjReg, OffsetExpr)) {
+      const auto [Sym, SymOffset] = getTargetSymbolInfo(OffsetExpr.get());
+      const BinaryData *BD = BC.getBinaryDataByName(Sym->getName());
+      Rj = RjReg.get();
+      Offset = (BD->getAddress() + SymOffset) & 0xFFF;
     } else if (matchInst(LoadInst, LoongArch::LDX_D, Reg(), RjReg, RkReg) ||
                matchInst(LoadInst, LoongArch::LDX_W, Reg(), RjReg, RkReg)) {
       Rj = RjReg.get();
