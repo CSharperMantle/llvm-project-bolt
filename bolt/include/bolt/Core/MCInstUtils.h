@@ -252,7 +252,8 @@ template <typename T> class OpMatcher {
   void restore() const { Value = SavedValue; }
 
   template <class... OpMatchers>
-  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+  friend bool matchInst(const MCInst &, std::optional<unsigned>,
+                        const OpMatchers &...);
 
 protected:
   OpMatcher(std::optional<T> ValueToMatch) : Value(ValueToMatch) {}
@@ -284,7 +285,8 @@ class Reg : public OpMatcher<MCPhysReg> {
   }
 
   template <class... OpMatchers>
-  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+  friend bool matchInst(const MCInst &, std::optional<unsigned>,
+                        const OpMatchers &...);
 
 public:
   Reg(std::optional<MCPhysReg> RegToMatch = std::nullopt)
@@ -300,7 +302,8 @@ class Imm : public OpMatcher<int64_t> {
   }
 
   template <class... OpMatchers>
-  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+  friend bool matchInst(const MCInst &, std::optional<unsigned>,
+                        const OpMatchers &...);
 
 public:
   Imm(std::optional<int64_t> ImmToMatch = std::nullopt)
@@ -316,7 +319,8 @@ class Expr : public OpMatcher<const MCExpr *> {
   }
 
   template <class... OpMatchers>
-  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+  friend bool matchInst(const MCInst &, std::optional<unsigned>,
+                        const OpMatchers &...);
 
 public:
   Expr(std::optional<const MCExpr *> ExprToMatch = std::nullopt)
@@ -330,7 +334,8 @@ class Skip : public OpMatcher<std::monostate> {
   }
 
   template <class... OpMatchers>
-  friend bool matchInst(const MCInst &, unsigned, const OpMatchers &...);
+  friend bool matchInst(const MCInst &, std::optional<unsigned>,
+                        const OpMatchers &...);
 
 public:
   Skip(std::optional<std::monostate> ExprToMatch = std::nullopt)
@@ -343,12 +348,16 @@ public:
 /// this function returns true and updates Ops, otherwise false is returned and
 /// values of Ops are kept as before matchInst was called.
 ///
+/// Passing std::nullopt to Opcode skips this initial check and can serve as a
+/// wildcard extractor.
+///
 /// Please note that while Ops are technically passed by a const reference to
 /// make invocations like `matchInst(MI, Opcode, Imm(42))` possible, all their
 /// fields are marked mutable.
 template <class... OpMatchers>
-bool matchInst(const MCInst &Inst, unsigned Opcode, const OpMatchers &...Ops) {
-  if (Inst.getOpcode() != Opcode)
+bool matchInst(const MCInst &Inst, std::optional<unsigned> Opcode,
+               const OpMatchers &...Ops) {
+  if (Opcode && Inst.getOpcode() != Opcode)
     return false;
   assert(sizeof...(Ops) <= MCPlus::getNumPrimeOperands(Inst) &&
          "Too many operands are matched for the Opcode");
