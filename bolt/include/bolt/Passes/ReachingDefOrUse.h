@@ -40,11 +40,8 @@ public:
 
   bool isReachedBy(MCPhysReg Reg, ExprIterator Candidates) {
     for (auto I = Candidates; I != this->expr_end(); ++I) {
-      BitVector BV = BitVector(this->BC.MRI->getNumRegs(), false);
-      if (Def)
-        RA.getInstClobberList(**I, BV);
-      else
-        this->BC.MIB->getTouchedRegs(**I, BV);
+      const int Idx = I.getBitVectorIndex();
+      const BitVector &BV = Def ? ClobberSets[Idx] : TouchedSets[Idx];
       if (BV[Reg])
         return true;
     }
@@ -65,6 +62,18 @@ protected:
   /// register. Otherwise the analysis can be too permissive.
   std::optional<MCPhysReg> TrackingReg;
 
+  /// Per-instruction cache of RA.getInstClobberList() indexed by ExprToIdx.
+  SmallVector<BitVector, 0> ClobberSets;
+  /// Per-instruction cache of MIB->getTouchedRegs() indexed by ExprToIdx.
+  SmallVector<BitVector, 0> TouchedSets;
+  /// Per-instruction cache of RA.getInstUsedRegsList() indexed by ExprToIdx.
+  SmallVector<BitVector, 0> UsedSets;
+
+  /// Scratch buffers reused across doesXKillsY() calls to avoid per-call
+  /// BitVector allocation.
+  BitVector ScratchX;
+  BitVector ScratchY;
+
   void preflight() {
     // Populate our universe of tracked expressions with all instructions
     // except pseudos
@@ -72,6 +81,21 @@ protected:
       for (MCInst &Inst : BB) {
         this->Expressions.push_back(&Inst);
         this->ExprToIdx[&Inst] = this->NumInstrs++;
+      }
+    }
+    // Precompute per-instruction register sets.
+    const unsigned NumRegs = this->BC.MRI->getNumRegs();
+    ClobberSets.assign(this->NumInstrs, BitVector(NumRegs, false));
+    TouchedSets.assign(this->NumInstrs, BitVector(NumRegs, false));
+    UsedSets.assign(this->NumInstrs, BitVector(NumRegs, false));
+    ScratchX.resize(NumRegs, false);
+    ScratchY.resize(NumRegs, false);
+    for (const BinaryBasicBlock &BB : this->Func) {
+      for (const MCInst &Inst : BB) {
+        const uint64_t Idx = this->ExprToIdx[&Inst];
+        RA.getInstClobberList(Inst, ClobberSets[Idx]);
+        this->BC.MIB->getTouchedRegs(Inst, TouchedSets[Idx]);
+        RA.getInstUsedRegsList(Inst, UsedSets[Idx], false);
       }
     }
   }
@@ -90,51 +114,51 @@ protected:
 
   /// Define the function computing the kill set -- whether expression Y, a
   /// tracked expression, will be considered to be dead after executing X.
-  bool doesXKillsY(const MCInst *X, const MCInst *Y) {
+  bool doesXKillsY(uint64_t XIdx, uint64_t YIdx) {
+
     // getClobberedRegs for X and Y. If they intersect, return true
-    BitVector XClobbers = BitVector(this->BC.MRI->getNumRegs(), false);
-    BitVector YClobbers = BitVector(this->BC.MRI->getNumRegs(), false);
-    RA.getInstClobberList(*X, XClobbers);
+    const BitVector &XClobbers = ClobberSets[XIdx];
     // In defs, write after write -> kills first write
     // In uses, write after access (read or write) -> kills access
-    if (Def)
-      RA.getInstClobberList(*Y, YClobbers);
-    else
-      this->BC.MIB->getTouchedRegs(*Y, YClobbers);
+    const BitVector &YClobbers = Def ? ClobberSets[YIdx] : TouchedSets[YIdx];
+
+    ScratchX.reset();
+    ScratchX |= XClobbers;
+    ScratchY.reset();
+    ScratchY |= YClobbers;
     // Limit the analysis, if requested
     if (TrackingReg) {
-      XClobbers &= this->BC.MIB->getAliases(*TrackingReg);
-      YClobbers &= this->BC.MIB->getAliases(*TrackingReg);
+      const BitVector &Filter = this->BC.MIB->getAliases(*TrackingReg);
+      ScratchX &= Filter;
+      ScratchY &= Filter;
     }
     // X kills Y if it clobbers Y completely -- this is a conservative approach.
     // In practice, we may produce use-def links that may not exist.
-    XClobbers &= YClobbers;
-    return XClobbers == YClobbers;
+    ScratchX &= ScratchY;
+    return ScratchX == ScratchY;
   }
 
   BitVector computeNext(const MCInst &Point, const BitVector &Cur) {
     BitVector Next = Cur;
+    const uint64_t XIdx = this->ExprToIdx[&Point];
     // Kill
     for (auto I = this->expr_begin(Next), E = this->expr_end(); I != E; ++I) {
       assert(*I != nullptr && "Lost pointers");
-      if (doesXKillsY(&Point, *I)) {
-        Next.reset(I.getBitVectorIndex());
+      const uint64_t YIdx = I.getBitVectorIndex();
+      if (doesXKillsY(XIdx, YIdx)) {
+        Next.reset(YIdx);
       }
     }
     // Gen
     if (!this->BC.MIB->isCFI(Point)) {
       if (TrackingReg == std::nullopt) {
         // Track all instructions
-        Next.set(this->ExprToIdx[&Point]);
+        Next.set(XIdx);
       } else {
-        // Track only instructions relevant to TrackingReg
-        BitVector Regs = BitVector(this->BC.MRI->getNumRegs(), false);
-        if (Def)
-          RA.getInstClobberList(Point, Regs);
-        else
-          RA.getInstUsedRegsList(Point, Regs, false);
+        // Track only instructions relevant to TrackingReg.
+        const BitVector &Regs = Def ? ClobberSets[XIdx] : UsedSets[XIdx];
         if (Regs.anyCommon(this->BC.MIB->getAliases(*TrackingReg)))
-          Next.set(this->ExprToIdx[&Point]);
+          Next.set(XIdx);
       }
     }
     return Next;
