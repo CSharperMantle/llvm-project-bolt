@@ -2308,7 +2308,7 @@ public:
     // address, calls __bolt_instr_load(LoadSiteID, eff_addr), then the
     // original load executes with its inputs (rj, rk) restored.
     //
-    // For `ld.d Rd, Rj, Offset`:
+    // For `ld.* Rd, Rj, Offset`:
     //   spill    $ra, $a0, $a1, Rj, Scratch, $zero
     //   addi.d   $a0, Rj, Offset
     //   createLoadImmediate $a1, LoadSiteID
@@ -2317,7 +2317,7 @@ public:
     //   reload   $ra, $a0, $a1, Rj, Scratch, $zero
     //   # then the original load
     //
-    // For `ldx.d rd, rj, rk`:
+    // For `ldx.* rd, rj, rk`:
     //   spill    $ra, $a0, $a1, Rj, Rk, Scratch
     //   add.d    $a0, Rj, Rk
     //   createLoadImmediate $a1, LoadSiteID
@@ -2327,33 +2327,64 @@ public:
     //   # the the original load
     constexpr MCPhysReg Scratch = LoongArch::R12; // $t0
 
-    InstructionListType Insts;
+    bool IsIndexed;
+    switch (LoadInst.getOpcode()) {
+    case LoongArch::LD_B:
+    case LoongArch::LD_BU:
+    case LoongArch::LD_H:
+    case LoongArch::LD_HU:
+    case LoongArch::LD_W:
+    case LoongArch::LD_WU:
+    case LoongArch::LD_D:
+      IsIndexed = false;
+      break;
+    case LoongArch::LDX_B:
+    case LoongArch::LDX_BU:
+    case LoongArch::LDX_H:
+    case LoongArch::LDX_HU:
+    case LoongArch::LDX_W:
+    case LoongArch::LDX_WU:
+    case LoongArch::LDX_D:
+      IsIndexed = true;
+      break;
+    default:
+      LLVM_DEBUG({
+        dbgs() << "BOLT-DEBUG: unrecognized load opcode "
+               << LoadInst.getOpcode() << " in createInstrumentedLoad; "
+               << "skipping\n";
+      });
+      return {};
+    }
 
-    bool IsIndexed = false;
     MCRegister Rj, Rk;
     int64_t Offset;
     Expr OffsetExpr;
     Reg RdReg, RjReg, RkReg;
     Imm OffsetImm;
-    if (matchInst(LoadInst, LoongArch::LD_D, Reg(), RjReg, OffsetImm)) {
+    if (!IsIndexed &&
+        matchInst(LoadInst, std::nullopt, Reg(), RjReg, OffsetImm)) {
       Rj = RjReg.get();
       Offset = OffsetImm.get();
-    } else if (matchInst(LoadInst, LoongArch::LD_D, Reg(), RjReg, OffsetExpr)) {
+    } else if (!IsIndexed &&
+               matchInst(LoadInst, std::nullopt, Reg(), RjReg, OffsetExpr)) {
       const auto [Sym, SymOffset] = getTargetSymbolInfo(OffsetExpr.get());
       const BinaryData *BD = BC.getBinaryDataByName(Sym->getName());
       Rj = RjReg.get();
       Offset = (BD->getAddress() + SymOffset) & 0xFFF;
-    } else if (matchInst(LoadInst, LoongArch::LDX_D, Reg(), RjReg, RkReg) ||
-               matchInst(LoadInst, LoongArch::LDX_W, Reg(), RjReg, RkReg)) {
+    } else if (IsIndexed &&
+               matchInst(LoadInst, std::nullopt, Reg(), RjReg, RkReg)) {
       Rj = RjReg.get();
       Rk = RkReg.get();
-      IsIndexed = true;
     } else {
-      llvm_unreachable("Unrecognized load in createInstrumentedLoad; check "
-                       "analyzeIndirectBranch");
-      return Insts;
+      LLVM_DEBUG({
+        dbgs() << "BOLT-DEBUG: unmatchable load instruction "
+               << LoadInst.getOpcode() << " in createInstrumentedLoad; "
+               << "skipping\n";
+      });
+      return {};
     }
 
+    InstructionListType Insts;
     if (IsIndexed) {
       spillRegs(Insts,
                 {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj, Rk, Scratch});
