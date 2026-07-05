@@ -343,7 +343,7 @@ void Instrumentation::instrumentLoadTarget(BinaryBasicBlock &BB,
   createLoadDescription(FromFunction, LoadOffset);
 
   InstructionListType Snippet = BC.MIB->createInstrumentedLoad(
-      std::move(*Iter), LoadHandlerFunction->getSymbol(), LoadSiteID, &*BC.Ctx);
+      std::move(*Iter), LoadHandlerFunction->getSymbol(), LoadSiteID, BC);
   Iter = BB.eraseInstruction(Iter);
   Iter = insertInstructions(Snippet, BB, Iter);
   Iter = BB.insertInstruction(Iter, std::move(LoadInst));
@@ -403,6 +403,23 @@ bool Instrumentation::instrumentOneTarget(
   SplitWorklist.emplace_back(&FromBB, TargetBB);
   SplitInstrs.emplace_back(std::move(CounterInstrs));
   return true;
+}
+
+/// Check if a load's displacement expression references a data-section
+/// symbol (.data, .bss, .got, .rodata).  Pattern from SimplifyRODataLoads.
+static bool hasDataSectionTarget(MCInst &Inst, BinaryContext &BC) {
+  const MCOperand *DispOp = BC.MIB->getMemOperandDisp(Inst);
+  if (DispOp == Inst.end() || !DispOp->isExpr())
+    return false;
+  const auto [Sym, SymOffset] = BC.MIB->getTargetSymbolInfo(DispOp->getExpr());
+  if (!Sym)
+    return false;
+  BinaryData *BD = BC.getBinaryDataByName(Sym->getName());
+  if (!BD)
+    return false;
+  const BinarySection &Section = BD->getSection();
+  return Section.isAllocatable() && !Section.isTLS() &&
+         (Section.isWritable() || Section.getELFType() == ELF::SHT_PROGBITS);
 }
 
 void Instrumentation::instrumentFunction(BinaryFunction &Function,
@@ -640,6 +657,37 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
                           BBToID[FTBB]);
     }
   } // End of BBs loop
+
+  // Instrument data-section loads for ReorderData
+  if (opts::InstrumentLoadProfiles) {
+    for (auto BBI = Function.begin(); BBI != Function.end(); ++BBI) {
+      BinaryBasicBlock &BB = *BBI;
+      if (BBToSkip.count(&BB))
+        continue;
+      for (auto I = BB.begin(); I != BB.end(); ++I) {
+        MCInst &Inst = *I;
+        if (!BC.MII->get(Inst.getOpcode()).mayLoad())
+          continue;
+        if (Function.getJumpTable(Inst))
+          continue;
+        bool IsLoad, IsStore, IsStoreFromReg, IsSimple, IsIndexed;
+        MCPhysReg Reg;
+        int32_t SrcImm;
+        uint16_t StackPtrReg;
+        int64_t StackOffset;
+        uint8_t Size;
+        if (BC.MIB->isStackAccess(Inst, IsLoad, IsStore, IsStoreFromReg, Reg,
+                                  SrcImm, StackPtrReg, StackOffset, Size,
+                                  IsSimple, IsIndexed))
+          continue;
+        if (!hasDataSectionTarget(Inst, BC))
+          continue;
+        const uint32_t LoadOffset =
+            BB.getInputOffset() + BC.computeCodeSize(BB.begin(), I);
+        instrumentLoadTarget(BB, I, Function, LoadOffset);
+      }
+    }
+  }
 
   // Instrument spanning tree leaves
   if (!opts::ConservativeInstrumentation) {

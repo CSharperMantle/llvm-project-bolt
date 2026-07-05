@@ -2301,7 +2301,7 @@ public:
   InstructionListType createInstrumentedLoad(MCInst &&LoadInst,
                                              MCSymbol *HandlerFuncAddr,
                                              int LoadSiteID,
-                                             MCContext *Ctx) override {
+                                             BinaryContext &BC) override {
     using namespace llvm::bolt::LowLevelInstMatcherDSL;
 
     // Inserted BEFORE the original load. Computes the load's effective
@@ -2366,7 +2366,7 @@ public:
     InstructionListType LoadID = createLoadImmediate(LoongArch::R5, LoadSiteID);
     Insts.insert(Insts.end(), LoadID.begin(), LoadID.end());
     InstructionListType Addr =
-        materializeAddress(HandlerFuncAddr, Ctx, Scratch);
+        materializeAddress(HandlerFuncAddr, BC.Ctx.get(), Scratch);
     Insts.insert(Insts.end(), Addr.begin(), Addr.end());
     Insts.emplace_back();
     createIndirectCallInst(Insts.back(), false, Scratch, 0);

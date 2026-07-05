@@ -2442,7 +2442,7 @@ public:
   virtual InstructionListType createInstrumentedLoad(MCInst &&LoadInst,
                                                      MCSymbol *HandlerFuncAddr,
                                                      int LoadSiteID,
-                                                     MCContext *Ctx) {
+                                                     BinaryContext &BC) {
     llvm_unreachable("not implemented");
     return InstructionListType();
   }
