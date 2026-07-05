@@ -184,10 +184,10 @@ public:
     const auto findStackStoreForLoad = [&](const MCInst *Load,
                                            MCRegister TargetReg)
         -> std::optional<std::pair<MCInst *, MCRegister>> {
-      if (!Load || !isStackPtrLoad(*Load) || Load->getNumOperands() < 3 ||
-          !Load->getOperand(0).isReg() ||
-          Load->getOperand(0).getReg() != TargetReg ||
-          !Load->getOperand(2).isImm())
+      Imm StackOffsetImm;
+      if (!Load || !isStackPtrLoad(*Load) ||
+          !matchInst(*Load, std::nullopt, Reg(TargetReg), Skip(),
+                     StackOffsetImm))
         return std::nullopt;
 
       InstructionIterator StoreIt = Begin;
@@ -196,14 +196,14 @@ public:
       if (StoreIt == End)
         return std::nullopt;
 
-      const int64_t StackOffset = Load->getOperand(2).getImm();
+      const int64_t StackOffset = StackOffsetImm.get();
       while (StoreIt != Begin) {
         --StoreIt;
-        if (!isStackPtrStore(*StoreIt) || StoreIt->getNumOperands() < 3 ||
-            !StoreIt->getOperand(2).isImm() ||
-            StoreIt->getOperand(2).getImm() != StackOffset)
+        Reg Rd;
+        if (!isStackPtrStore(*StoreIt) ||
+            !matchInst(*StoreIt, std::nullopt, Rd, Skip(), Imm(StackOffset)))
           continue;
-        return std::make_pair(&*StoreIt, StoreIt->getOperand(0).getReg());
+        return std::make_pair(&*StoreIt, Rd.get());
       }
       return std::nullopt;
     };
@@ -269,10 +269,8 @@ public:
         return true;
       }
 
-      if (AllowSpill && isStackPtrLoad(*Def) && Def->getNumOperands() >= 3 &&
-          Def->getOperand(0).isReg() &&
-          Def->getOperand(0).getReg() == ScaledReg &&
-          Def->getOperand(2).isImm()) {
+      if (AllowSpill && isStackPtrLoad(*Def) &&
+          matchInst(*Def, std::nullopt, Reg(ScaledReg), Skip(), Imm())) {
         IndexReg = ScaledReg;
         return true;
       }
@@ -1032,10 +1030,11 @@ public:
 
   const MCExpr *
   tryGetLoongArchPCADDIPCRel20SubExpr(const MCInst &Inst) const override {
-    if (Inst.getOpcode() != LoongArch::PCADDI || Inst.getNumOperands() < 2 ||
-        !Inst.getOperand(1).isExpr())
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+    Expr TheExpr;
+    if (!matchInst(Inst, LoongArch::PCADDI, Skip(), TheExpr))
       return nullptr;
-    return tryGetPCRel20SubExpr(Inst.getOperand(1).getExpr());
+    return tryGetPCRel20SubExpr(TheExpr.get());
   }
 
   InstructionListType
@@ -1970,13 +1969,14 @@ public:
       const std::vector<std::pair<MCSymbol *, uint64_t>> &VtableSyms,
       const std::vector<MCInst *> &MethodFetchInsns,
       const bool MinimizeCodeSize, MCContext *Ctx) override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
     (void)MinimizeCodeSize;
 
     BlocksVectorTy Results;
 
-    if (CallInst.getOpcode() != LoongArch::JIRL ||
-        CallInst.getNumOperands() < 2 || !CallInst.getOperand(0).isReg() ||
-        !CallInst.getOperand(1).isReg())
+    Reg CallRd, CallRj;
+    if (!matchInst(CallInst, LoongArch::JIRL, CallRd, CallRj, Skip()))
       return Results;
 
     const bool IsTailCall = isTailCall(CallInst);
@@ -1986,20 +1986,18 @@ public:
            "There must be a vtable entry for every method in the targets "
            "vector.");
 
-    if (LoadElim && (MethodFetchInsns.empty() ||
-                     MethodFetchInsns.back()->getNumOperands() < 2 ||
-                     !MethodFetchInsns.back()->getOperand(1).isReg()))
+    Reg MethodReg;
+    if (LoadElim &&
+        (MethodFetchInsns.empty() ||
+         !matchInst(*MethodFetchInsns.back(), std::nullopt, Skip(), MethodReg)))
       return Results;
 
     const bool IsKnownCall =
-        !IsJumpTable &&
-        (IsTailCall || CallInst.getOperand(0).getReg() == LoongArch::R1);
+        !IsJumpTable && (IsTailCall || CallRd.get() == LoongArch::R1);
 
-    const MCPhysReg TargetReg = CallInst.getOperand(1).getReg();
+    const MCPhysReg TargetReg = CallRj.get();
     const MCPhysReg CompareReg =
-        LoadElim ? static_cast<MCPhysReg>(
-                       MethodFetchInsns.back()->getOperand(1).getReg())
-                 : TargetReg;
+        LoadElim ? static_cast<MCPhysReg>(MethodReg.get()) : TargetReg;
     // Use $t8 only if we're absolutely sure it's a call. Otherwise, we have to
     // use ABI-reserved $r21 for a safe temp.
     const MCPhysReg TempReg = IsKnownCall && CompareReg != LoongArch::R20
@@ -2088,13 +2086,16 @@ public:
       const std::vector<std::pair<MCSymbol *, uint64_t>> &Targets,
       const std::vector<MCInst *> &TargetFetchInsns,
       MCContext *Ctx) const override {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
     assert(getJumpTable(IJmpInst) != 0);
 
-    if (IJmpInst.getNumOperands() < 2 || !IJmpInst.getOperand(1).isReg())
+    Reg TheTargetReg;
+    if (!matchInst(IJmpInst, std::nullopt, Skip(), TheTargetReg))
       return BlocksVectorTy();
 
     const MCPhysReg IndexReg = getJumpTableIndexReg(IJmpInst);
-    const MCPhysReg TargetReg = IJmpInst.getOperand(1).getReg();
+    const MCPhysReg TargetReg = TheTargetReg.get();
     // Since this is a jump rather than a call, we have to use ABI-reserved $r21
     // for a safe temp.
     const MCPhysReg TempReg = LoongArch::R21;
