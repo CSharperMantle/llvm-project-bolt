@@ -302,8 +302,14 @@ Error DataReader::readProfilePreCFG(BinaryContext &BC) {
           BC.MIB->getOrCreateAnnotationAs<MemoryAccessProfile>(
               II->second, "MemoryAccessProfile");
       BinaryData *BD = nullptr;
-      if (MI.Addr.IsSymbol)
+      if (MI.Addr.IsSymbol) {
         BD = BC.getBinaryDataByName(MI.Addr.Name);
+      } else if (MI.Addr.Offset != 0) {
+        BD = const_cast<BinaryData *>(
+            BC.getBinaryDataContainingAddress(MI.Addr.Offset));
+        if (BD)
+          MI.Addr.Offset -= BD->getAddress();
+      }
       MemAccessProfile.AddressAccessInfo.push_back(
           {BD, MI.Addr.Offset, MI.Count});
       auto NextII = std::next(II);
