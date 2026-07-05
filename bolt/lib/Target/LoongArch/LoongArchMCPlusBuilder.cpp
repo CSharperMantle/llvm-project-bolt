@@ -2308,9 +2308,10 @@ public:
     // address, calls __bolt_instr_load(LoadSiteID, eff_addr), then the
     // original load executes with its inputs (rj, rk) restored.
     //
-    // For `ld.* Rd, Rj, Offset`:
+    // For `ld.* Rd, Rj, Offset` and `ldptr.* Rd, Rj, Offset`:
     //   spill    $ra, $a0, $a1, Rj, Scratch, $zero
-    //   addi.d   $a0, Rj, Offset
+    //   createLoadImmediate $a0, Offset
+    //   add.d    $a0, Rj, $a0
     //   createLoadImmediate $a1, LoadSiteID
     //   materializeAddress Scratch, HandlerFuncAddr
     //   jirl     $ra, Scratch, 0
@@ -2336,6 +2337,8 @@ public:
     case LoongArch::LD_W:
     case LoongArch::LD_WU:
     case LoongArch::LD_D:
+    case LoongArch::LDPTR_W:
+    case LoongArch::LDPTR_D:
       IsIndexed = false;
       break;
     case LoongArch::LDX_B:
@@ -2395,10 +2398,14 @@ public:
     } else {
       spillRegs(Insts, {LoongArch::R1, LoongArch::R4, LoongArch::R5, Rj,
                         Scratch, LoongArch::R0});
-      Insts.emplace_back(MCInstBuilder(LoongArch::ADDI_D)
+      const MCPhysReg OffsetReg = Rj == LoongArch::R4 ? Scratch : LoongArch::R4;
+      InstructionListType OffsetSeq =
+          createLoadImmediate(OffsetReg, static_cast<uint64_t>(Offset));
+      Insts.insert(Insts.end(), OffsetSeq.begin(), OffsetSeq.end());
+      Insts.emplace_back(MCInstBuilder(LoongArch::ADD_D)
                              .addReg(LoongArch::R4)
                              .addReg(Rj)
-                             .addImm(Offset));
+                             .addReg(OffsetReg));
     }
     InstructionListType LoadID = createLoadImmediate(LoongArch::R5, LoadSiteID);
     Insts.insert(Insts.end(), LoadID.begin(), LoadID.end());
