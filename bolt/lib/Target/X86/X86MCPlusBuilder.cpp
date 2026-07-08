@@ -651,7 +651,9 @@ public:
 
   bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
                      InstructionIterator End, MCInst *&JTLoadInst,
-                     const MCSymbol *&JTSymbol) override {
+                     const MCSymbol *&JTSymbol,
+                     const BinaryFunction *BF) override {
+    (void)BF;
     MCPhysReg BaseReg1;
     uint64_t Scale;
     JTLoadInst = const_cast<MCInst *>(&IndJmp);

@@ -4237,7 +4237,7 @@ void BinaryFunction::disambiguateJumpTables(
       MCInst *JTLoadInst = &Inst;
       const MCSymbol *Target = nullptr;
       if (!BC.MIB->getJTLabelRef(Inst, BB->begin(), BB->end(), JTLoadInst,
-                                 Target)) {
+                                 Target, this)) {
         llvm_unreachable("Failed to extract jump table base");
         continue;
       }

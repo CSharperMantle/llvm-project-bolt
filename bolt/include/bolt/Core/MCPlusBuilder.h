@@ -1164,7 +1164,8 @@ public:
   /// branches share the same jump table.
   virtual bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
                              InstructionIterator End, MCInst *&JTLoadInst,
-                             const MCSymbol *&JTSymbol) {
+                             const MCSymbol *&JTSymbol,
+                             const BinaryFunction *BF = nullptr) {
     llvm_unreachable("not implemented");
     return false;
   }

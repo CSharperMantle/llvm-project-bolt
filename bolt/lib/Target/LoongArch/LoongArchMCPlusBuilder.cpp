@@ -719,7 +719,8 @@ public:
 
   bool getJTLabelRef(const MCInst &IndJmp, InstructionIterator Begin,
                      InstructionIterator End, MCInst *&JTLoadInst,
-                     const MCSymbol *&JTSymbol) override {
+                     const MCSymbol *&JTSymbol,
+                     const BinaryFunction *BF) override {
     using namespace llvm::bolt::LowLevelInstMatcherDSL;
 
     Reg JirlRd, JirlRj;
@@ -750,7 +751,11 @@ public:
       }
       Reg AddiSrc;
       if (matchInst(*Def, LoongArch::ADDI_D, Reg(TargetReg), AddiSrc)) {
-        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        MCInst *Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        if (!Pcalau && BF) {
+          if (const BinaryBasicBlock *B = findBlockContaining(BF, Def))
+            Pcalau = findJTBaseDefViaCFG(AddiSrc.get(), *Def, *B, *BF);
+        }
         if (Pcalau &&
             matchInst(*Pcalau, LoongArch::PCALAU12I, AddiSrc, DispExpr)) {
           JTSymbol = getTargetSymbol(DispExpr.get());
@@ -771,7 +776,11 @@ public:
       Reg LdxBase, LdxIndex;
       if (!matchInst(*LdxD, LoongArch::LDX_D, Reg(), LdxBase, LdxIndex))
         break;
-      MCInst *const BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
+      MCInst *BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
+      if (!BaseDef && BF) {
+        if (const BinaryBasicBlock *B = findBlockContaining(BF, LdxD))
+          BaseDef = findJTBaseDefViaCFG(LdxBase.get(), *LdxD, *B, *BF);
+      }
       JTLoadInst = resolveBase(BaseDef, LdxBase.get());
       if (JTLoadInst)
         return true;
@@ -796,7 +805,11 @@ public:
       }
       const MCRegister AddBase =
           (AddOp1.get() == LdxRdReg.get()) ? AddOp2.get() : AddOp1.get();
-      MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      MCInst *BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      if (!BaseDef && BF) {
+        if (const BinaryBasicBlock *B = findBlockContaining(BF, AddD))
+          BaseDef = findJTBaseDefViaCFG(AddBase, *AddD, *B, *BF);
+      }
       JTLoadInst = resolveBase(BaseDef, AddBase);
       if (JTLoadInst)
         return true;
@@ -835,7 +848,11 @@ public:
       } else {
         BaseReg = BaseRegObj.get();
       }
-      MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      MCInst *BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      if (!BaseDef && BF) {
+        if (const BinaryBasicBlock *B = findBlockContaining(BF, AddrDef))
+          BaseDef = findJTBaseDefViaCFG(BaseReg, *AddrDef, *B, *BF);
+      }
       JTLoadInst = resolveBase(BaseDef, BaseReg);
       if (JTLoadInst)
         return true;
