@@ -977,13 +977,23 @@ ShrinkWrapping::doRestorePlacement(MCInst *BestPosSave, unsigned CSR,
         dbgs() << PP.getBB()->getName() << "\n";
   });
   for (ProgramPoint &PP : Frontier) {
-    bool HasCritEdges = false;
-    if (PP.isInst() && BC.MIB->isTerminator(*PP.getInst()) &&
-        doesInstUsesCSR(*PP.getInst(), CSR)) {
+    BinaryBasicBlock *const FrontierBB = Info.getParentBB(PP);
+    ProgramPoint RestorePP = PP;
+    MCInst *Term =
+        FrontierBB->getTerminatorBefore(PP.isInst() ? PP.getInst() : nullptr);
+    if (Term)
+      RestorePP = Term;
+    // A CSR-using terminator must execute before the restore, while the
+    // restore must execute on every edge leaving the dominated region. Place
+    // such restores on split outgoing edges instead of at the source BB.
+    const bool TerminatorUsesCSR = RestorePP.isInst() &&
+                                   BC.MIB->isTerminator(*RestorePP.getInst()) &&
+                                   doesInstUsesCSR(*RestorePP.getInst(), CSR);
+    if (TerminatorUsesCSR && FrontierBB->succ_size() == 0) {
       Frontier.clear();
       return Frontier;
     }
-    BinaryBasicBlock *FrontierBB = Info.getParentBB(PP);
+    bool HasCritEdges = TerminatorUsesCSR;
     CritEdgesFrom.emplace_back(FrontierBB);
     CritEdgesTo.emplace_back(0);
     SmallVector<BinaryBasicBlock *, 4> &Dests = CritEdgesTo.back();
@@ -1000,6 +1010,10 @@ ShrinkWrapping::doRestorePlacement(MCInst *BestPosSave, unsigned CSR,
       }
       HasCritEdges = true;
     });
+    if (TerminatorUsesCSR && Dests.empty()) {
+      Frontier.clear();
+      return Frontier;
+    }
     IsCritEdge.push_back(HasCritEdges);
   }
   // Restores cannot be placed in empty BBs because we have a dataflow
@@ -1240,9 +1254,11 @@ void ShrinkWrapping::scheduleSaveRestoreInsertions(
     }
     if (PP.isInst() &&
         (doesInstUsesCSR(*PP.getInst(), CSR) || PrecededByPrefix)) {
-      assert(!InsnToBB[PP.getInst()]->hasTerminatorAfter(PP.getInst()) &&
-             "cannot move to end of bb");
-      scheduleChange(InsnToBB[PP.getInst()],
+      BinaryBasicBlock *const BB = InsnToBB[PP.getInst()];
+      assert(BB->succ_size() <= 1 &&
+             "CSR-using terminator edges should have been split; BB.end() is "
+             "unsafe for multi-successor blocks");
+      scheduleChange(BB,
                      UsePushPops ? WorklistItem::InsertPushOrPop
                                  : WorklistItem::InsertLoadOrStore,
                      *FIELoad, CSR);

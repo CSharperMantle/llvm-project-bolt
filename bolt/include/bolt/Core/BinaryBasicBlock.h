@@ -768,10 +768,6 @@ public:
   /// jump).
   MCInst *getTerminatorBefore(MCInst *Pos);
 
-  /// Used to identify whether an instruction is before a terminator and whether
-  /// moving it to the end of the BB would render it dead code.
-  bool hasTerminatorAfter(MCInst *Pos);
-
   /// Split apart the instructions in this basic block starting at Inst.
   /// The instructions following Inst are removed and returned in a vector.
   InstructionListType splitInstructions(const MCInst *Inst) {

@@ -433,19 +433,6 @@ MCInst *BinaryBasicBlock::getTerminatorBefore(MCInst *Pos) {
   return FirstTerminator;
 }
 
-bool BinaryBasicBlock::hasTerminatorAfter(MCInst *Pos) {
-  BinaryContext &BC = Function->getBinaryContext();
-  auto Itr = rbegin();
-  while (Itr != rend()) {
-    if (&*Itr == Pos)
-      return false;
-    if (BC.MIB->isTerminator(*Itr))
-      return true;
-    ++Itr;
-  }
-  return false;
-}
-
 bool BinaryBasicBlock::swapConditionalSuccessors() {
   if (succ_size() != 2)
     return false;
