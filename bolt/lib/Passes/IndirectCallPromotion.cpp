@@ -391,7 +391,7 @@ IndirectCallPromotion::maybeGetHotJumpTableTargets(BinaryBasicBlock &BB,
   const IndirectBranchType Type = BC.MIB->analyzeIndirectBranch(
       CallInst, Insts.begin(), Insts.end(), BC.AsmInfo->getCodePointerSize(),
       MemLocInstr, BaseReg, IndexReg, DispValue, DispExpr, PCRelBaseOut,
-      FixedEntryLoadInstr);
+      FixedEntryLoadInstr, &Function);
 
   assert(MemLocInstr && "There should always be a load for jump tables");
   if (!MemLocInstr)

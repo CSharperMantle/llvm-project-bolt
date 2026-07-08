@@ -26,6 +26,7 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <queue>
 
 #define DEBUG_TYPE "mcplus"
 
@@ -155,7 +156,6 @@ public:
       const BinaryFunction *BF) const override {
     using namespace llvm::bolt::LowLevelInstMatcherDSL;
 
-    (void)BF;
     MemLocInstr = nullptr;
     BaseRegNum = 0;
     IndexRegNum = 0;
@@ -163,6 +163,9 @@ public:
     DispExpr = nullptr;
     PCRelBaseOut = nullptr;
     FixedEntryLoadInst = nullptr;
+
+    LLVM_DEBUG(dbgs() << "BOLT-DEBUG: analyzeIndirectBranch: "
+                      << (!BF ? "optimistic" : "precise") << " pass\n");
 
     Reg JirlRd, JirlRj;
     if (!matchInst(Instruction, LoongArch::JIRL, JirlRd, JirlRj, Skip())) {
@@ -228,7 +231,9 @@ public:
       }
       Reg AddiSrc;
       if (matchInst(*Def, LoongArch::ADDI_D, Reg(TargetReg), AddiSrc)) {
-        MCInst *const Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        MCInst *Pcalau = findRegDef(UDChain, AddiSrc.get(), *Def);
+        if (!Pcalau)
+          Pcalau = guessJTBaseDef(AddiSrc.get(), *Def, Begin, End);
         if (Pcalau &&
             matchInst(*Pcalau, LoongArch::PCALAU12I, AddiSrc, DispExpr)) {
           PCRelBaseOut = Pcalau;
@@ -312,9 +317,16 @@ public:
         break;
       }
 
-      MCInst *const BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
+      MCInst *BaseDef = findRegDef(UDChain, LdxBase.get(), *LdxD);
       if (!BaseDef) {
-        // Can't even find the defn site of LdxBase.
+        if (BF) {
+          if (const BinaryBasicBlock *BB = findBlockContaining(BF, LdxD))
+            BaseDef = findJTBaseDefViaCFG(LdxBase.get(), *LdxD, *BB, *BF);
+        } else {
+          BaseDef = guessJTBaseDef(LdxBase.get(), *LdxD, Begin, End);
+        }
+      }
+      if (!BaseDef) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM non-PIE jump "
                           << "table: LdxBase has no local def\n");
         break;
@@ -400,7 +412,15 @@ public:
       const MCRegister AddBase =
           (AddOp1.get() == LdxRdReg.get()) ? AddOp2.get() : AddOp1.get();
 
-      MCInst *const BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      MCInst *BaseDef = findRegDef(UDChain, AddBase, *AddD);
+      if (!BaseDef) {
+        if (BF) {
+          if (const BinaryBasicBlock *BB = findBlockContaining(BF, AddD))
+            BaseDef = findJTBaseDefViaCFG(AddBase, *AddD, *BB, *BF);
+        } else {
+          BaseDef = guessJTBaseDef(AddBase, *AddD, Begin, End);
+        }
+      }
       if (!BaseDef) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match LLVM PIC jump "
                           << "table: AddBase has no local def\n");
@@ -464,7 +484,15 @@ public:
         break;
       }
 
-      MCInst *const AddrDef = findRegDef(UDChain, AddrReg.get(), *Load);
+      MCInst *AddrDef = findRegDef(UDChain, AddrReg.get(), *Load);
+      if (!AddrDef) {
+        if (BF) {
+          if (const BinaryBasicBlock *BB = findBlockContaining(BF, Load))
+            AddrDef = findJTBaseDefViaCFG(AddrReg.get(), *Load, *BB, *BF);
+        } else {
+          AddrDef = guessJTBaseDef(AddrReg.get(), *Load, Begin, End);
+        }
+      }
       if (!AddrDef) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                           << "table: AddrReg has no local def\n");
@@ -507,7 +535,15 @@ public:
         BaseReg = BaseRegObj.get();
       }
 
-      MCInst *const BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      MCInst *BaseDef = findRegDef(UDChain, BaseReg, *AddrDef);
+      if (!BaseDef) {
+        if (BF) {
+          if (const BinaryBasicBlock *BB = findBlockContaining(BF, AddrDef))
+            BaseDef = findJTBaseDefViaCFG(BaseReg, *AddrDef, *BB, *BF);
+        } else {
+          BaseDef = guessJTBaseDef(BaseReg, *AddrDef, Begin, End);
+        }
+      }
       if (!BaseDef) {
         LLVM_DEBUG(dbgs() << "BOLT-DEBUG: failed to match GCC non-PIE jump "
                           << "table: BaseReg has no local def\n");
@@ -2969,6 +3005,259 @@ private:
       ++RegOpNo;
     }
 
+    return nullptr;
+  }
+
+  /// Check whether \p Inst is a JT base materialization that writes to \p
+  /// AddrReg . For the addi.d pattern, \p Pcalau must be the pcalau12i feeding
+  /// the addi.d's source register (provided by the caller\'s def tracking). \p
+  /// Sym receives the target JT symbol if found.
+  bool isJTBaseMat(const MCInst &Inst, MCRegister AddrReg, const MCSymbol *&Sym,
+                   const MCInst *Pcalau = nullptr) const {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    Sym = nullptr;
+
+    Expr TheExpr;
+
+    // pcaddi DestReg, %pcrel_20(.LJTI)
+    // --- or ---
+    // pcalau12i DestReg, %pc_hi20(.LJTI)
+    if (matchInst(Inst, LoongArch::PCADDI, Reg(AddrReg), TheExpr) ||
+        matchInst(Inst, LoongArch::PCALAU12I, Reg(AddrReg), TheExpr)) {
+      Sym = getTargetSymbol(TheExpr.get());
+      return Sym != nullptr;
+    }
+
+    // pcalau12i Acc, %pc_hi20(.LJTI)
+    // addi.d DestReg, Acc, %pc_lo12(.LJTI)
+    if (Pcalau) {
+      Expr PcalauExpr;
+      Reg Acc;
+      if (!matchInst(Inst, LoongArch::ADDI_D, Reg(AddrReg), Acc, TheExpr))
+        return false;
+      if (!matchInst(*Pcalau, LoongArch::PCALAU12I, Acc, PcalauExpr))
+        return false;
+      Sym = getTargetSymbol(PcalauExpr.get());
+      return Sym != nullptr;
+    }
+
+    return false;
+  }
+
+  /// Forward linear scan from \p Begin to just before \p UseInst,
+  /// tracking the last writer of \p BaseReg that passes isJTBaseMat().
+  /// This cannot distinguish control-flow paths and is a guess at best.
+  MCInst *guessJTBaseDef(MCRegister BaseReg, const MCInst &UseInst,
+                         InstructionIterator Begin,
+                         InstructionIterator End) const {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    DenseMap<unsigned, MCInst *> LocalDefs;
+    MCInst *Best = nullptr;
+    const MCSymbol *Sym = nullptr;
+    BitVector Written(RegInfo->getNumRegs(), false);
+
+    for (auto It = Begin; It != End; ++It) {
+      MCInst &Inst = *It;
+      if (isPseudo(Inst) || isNoop(Inst))
+        continue;
+      if (&Inst == &UseInst)
+        break;
+
+      Written.reset();
+      getWrittenRegs(Inst, Written);
+
+      for (const int J : Written.set_bits())
+        LocalDefs[J] = &Inst;
+
+      if (!Written.test(BaseReg))
+        continue;
+      if (isJTBaseMat(Inst, BaseReg, Sym)) {
+        Best = &Inst;
+        continue;
+      }
+
+      Reg SrcReg;
+      if (matchInst(Inst, LoongArch::ADDI_D, Skip(), SrcReg, Expr())) {
+        const MCRegister Src = SrcReg.get();
+        auto ItP = LocalDefs.find(Src);
+        if (ItP != LocalDefs.end() &&
+            isJTBaseMat(Inst, BaseReg, Sym, ItP->second)) {
+          Best = &Inst;
+        }
+      }
+    }
+
+    return Best;
+  }
+
+  /// Walk predecessor blocks of \p UseBlock backward via the CFG in \p BF
+  /// to verify that ALL paths reaching the dispatch agree on the same symbol
+  /// for \p BaseReg.  Returns the common MCInst* that materializes the JT base,
+  /// or nullptr if paths disagree (or if the register is live-in from the
+  /// caller with no local JT base).
+  MCInst *findJTBaseDefViaCFG(MCRegister BaseReg, const MCInst &UseInst,
+                              const BinaryBasicBlock &UseBlock,
+                              const BinaryFunction &BF) const {
+    using namespace llvm::bolt::LowLevelInstMatcherDSL;
+
+    struct PathState {
+      // the instruction that materializes the .LJTI
+      const MCInst *Writer;
+      // nullptr if killed or not found
+      const MCSymbol *Sym;
+      // a non-JT writer of Reg was found on this path
+      bool Killed;
+
+      void kill() {
+        Sym = nullptr;
+        Killed = true;
+      }
+
+      bool valid() const { return !Killed && Sym; }
+    };
+
+    BitVector Written(RegInfo->getNumRegs(), false);
+
+    auto resolveAddiWithPcalau = [&](const MCInst &Addi,
+                                     const BinaryBasicBlock &BB,
+                                     MCRegister &SrcRegOut) -> const MCInst * {
+      // Given an addi.d that writes CurReg with a symbolic operand,
+      // scan backward in the same block for the feeding pcalau12i.
+      Reg SrcReg;
+      if (!matchInst(Addi, LoongArch::ADDI_D, Skip(), SrcReg, Expr()))
+        return nullptr;
+      SrcRegOut = SrcReg.get();
+      for (auto It = BB.rbegin(); It != BB.rend(); ++It) {
+        const MCInst &CI = *It;
+        if (isPseudo(CI) || isNoop(CI))
+          continue;
+        if (&CI == &Addi || &CI == &UseInst)
+          continue;
+        Written.reset();
+        getWrittenRegs(CI, Written);
+        if (!Written.test(SrcRegOut))
+          continue;
+        // Found the writer of SrcRegOut.  Is it a pcalau12i?
+        if (matchInst(CI, LoongArch::PCALAU12I))
+          return &CI;
+        // Not a pcalau12i — stop searching (this is the reaching def).
+        return nullptr;
+      }
+      return nullptr;
+    };
+
+    // (BB, CurrentReg)
+    std::queue<std::pair<const BinaryBasicBlock *, MCRegister>> Worklist;
+    SmallPtrSet<const BinaryBasicBlock *, 8> Visited;
+
+    PathState State{nullptr, nullptr, false};
+
+    Worklist.emplace(&UseBlock, BaseReg);
+
+    while (!Worklist.empty() && !State.Killed) {
+      auto [CurBB, CurrentReg] = Worklist.front();
+      Worklist.pop();
+
+      if (!Visited.insert(CurBB).second)
+        continue;
+
+      // Scan this block in reverse for the last writer of CurReg.
+      const MCInst *Writer = nullptr;
+
+      for (auto It = CurBB->rbegin(); It != CurBB->rend(); ++It) {
+        const MCInst &Inst = *It;
+        if (isPseudo(Inst) || isNoop(Inst))
+          continue;
+        if (&Inst == &UseInst)
+          continue;
+
+        Written.reset();
+        getWrittenRegs(Inst, Written);
+        if (!Written.test(CurrentReg))
+          continue;
+
+        // Found a writer of CurReg.
+        Writer = &Inst;
+        break;
+      }
+
+      if (!Writer) {
+        for (const BinaryBasicBlock *Pred : CurBB->predecessors())
+          Worklist.emplace(Pred, CurrentReg);
+        if (CurBB->predecessors().empty() && State.Sym != nullptr) {
+          // only some (one) path has a JT, the others don't
+          State.kill();
+        }
+        continue;
+      }
+
+      // We have a writer. Is it a JT base materialization?
+      const MCSymbol *Sym = nullptr;
+      const MCInst *JTWriter = nullptr;
+
+      // Direct pattern: pcaddi / pcalau12i.
+      if (isJTBaseMat(*Writer, CurrentReg, Sym)) {
+        JTWriter = Writer;
+      } else if (matchInst(*Writer, LoongArch::ADDI_D, Skip(), Skip(),
+                           Expr())) {
+        // Pattern 3: addi.d $CurReg, $Src, lo12.
+        // Scan backward in this block for the feeding pcalau12i.
+        MCRegister SrcReg;
+        const MCInst *Pcalau = resolveAddiWithPcalau(*Writer, *CurBB, SrcReg);
+        if (Pcalau) {
+          // Validate the pair.
+          if (isJTBaseMat(*Writer, CurrentReg, Sym, Pcalau)) {
+            JTWriter = Writer;
+          } else {
+            // The pcalau12i writes SrcReg.  The addi.d moves SrcReg
+            // to CurReg with an offset.  Continue scanning backward
+            // in this block with SrcReg as the target register.
+            CurrentReg = SrcReg;
+            Writer = nullptr;
+            continue; // re-scan this block for the new CurReg
+          }
+        }
+      }
+
+      if (!JTWriter) {
+        // Non-JT writer found (move, or, arithmetic, or non-pcalau12i addi.d).
+        // Check if it's a reg-to-reg move we can follow.
+        MCPhysReg MoveFrom;
+        MCPhysReg MoveTo;
+        if (isRegToRegMove(*Writer, MoveFrom, MoveTo) && MoveTo == CurrentReg) {
+          // Follow the move source into predecessor blocks.
+          for (const BinaryBasicBlock *Pred : CurBB->predecessors())
+            Worklist.emplace(Pred, MoveFrom);
+        } else {
+          // Not even a move.
+          State.kill();
+        }
+        continue;
+      }
+
+      // Found a JT base materialization.
+      if (State.Sym == nullptr) {
+        State = PathState{JTWriter, Sym, false};
+      } else if (Sym != State.Sym) {
+        // Different JT on different paths means conflict.
+        State.kill();
+      }
+    }
+
+    return State.valid() ? const_cast<MCInst *>(State.Writer) : nullptr;
+  }
+
+  /// Find the basic block in \p BF that contains \p Inst, or nullptr.
+  static const BinaryBasicBlock *findBlockContaining(const BinaryFunction *BF,
+                                                     const MCInst *Inst) {
+    if (!BF)
+      return nullptr;
+    for (const BinaryBasicBlock &BB : BF->blocks())
+      for (const MCInst &CI : BB)
+        if (&CI == Inst)
+          return &BB;
     return nullptr;
   }
 

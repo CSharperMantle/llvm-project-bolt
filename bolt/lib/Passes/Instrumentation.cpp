@@ -597,7 +597,7 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
           const IndirectBranchType JTType = BC.MIB->analyzeIndirectBranch(
               *I, BB.begin(), I, BC.AsmInfo->getCodePointerSize(), MemLocInstr,
               BaseReg, IndexReg, DispValue, DispExpr, PCRelBaseOut,
-              FixedEntryLoadInst);
+              FixedEntryLoadInst, &Function);
           (void)JTType;
           if (MemLocInstr) {
             // getOffset() is only meaningful for call/branch/return/prefix
