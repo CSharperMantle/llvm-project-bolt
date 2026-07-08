@@ -1562,13 +1562,13 @@ public:
     return Uses;
   }
 
-  IndirectBranchType
-  analyzeIndirectBranch(MCInst &Instruction, InstructionIterator Begin,
-                        InstructionIterator End, const unsigned PtrSize,
-                        MCInst *&MemLocInstrOut, unsigned &BaseRegNumOut,
-                        unsigned &IndexRegNumOut, int64_t &DispValueOut,
-                        const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut,
-                        MCInst *&FixedEntryLoadInstr) const override {
+  IndirectBranchType analyzeIndirectBranch(
+      MCInst &Instruction, InstructionIterator Begin, InstructionIterator End,
+      const unsigned PtrSize, MCInst *&MemLocInstrOut, unsigned &BaseRegNumOut,
+      unsigned &IndexRegNumOut, int64_t &DispValueOut,
+      const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut,
+      MCInst *&FixedEntryLoadInstr, const BinaryFunction *BF) const override {
+    (void)BF;
     MemLocInstrOut = nullptr;
     BaseRegNumOut = AArch64::NoRegister;
     IndexRegNumOut = AArch64::NoRegister;

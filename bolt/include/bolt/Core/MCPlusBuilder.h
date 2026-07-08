@@ -1796,7 +1796,8 @@ public:
       MCInst &Instruction, InstructionIterator Begin, InstructionIterator End,
       const unsigned PtrSize, MCInst *&MemLocInstr, unsigned &BaseRegNum,
       unsigned &IndexRegNum, int64_t &DispValue, const MCExpr *&DispExpr,
-      MCInst *&PCRelBaseOut, MCInst *&FixedEntryLoadInst) const {
+      MCInst *&PCRelBaseOut, MCInst *&FixedEntryLoadInst,
+      const BinaryFunction *BF = nullptr) const {
     llvm_unreachable("not implemented");
     return IndirectBranchType::UNKNOWN;
   }

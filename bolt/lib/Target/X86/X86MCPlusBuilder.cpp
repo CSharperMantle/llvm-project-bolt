@@ -2063,13 +2063,12 @@ public:
                            SecondInstr, nullptr);
   }
 
-  IndirectBranchType
-  analyzeIndirectBranch(MCInst &Instruction, InstructionIterator Begin,
-                        InstructionIterator End, const unsigned PtrSize,
-                        MCInst *&MemLocInstrOut, unsigned &BaseRegNumOut,
-                        unsigned &IndexRegNumOut, int64_t &DispValueOut,
-                        const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut,
-                        MCInst *&FixedEntryLoadInst) const override {
+  IndirectBranchType analyzeIndirectBranch(
+      MCInst &Instruction, InstructionIterator Begin, InstructionIterator End,
+      const unsigned PtrSize, MCInst *&MemLocInstrOut, unsigned &BaseRegNumOut,
+      unsigned &IndexRegNumOut, int64_t &DispValueOut,
+      const MCExpr *&DispExprOut, MCInst *&PCRelBaseOut,
+      MCInst *&FixedEntryLoadInst, const BinaryFunction *BF) const override {
     // Try to find a (base) memory location from where the address for
     // the indirect branch is loaded. For X86-64 the memory will be specified
     // in the following format:
@@ -2091,6 +2090,7 @@ public:
     //
     // We handle PIC-style jump tables separately.
     //
+    (void)BF;
     MemLocInstrOut = nullptr;
     BaseRegNumOut = X86::NoRegister;
     IndexRegNumOut = X86::NoRegister;
