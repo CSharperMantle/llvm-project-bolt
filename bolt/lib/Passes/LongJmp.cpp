@@ -308,7 +308,7 @@ uint64_t LongJmpPass::tentativeLayoutRelocColdPart(
     uint64_t DotAddress) {
   DotAddress = alignTo(DotAddress, llvm::Align(opts::AlignFunctions));
   for (BinaryFunction *Func : SortedFunctions) {
-    if (!Func->isSplit())
+    if (!BC.shouldEmit(*Func) || !Func->isSplit())
       continue;
     DotAddress = alignTo(DotAddress, Func->getMinAlignment());
     uint64_t Pad =
@@ -329,31 +329,6 @@ uint64_t
 LongJmpPass::tentativeLayoutRelocMode(const BinaryContext &BC,
                                       BinaryFunctionListType &SortedFunctions,
                                       uint64_t DotAddress) {
-  // Compute hot cold frontier
-  int64_t LastHotIndex = -1u;
-  uint32_t CurrentIndex = 0;
-  if (opts::HotFunctionsAtEnd) {
-    for (BinaryFunction *BF : SortedFunctions) {
-      if (BF->hasValidIndex()) {
-        LastHotIndex = CurrentIndex;
-        break;
-      }
-
-      ++CurrentIndex;
-    }
-  } else {
-    for (BinaryFunction *BF : SortedFunctions) {
-      if (!BF->hasValidIndex()) {
-        LastHotIndex = CurrentIndex;
-        break;
-      }
-
-      ++CurrentIndex;
-    }
-  }
-
-  // Hot
-  CurrentIndex = 0;
   bool ColdLayoutDone = false;
   auto runColdLayout = [&]() {
     if (!opts::HotFunctionsAtEnd)
@@ -375,7 +350,13 @@ LongJmpPass::tentativeLayoutRelocMode(const BinaryContext &BC,
       continue;
     }
 
-    if (!ColdLayoutDone && CurrentIndex >= LastHotIndex)
+    // PopulateOutputFunctions partitions main functions by valid index. Insert
+    // split cold fragments when the emitted function order crosses that
+    // boundary, accounting for the reversed --hot-functions-at-end order.
+    const bool ReachedHotColdBoundary = opts::HotFunctionsAtEnd
+                                            ? Func->hasValidIndex()
+                                            : !Func->hasValidIndex();
+    if (!ColdLayoutDone && ReachedHotColdBoundary)
       runColdLayout();
 
     DotAddress = alignTo(DotAddress, Func->getMinAlignment());
@@ -393,7 +374,6 @@ LongJmpPass::tentativeLayoutRelocMode(const BinaryContext &BC,
 
     DotAddress = alignTo(DotAddress, Func->getConstantIslandAlignment());
     DotAddress += Func->estimateConstantIslandSize();
-    ++CurrentIndex;
   }
 
   // Ensure that tentative code layout always runs for cold blocks.
