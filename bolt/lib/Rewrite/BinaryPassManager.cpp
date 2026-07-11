@@ -554,6 +554,7 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
     Manager.registerPass(std::make_unique<LongJmpPass>(PrintLongJmp));
   }
 
+  Manager.registerPass(std::make_unique<FinalizeCFIState>(NeverPrint));
   // This pass should always run last.*
   Manager.registerPass(std::make_unique<FinalizeFunctions>(PrintFinalized));
 

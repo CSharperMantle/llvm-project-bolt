@@ -204,8 +204,19 @@ public:
   Error runOnFunctions(BinaryContext &BC) override;
 };
 
-/// Fix the CFI state and exception handling information after all other
-/// passes have completed.
+/// Materialize CFI state transitions for the current function layout while
+/// keeping the CFG mutable for passes that consume and rewrite CFI.
+class FinalizeCFIState : public BinaryFunctionPass {
+public:
+  explicit FinalizeCFIState(const cl::opt<bool> &PrintPass)
+      : BinaryFunctionPass(PrintPass) {}
+
+  const char *getName() const override { return "finalize-cfi-state"; }
+  Error runOnFunctions(BinaryContext &BC) override;
+};
+
+/// Commits final function states and updates exception handling after all other
+/// CFG/code transformation passes have completed.
 class FinalizeFunctions : public BinaryFunctionPass {
 public:
   explicit FinalizeFunctions(const cl::opt<bool> &PrintPass)

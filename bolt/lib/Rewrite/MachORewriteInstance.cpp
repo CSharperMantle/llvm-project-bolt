@@ -355,6 +355,7 @@ void MachORewriteInstance::runOptimizationPasses() {
   Manager.registerPass(
       std::make_unique<FixupBranches>(opts::PrintAfterBranchFixup));
   Manager.registerPass(std::make_unique<PopulateOutputFunctions>());
+  Manager.registerPass(std::make_unique<FinalizeCFIState>(opts::NeverPrint));
   // This pass should always run last.*
   Manager.registerPass(
       std::make_unique<FinalizeFunctions>(opts::PrintFinalized));

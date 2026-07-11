@@ -223,6 +223,10 @@ private:
   /// Current state of the function.
   State CurrentState{State::Empty};
 
+  /// Whether CFI state transitions were successfully materialized for the
+  /// current function layout.
+  bool HasFinalizedCFIState{false};
+
   /// Indicates if the Function contained .cfi-negate-ra-state. These are not
   /// read from the binary. This boolean is used when deciding to run the
   /// .cfi-negate-ra-state rewriting passes on a function or not.
@@ -2422,6 +2426,8 @@ public:
   /// After reordering, this function checks the state of CFI and fixes it if it
   /// is corrupted. If it is unable to fix it, it returns false.
   bool finalizeCFIState();
+
+  bool hasFinalizedCFIState() const { return HasFinalizedCFIState; }
 
   /// Return true if this function needs an address-translation table after
   /// its code emission.

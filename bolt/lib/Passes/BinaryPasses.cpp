@@ -589,8 +589,9 @@ Error PopulateOutputFunctions::runOnFunctions(BinaryContext &BC) {
   return Error::success();
 }
 
-Error FinalizeFunctions::runOnFunctions(BinaryContext &BC) {
+Error FinalizeCFIState::runOnFunctions(BinaryContext &BC) {
   std::atomic<bool> HasFatal{false};
+
   ParallelUtilities::WorkFuncTy WorkFun = [&](BinaryFunction &BF) {
     if (!BF.finalizeCFIState()) {
       if (BC.HasRelocations) {
@@ -600,8 +601,26 @@ Error FinalizeFunctions::runOnFunctions(BinaryContext &BC) {
         return;
       }
       BF.setSimple(false);
-      return;
     }
+  };
+
+  ParallelUtilities::PredicateTy SkipPredicate = [&](const BinaryFunction &BF) {
+    return !BC.shouldEmit(BF);
+  };
+
+  ParallelUtilities::runOnEachFunction(
+      BC, ParallelUtilities::SchedulingPolicy::SP_CONSTANT, WorkFun,
+      SkipPredicate, "FinalizeCFIState");
+
+  if (HasFatal)
+    return createFatalBOLTError("finalize CFI state failure");
+  return Error::success();
+}
+
+Error FinalizeFunctions::runOnFunctions(BinaryContext &BC) {
+  ParallelUtilities::WorkFuncTy WorkFun = [&](BinaryFunction &BF) {
+    if (!BF.hasFinalizedCFIState())
+      return;
 
     BF.setFinalized();
 
@@ -616,8 +635,6 @@ Error FinalizeFunctions::runOnFunctions(BinaryContext &BC) {
   ParallelUtilities::runOnEachFunction(
       BC, ParallelUtilities::SchedulingPolicy::SP_CONSTANT, WorkFun,
       SkipPredicate, "FinalizeFunctions");
-  if (HasFatal)
-    return createFatalBOLTError("finalize CFI state failure");
   return Error::success();
 }
 

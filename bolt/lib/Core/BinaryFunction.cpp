@@ -3198,6 +3198,8 @@ void BinaryFunction::normalizeCFIState() {
 }
 
 bool BinaryFunction::finalizeCFIState() {
+  HasFinalizedCFIState = false;
+
   LLVM_DEBUG(
       dbgs() << "Trying to fix CFI states for each BB after reordering.\n");
   LLVM_DEBUG(dbgs() << "This is the list of CFI states for each BB of " << *this
@@ -3248,6 +3250,7 @@ bool BinaryFunction::finalizeCFIState() {
     }
   }
 
+  HasFinalizedCFIState = true;
   return true;
 }
 
