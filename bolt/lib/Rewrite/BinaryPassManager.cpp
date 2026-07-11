@@ -547,6 +547,14 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
         std::make_unique<LoongArchRelaxationPass>(PrintLoongArchRelaxation));
   }
 
+  Manager.registerPass(std::make_unique<FinalizeCFIState>(NeverPrint));
+  // FrameOptimizer move values around and needs to update CFIs. To do this, it
+  // must read CFI, interpret it and rewrite it, so CFIs need to be correctly
+  // placed according to the final layout.
+  Manager.registerPass(std::make_unique<FrameOptimizerPass>(PrintFOP));
+
+  Manager.registerPass(std::make_unique<AllocCombinerPass>(PrintFOP));
+
   // Tighten branches according to offset differences between branch and
   // targets. No extra instructions after this pass, otherwise we may have
   // relocations out of range and crash during linking.
@@ -554,17 +562,10 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
     Manager.registerPass(std::make_unique<LongJmpPass>(PrintLongJmp));
   }
 
-  Manager.registerPass(std::make_unique<FinalizeCFIState>(NeverPrint));
   // This pass should always run last.*
+  // Commit CFG state and construct final EH call-site ranges only after branch
+  // reach has converged on the post-FOP instruction stream.
   Manager.registerPass(std::make_unique<FinalizeFunctions>(PrintFinalized));
-
-  // FrameOptimizer has an implicit dependency on FinalizeFunctions.
-  // FrameOptimizer move values around and needs to update CFIs. To do this, it
-  // must read CFI, interpret it and rewrite it, so CFIs need to be correctly
-  // placed according to the final layout.
-  Manager.registerPass(std::make_unique<FrameOptimizerPass>(PrintFOP));
-
-  Manager.registerPass(std::make_unique<AllocCombinerPass>(PrintFOP));
 
   Manager.registerPass(
       std::make_unique<RetpolineInsertion>(PrintRetpolineInsertion));
