@@ -196,6 +196,9 @@ class IndirectCallPromotion : public BinaryFunctionPass {
                                        MCInst &Inst,
                                        MCInst *&TargetFetchInst) const;
 
+  MCSymbol *resolveVtableMethodSlot(BinaryContext &BC, uint64_t SlotAddress,
+                                    uint64_t &MethodAddress) const;
+
   MethodInfoType maybeGetVtableSyms(BinaryBasicBlock &BB, MCInst &Inst,
                                     const SymTargetsType &SymTargets) const;
 

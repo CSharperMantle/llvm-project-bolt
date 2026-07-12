@@ -633,6 +633,29 @@ IndirectCallPromotion::findCallTargetSymbols(std::vector<Callsite> &Targets,
   return SymTargets;
 }
 
+MCSymbol *IndirectCallPromotion::resolveVtableMethodSlot(
+    BinaryContext &BC, uint64_t SlotAddress, uint64_t &MethodAddress) const {
+  if (const Relocation *Relocation = BC.getDynamicRelocationAt(SlotAddress)) {
+    if (!Relocation->isRelative())
+      return nullptr;
+
+    BinaryFunction *Method = BC.getBinaryFunctionAtAddress(Relocation->Addend);
+    if (!Method)
+      return nullptr;
+    MethodAddress = Method->getAddress();
+    return Method->getSymbol();
+  }
+
+  ErrorOr<uint64_t> Address = BC.getPointerAtAddress(SlotAddress);
+  if (!Address)
+    return nullptr;
+  BinaryData *MethodData = BC.getBinaryDataAtAddress(Address.get());
+  if (!MethodData)
+    return nullptr;
+  MethodAddress = Address.get();
+  return MethodData->getSymbol();
+}
+
 IndirectCallPromotion::MethodInfoType IndirectCallPromotion::maybeGetVtableSyms(
     BinaryBasicBlock &BB, MCInst &Inst,
     const SymTargetsType &SymTargets) const {
@@ -701,19 +724,18 @@ IndirectCallPromotion::MethodInfoType IndirectCallPromotion::maybeGetVtableSyms(
                             << Twine::utohexstr(VtableBase) << "+"
                             << MethodOffset << "/" << AccessInfo.Count << "\n");
 
-    if (ErrorOr<uint64_t> MethodAddr = BC.getPointerAtAddress(Address)) {
-      BinaryData *MethodBD = BC.getBinaryDataAtAddress(MethodAddr.get());
-      if (!MethodBD) // skip unknown methods
-        continue;
-      MCSymbol *MethodSym = MethodBD->getSymbol();
-      MethodToVtable[MethodSym] = VtableBase;
-      DEBUG_VERBOSE(1, {
-        const BinaryFunction *Method = BC.getFunctionForSymbol(MethodSym);
-        dbgs() << "BOLT-INFO: ICP found method = "
-               << Twine::utohexstr(MethodAddr.get()) << "/"
-               << (Method ? Method->getPrintName() : "") << "\n";
-      });
-    }
+    uint64_t MethodAddress;
+    const MCSymbol *MethodSym =
+        resolveVtableMethodSlot(BC, Address, MethodAddress);
+    if (!MethodSym)
+      continue;
+    MethodToVtable[MethodSym] = VtableBase;
+    DEBUG_VERBOSE(1, {
+      const BinaryFunction *Method = BC.getFunctionForSymbol(MethodSym);
+      dbgs() << "BOLT-INFO: ICP found method = "
+             << Twine::utohexstr(MethodAddress) << "/"
+             << (Method ? Method->getPrintName() : "") << "\n";
+    });
   }
 
   // Find the vtable for each target symbol.
