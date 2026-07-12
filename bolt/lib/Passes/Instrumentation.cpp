@@ -449,6 +449,51 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
   Function.disambiguateJumpTables(AllocId);
   Function.deleteConservativeEdges();
 
+  if (opts::InstrumentLoadProfiles) {
+    const unsigned VtableLoadTag = getVtableLoadAnnotationIndex(BC);
+    for (BinaryBasicBlock &BB : Function) {
+      if (BBToSkip.count(&BB))
+        continue;
+      for (const MCInst &Inst : BB) {
+        if (Function.getJumpTable(Inst) || !BC.MIB->isIndirectCall(Inst))
+          continue;
+        ++VtableCallsitesExamined;
+
+        std::vector<MCInst *> MethodFetchInsns;
+        unsigned VtableRegNum, BaseRegNum;
+        uint64_t MethodOffset;
+        ArrayRef<MCInst> Insns(&BB.front(), &Inst + 1);
+        if (!BC.MIB->analyzeVirtualMethodCall(Insns.begin(), Insns.end(),
+                                              MethodFetchInsns, VtableRegNum,
+                                              BaseRegNum, MethodOffset))
+          continue;
+        ++VtableCallsitesRecognized;
+
+        if (MethodFetchInsns.empty())
+          continue;
+
+        MCInst *MethodFetchInst = MethodFetchInsns.back();
+        auto MethodFetchIter = BB.findInstruction(MethodFetchInst);
+        if (MethodFetchIter == BB.end() ||
+            !BC.MII->get(MethodFetchInst->getOpcode()).mayLoad() ||
+            Function.getJumpTable(*MethodFetchInst))
+          continue;
+
+        if (BC.MIB->hasAnnotation(*MethodFetchInst, VtableLoadTag)) {
+          ++DuplicateVtableLoads;
+          continue;
+        }
+
+        const uint32_t LoadOffset =
+            BB.getInputOffset() +
+            BC.computeCodeSize(BB.begin(), MethodFetchIter);
+        BC.MIB->addAnnotation(*MethodFetchInst, VtableLoadTag, LoadOffset,
+                              AllocId);
+        ++VtableLoadsMarked;
+      }
+    }
+  }
+
   std::unordered_map<const BinaryBasicBlock *, uint32_t> BBToID;
   uint32_t Id = 0;
   for (auto BBI = Function.begin(); BBI != Function.end(); ++BBI) {
@@ -658,8 +703,10 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
     }
   } // End of BBs loop
 
-  // Instrument data-section loads for ReorderData
+  // Instrument selected vtable loads and data-section loads for ReorderData.
   if (opts::InstrumentLoadProfiles) {
+    const unsigned VtableLoadTag = getVtableLoadAnnotationIndex(BC);
+
     for (auto BBI = Function.begin(); BBI != Function.end(); ++BBI) {
       BinaryBasicBlock &BB = *BBI;
       if (BBToSkip.count(&BB))
@@ -680,6 +727,14 @@ void Instrumentation::instrumentFunction(BinaryFunction &Function,
                                   SrcImm, StackPtrReg, StackOffset, Size,
                                   IsSimple, IsIndexed))
           continue;
+        if (BC.MIB->hasAnnotation(Inst, VtableLoadTag)) {
+          const uint32_t LoadOffset =
+              BC.MIB->getAnnotationAs<uint32_t>(Inst, VtableLoadTag);
+          BC.MIB->removeAnnotation(Inst, VtableLoadTag);
+          instrumentLoadTarget(BB, I, Function, LoadOffset);
+          ++VtableLoadsInstrumented;
+          continue;
+        }
         if (!hasDataSectionTarget(Inst, BC))
           continue;
         const uint32_t LoadOffset =
@@ -907,6 +962,17 @@ void Instrumentation::setupRuntimeLibrary(BinaryContext &BC) {
             << Summary->FunctionDescriptions.size() << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of load site descriptors: "
             << Summary->LoadDescriptions.size() << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of indirect callsites examined for "
+               "vtable form: "
+            << VtableCallsitesExamined << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of virtual callsites recognized: "
+            << VtableCallsitesRecognized << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of vtable loads marked: "
+            << VtableLoadsMarked << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of duplicate vtable load marks: "
+            << DuplicateVtableLoads << "\n";
+  BC.outs() << "BOLT-INSTRUMENTER: Number of vtable loads instrumented: "
+            << VtableLoadsInstrumented << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of branch counters: "
             << BranchCounters << "\n";
   BC.outs() << "BOLT-INSTRUMENTER: Number of ST leaf node counters: "
@@ -935,6 +1001,14 @@ void Instrumentation::setupRuntimeLibrary(BinaryContext &BC) {
       static_cast<InstrumentationRuntimeLibrary *>(BC.getRuntimeLibrary());
   assert(RtLibrary && "instrumentation runtime library object must be set");
   RtLibrary->setSummary(std::move(Summary));
+}
+
+unsigned Instrumentation::getVtableLoadAnnotationIndex(BinaryContext &BC) {
+  if (VtableLoadAnnotationIndex)
+    return *VtableLoadAnnotationIndex;
+  VtableLoadAnnotationIndex =
+      BC.MIB->getOrCreateAnnotationIndex("InstrumentVtableLoad");
+  return *VtableLoadAnnotationIndex;
 }
 } // namespace bolt
 } // namespace llvm

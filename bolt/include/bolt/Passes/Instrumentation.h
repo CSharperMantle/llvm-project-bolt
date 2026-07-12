@@ -20,6 +20,7 @@
 #include "bolt/Passes/BinaryPasses.h"
 #include "bolt/Passes/InstrumentationSummary.h"
 #include "llvm/Support/RWMutex.h"
+#include <optional>
 
 namespace llvm {
 namespace bolt {
@@ -106,6 +107,8 @@ private:
 
   void createAuxiliaryFunctions(BinaryContext &BC);
 
+  unsigned getVtableLoadAnnotationIndex(BinaryContext &BC);
+
   uint32_t getFDSize() const;
 
   /// Create a runtime library, pass the BinData over, and register it
@@ -125,6 +128,14 @@ private:
   uint32_t DirectCallCounters{0};
   uint32_t BranchCounters{0};
   uint32_t LeafNodeCounters{0};
+
+  /// Vtable load instrumentation selection metadata and statistics.
+  std::optional<unsigned> VtableLoadAnnotationIndex;
+  uint32_t VtableCallsitesExamined{0};
+  uint32_t VtableCallsitesRecognized{0};
+  uint32_t VtableLoadsMarked{0};
+  uint32_t DuplicateVtableLoads{0};
+  uint32_t VtableLoadsInstrumented{0};
 
   /// Indirect call instrumentation functions
   BinaryFunction *IndCallHandlerExitBBFunction;
