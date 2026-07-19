@@ -1119,6 +1119,12 @@ public:
 
   MCPhysReg getFramePointer() const override { return LoongArch::R22; }
 
+  // LoongArch has no st+add sp in one instruction that qualify as a push.
+  bool isPush(const MCInst &Inst) const override { return false; }
+
+  // LoongArch has no ld+add sp in one instruction that qualify as a pop.
+  bool isPop(const MCInst &Inst) const override { return false; }
+
   uint16_t getMinFunctionAlignment() const override { return 4; }
 
   void getCalleeSavedRegs(BitVector &Regs) const override {
