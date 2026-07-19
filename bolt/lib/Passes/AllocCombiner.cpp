@@ -87,7 +87,8 @@ void AllocCombinerPass::combineAdjustments(BinaryFunction &BF) {
       if (BC.MIB->isSUB(Inst))
         Adjustment = -Adjustment;
 
-      BC.MIB->addToImm(Inst, Adjustment, BC.Ctx.get());
+      if (!BC.MIB->addToImm(Inst, Adjustment, BC.Ctx.get()))
+        continue;
 
       LLVM_DEBUG({
         dbgs() << "After adjustment:\n";
