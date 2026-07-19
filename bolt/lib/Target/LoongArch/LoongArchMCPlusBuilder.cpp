@@ -1119,6 +1119,12 @@ public:
 
   MCPhysReg getFramePointer() const override { return LoongArch::R22; }
 
+  MCPhysReg getIntArgRegister(unsigned ArgNo) const override {
+    if (ArgNo < 8)
+      return LoongArch::R4 + ArgNo;
+    return LoongArch::NoRegister;
+  }
+
   // LoongArch has no st+add sp in one instruction that qualify as a push.
   bool isPush(const MCInst &Inst) const override { return false; }
 
