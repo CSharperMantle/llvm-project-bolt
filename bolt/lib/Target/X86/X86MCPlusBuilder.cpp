@@ -2363,6 +2363,10 @@ public:
                       DstReg, Size);
   }
 
+  bool canEncodeStackAccessOffset(int64_t Offset) const override {
+    return isInt<32>(Offset);
+  }
+
   void createLoad(MCInst &Inst, const MCPhysReg &BaseReg, int64_t Scale,
                   const MCPhysReg &IndexReg, int64_t Offset,
                   const MCExpr *OffsetExpr, const MCPhysReg &AddrSegmentReg,

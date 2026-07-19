@@ -2043,6 +2043,13 @@ public:
     llvm_unreachable("not implemented");
   }
 
+  /// Check if \p Offset can be encoded by createSaveToStack and
+  /// createRestoreFromStack.
+  virtual bool canEncodeStackAccessOffset(int64_t Offset) const {
+    llvm_unreachable("not implemented");
+    return false;
+  }
+
   /// Creates a call frame pseudo instruction. A single operand identifies which
   /// MCCFIInstruction this MCInst is referring to.
   virtual void createCFI(MCInst &Inst, int64_t Offset) const {

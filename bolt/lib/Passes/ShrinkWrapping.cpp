@@ -1322,6 +1322,24 @@ void ShrinkWrapping::moveSaveRestores() {
     else
       UsedPushPopMode = true;
 
+    // Check if any loads/stores cannot be properly encoded.
+    const int64_t SaveNewOff = FIESave->StackOffset - SaveOffset;
+    bool MayOverflow = !BC.MIB->canEncodeStackAccessOffset(SaveNewOff);
+    for (ProgramPoint &PP : RestorePoints) {
+      const auto [SPVal, _] = *SPT.getStateAt(
+          PP.isInst() ? ProgramPoint(PP.getInst())
+                      : ProgramPoint::getLastPointAt(*Info.getParentBB(PP)));
+      const int64_t LoadNewOff = FIELoad->StackOffset - SPVal;
+      if (!BC.MIB->canEncodeStackAccessOffset(LoadNewOff)) {
+        MayOverflow = true;
+        break;
+      }
+    }
+    if (MayOverflow) {
+      SpillsFailedDynamicCount += EstimatedWin;
+      continue;
+    }
+
     scheduleOldSaveRestoresRemoval(I, UsePushPops);
     scheduleSaveRestoreInsertions(I, BestPosSave, RestorePoints, UsePushPops);
     MovedRegs.emplace_back(std::make_tuple(I, BestPosSave, SaveSize));
