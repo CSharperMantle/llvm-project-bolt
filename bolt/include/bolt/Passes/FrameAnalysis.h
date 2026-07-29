@@ -9,6 +9,7 @@
 #ifndef BOLT_PASSES_FRAMEANALYSIS_H
 #define BOLT_PASSES_FRAMEANALYSIS_H
 
+#include "bolt/Passes/CFAOriginAnalysis.h"
 #include "bolt/Passes/StackPointerTracking.h"
 #include <tuple>
 
@@ -169,6 +170,10 @@ class FrameAnalysis {
                      std::unique_ptr<StackPointerTracking>>
       SPTMap;
 
+  /// A store for CFA origin info per function.
+  std::unordered_map<const BinaryFunction *, std::unique_ptr<CFAOriginAnalysis>>
+      CFAOAMap;
+
 public:
   explicit FrameAnalysis(BinaryContext &BC, BinaryFunctionCallGraph &CG);
 
@@ -224,6 +229,22 @@ public:
 
   /// Perform SPT analysis for all functions in parallel
   void preComputeSPT();
+
+  /// Get or create a CFA origin analysis object and run the analysis.
+  CFAOriginAnalysis &getCFAOA(BinaryFunction &BF) {
+    auto Iter = CFAOAMap.try_emplace(&BF).first;
+    if (!Iter->second) {
+      Iter->second = std::make_unique<CFAOriginAnalysis>(BF);
+      Iter->second->run();
+    }
+    return *Iter->second;
+  }
+
+  /// Clean and de-allocate all CFA origin analysis objects.
+  void clearCFAOAMap();
+
+  /// Perform CFA origin analysis for all functions in parallel.
+  void preComputeCFAOA();
 };
 
 } // namespace bolt

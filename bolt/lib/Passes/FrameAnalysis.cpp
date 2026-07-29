@@ -93,6 +93,10 @@ class FrameAccessAnalysis {
   /// value at a given program point
   StackPointerTracking &SPT;
 
+  /// Track whether all paths reaching the current point have the same CFA
+  /// origin.
+  CFAOriginAnalysis &CFAOA;
+
   /// Context vars
   const BinaryContext &BC;
   const BinaryFunction &BF;
@@ -100,6 +104,7 @@ class FrameAccessAnalysis {
   // is used in this function
   int SPOffset{0};
   int FPOffset{0};
+  CFAOriginState CurrentCFAOrigin;
   int64_t CfaOffset;
   uint16_t CfaReg;
   std::stack<std::pair<int64_t, uint16_t>> CFIStack;
@@ -145,8 +150,9 @@ class FrameAccessAnalysis {
       LLVM_DEBUG(
           dbgs() << "Adding access via FP while CFA reg is another one\n");
       FIE.StackOffset = FPOffset + StackOffset;
-    } else if (FIE.StackPtrReg ==
-               *BC.MRI->getLLVMRegNum(CfaReg, /*isEH=*/false)) {
+    } else if (CurrentCFAOrigin.isConcrete() &&
+               FIE.StackPtrReg ==
+                   *BC.MRI->getLLVMRegNum(CfaReg, /*isEH=*/false)) {
       FIE.StackOffset = CfaOffset + StackOffset;
     } else if (!SPT.HasFramePointer &&
                FIE.StackPtrReg == BC.MIB->getFramePointer()) {
@@ -167,8 +173,9 @@ class FrameAccessAnalysis {
   }
 
 public:
-  FrameAccessAnalysis(BinaryFunction &BF, StackPointerTracking &SPT)
-      : SPT(SPT), BC(BF.getBinaryContext()), BF(BF) {
+  FrameAccessAnalysis(BinaryFunction &BF, StackPointerTracking &SPT,
+                      CFAOriginAnalysis &CFAOA)
+      : SPT(SPT), CFAOA(CFAOA), BC(BF.getBinaryContext()), BF(BF) {
     CfaOffset = BC.MIB->getInitialCFAOffset();
     CfaReg = BC.MRI->getDwarfRegNum(BC.MIB->getStackPointer(), /*isEH=*/false);
   }
@@ -184,6 +191,7 @@ public:
     EscapesStackAddress = false;
     std::tie(SPOffset, FPOffset) =
         Prev ? *SPT.getStateAt(*Prev) : *SPT.getStateAt(BB);
+    CurrentCFAOrigin = Prev ? *CFAOA.getStateAt(*Prev) : *CFAOA.getStateAt(BB);
     Prev = &Inst;
     // Use CFI information to keep track of which register is being used to
     // access the frame
@@ -409,7 +417,7 @@ bool FrameAnalysis::computeArgsAccessed(BinaryFunction &BF) {
                     << "\n");
   bool UpdatedArgsTouched = false;
   bool NoInfo = false;
-  FrameAccessAnalysis FAA(BF, getSPT(BF));
+  FrameAccessAnalysis FAA(BF, getSPT(BF), getCFAOA(BF));
 
   for (BinaryBasicBlock *BB : BF.getLayout().blocks()) {
     FAA.enterNewBB();
@@ -468,7 +476,7 @@ bool FrameAnalysis::computeArgsAccessed(BinaryFunction &BF) {
 }
 
 bool FrameAnalysis::restoreFrameIndex(BinaryFunction &BF) {
-  FrameAccessAnalysis FAA(BF, getSPT(BF));
+  FrameAccessAnalysis FAA(BF, getSPT(BF), getCFAOA(BF));
 
   LLVM_DEBUG(dbgs() << "Restoring frame indices for \"" << BF.getPrintName()
                     << "\"\n");
@@ -531,9 +539,16 @@ FrameAnalysis::FrameAnalysis(BinaryContext &BC, BinaryFunctionCallGraph &CG)
   ArgAccessesVector.emplace_back(ArgAccesses(/*AssumeEverything*/ true));
 
   if (!opts::NoThreads) {
-    NamedRegionTimer T1("precomputespt", "pre-compute spt", "FA",
-                        "FA breakdown", opts::TimeFA);
-    preComputeSPT();
+    {
+      NamedRegionTimer T1("precomputespt", "pre-compute spt", "FA",
+                          "FA breakdown", opts::TimeFA);
+      preComputeSPT();
+    }
+    {
+      NamedRegionTimer T1("precomputecfaoa", "pre-compute CFA origins",
+                          "FA", "FA breakdown", opts::TimeFA);
+      preComputeCFAOA();
+    }
   }
 
   {
@@ -562,6 +577,12 @@ FrameAnalysis::FrameAnalysis(BinaryContext &BC, BinaryFunctionCallGraph &CG)
       }
     }
     AnalyzedFunctions.insert(&I.second);
+  }
+
+  {
+    NamedRegionTimer T1("clearcfaoamap", "clear CFA origin map", "FA",
+                        "FA breakdown", opts::TimeFA);
+    clearCFAOAMap();
   }
 
   {
@@ -636,6 +657,59 @@ void FrameAnalysis::preComputeSPT() {
   ParallelUtilities::runOnEachFunctionWithUniqueAllocId(
       BC, ParallelUtilities::SchedulingPolicy::SP_BB_QUADRATIC, ProcessFunction,
       SkipPredicate, "preComputeSPT");
+}
+
+void FrameAnalysis::clearCFAOAMap() {
+  if (opts::NoThreads) {
+    CFAOAMap.clear();
+    return;
+  }
+
+  ParallelUtilities::WorkFuncTy ClearFunctionCFAOrigin =
+      [&](BinaryFunction &BF) {
+        std::unique_ptr<CFAOriginAnalysis> &CFAOrigin =
+            CFAOAMap.find(&BF)->second;
+        CFAOrigin.reset();
+      };
+
+  ParallelUtilities::PredicateTy SkipFunc = [&](const BinaryFunction &BF) {
+    return !BF.isSimple() || !BF.hasCFG();
+  };
+
+  ParallelUtilities::runOnEachFunction(
+      BC, ParallelUtilities::SchedulingPolicy::SP_INST_LINEAR,
+      ClearFunctionCFAOrigin, SkipFunc, "clearCFAOriginMap");
+
+  CFAOAMap.clear();
+}
+
+void FrameAnalysis::preComputeCFAOA() {
+  assert(CFAOAMap.empty() && "CFA origin map must be empty");
+
+  for (auto &BFI : BC.getBinaryFunctions()) {
+    BinaryFunction &BF = BFI.second;
+    if (!BF.isSimple() || !BF.hasCFG())
+      continue;
+    CFAOAMap.emplace(&BF, std::unique_ptr<CFAOriginAnalysis>());
+  }
+
+  BC.MIB->getOrCreateAnnotationIndex("CFAOriginAnalysis");
+
+  ParallelUtilities::WorkFuncWithAllocTy ProcessFunction =
+      [&](BinaryFunction &BF, MCPlusBuilder::AllocatorIdTy AllocId) {
+        std::unique_ptr<CFAOriginAnalysis> &CFAOrigin =
+            CFAOAMap.find(&BF)->second;
+        CFAOrigin = std::make_unique<CFAOriginAnalysis>(BF, AllocId);
+        CFAOrigin->run();
+      };
+
+  ParallelUtilities::PredicateTy SkipFunc = [&](const BinaryFunction &BF) {
+    return !BF.isSimple() || !BF.hasCFG();
+  };
+
+  ParallelUtilities::runOnEachFunctionWithUniqueAllocId(
+      BC, ParallelUtilities::SchedulingPolicy::SP_BB_LINEAR, ProcessFunction,
+      SkipFunc, "preComputeCFAOrigin");
 }
 
 } // namespace bolt
