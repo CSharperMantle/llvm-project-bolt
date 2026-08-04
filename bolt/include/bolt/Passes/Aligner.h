@@ -30,6 +30,18 @@ private:
   /// Stats: execution count of blocks that were aligned.
   std::atomic<uint64_t> AlignedBlocksCount{0};
 
+  /// Stats: number of unique natural-loop header candidates.
+  std::atomic<uint64_t> NumHotLoopHeaderCandidates{0};
+
+  /// Stats: number of hot-loop headers that pass every selection gate.
+  std::atomic<uint64_t> NumHotLoopHeadersSelected{0};
+
+  /// Assign alignment to hot natural-loop headers based on profile and final
+  /// block layout.
+  void alignHotLoopHeaders(BinaryFunction &Function,
+                           const MCCodeEmitter *Emitter,
+                           uint64_t HotThreshold);
+
   /// Assign alignment to basic blocks based on profile.
   void alignBlocks(BinaryFunction &Function, const MCCodeEmitter *Emitter);
 

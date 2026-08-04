@@ -713,6 +713,12 @@ public:
   /// Indicates if relocations are available for usage.
   bool HasRelocations{false};
 
+  /// Whether profile-guided hot natural-loop headers should be aligned.
+  bool AlignHotLoopHeaders{false};
+
+  /// Alignment boundary for selected hot natural-loop headers.
+  unsigned HotLoopAlignment{16};
+
   /// Indicates if the binary is stripped
   bool IsStripped{false};
 

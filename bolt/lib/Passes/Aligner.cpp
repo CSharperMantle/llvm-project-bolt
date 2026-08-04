@@ -12,6 +12,7 @@
 
 #include "bolt/Passes/Aligner.h"
 #include "bolt/Core/ParallelUtilities.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #define DEBUG_TYPE "bolt-aligner"
 
@@ -53,6 +54,21 @@ static cl::opt<bool>
     UseCompactAligner("use-compact-aligner",
                       cl::desc("Use compact approach for aligning functions"),
                       cl::init(true), cl::cat(BoltOptCategory));
+
+static cl::opt<bool> AlignHotLoopHeaders(
+    "align-hot-loop-headers",
+    cl::desc("align hot natural-loop headers based on profile and layout"),
+    cl::init(false), cl::cat(BoltOptCategory));
+
+static cl::opt<unsigned>
+    HotLoopAlignment("hot-loop-alignment",
+                     cl::desc("boundary to use to align hot loop headers"),
+                     cl::init(16), cl::ZeroOrMore, cl::cat(BoltOptCategory));
+
+static cl::opt<unsigned> HotLoopAlignmentMaxBytes(
+    "hot-loop-alignment-max-bytes",
+    cl::desc("maximum number of bytes to use to align hot loop headers"),
+    cl::init(16), cl::cat(BoltOptCategory));
 
 } // end namespace opts
 
@@ -100,6 +116,119 @@ static void alignCompact(BinaryFunction &Function,
   if (ColdSize > 0)
     Function.setMaxColdAlignmentBytes(
       std::min(size_t(opts::AlignFunctionsMaxBytes), ColdSize));
+}
+
+static bool applyBlockAlignment(BinaryBasicBlock &BB, uint32_t Alignment,
+                                uint32_t MaxBytes) {
+  if (Alignment <= BB.getAlignment())
+    return false;
+
+  BB.setAlignment(Alignment);
+  BB.setAlignmentMaxBytes(MaxBytes);
+  return true;
+}
+
+void AlignerPass::alignHotLoopHeaders(BinaryFunction &Function,
+                                      const MCCodeEmitter *Emitter,
+                                      uint64_t HotThreshold) {
+  if (!Function.hasValidProfile() || !Function.isSimple() || Function.empty())
+    return;
+
+  const BinaryContext &BC = Function.getBinaryContext();
+
+  Function.constructDomTree();
+  Function.calculateLoopInfo();
+
+  DenseMap<BinaryBasicBlock *, BinaryBasicBlock *> LayoutPreds;
+  BinaryBasicBlock *PrevBB = nullptr;
+  for (BinaryBasicBlock *const BB : Function.getLayout().blocks()) {
+    if (PrevBB)
+      LayoutPreds[BB] = PrevBB;
+    PrevBB = BB;
+  }
+
+  SmallVector<BinaryLoop *> WorkList;
+  for (BinaryLoop *const Loop : Function.getLoopInfo())
+    WorkList.emplace_back(Loop);
+
+  SmallPtrSet<BinaryBasicBlock *, 8> SeenHeaders;
+  while (!WorkList.empty()) {
+    BinaryLoop *const Loop = WorkList.pop_back_val();
+    for (BinaryLoop *const SubLoop : *Loop)
+      WorkList.emplace_back(SubLoop);
+
+    BinaryBasicBlock *const Header = Loop->getHeader();
+    if (!Header || !SeenHeaders.insert(Header).second)
+      continue;
+
+    LLVM_DEBUG({ ++NumHotLoopHeaderCandidates; });
+
+    if (Header->isEntryPoint() || Header->isSplit())
+      continue;
+    // Skip headers without profile.
+    if (!Header->hasProfile() || Header->getKnownExecutionCount() == 0)
+      continue;
+    // Skip headers with cold backedges.
+    if (Loop->TotalBackEdgeCount == BinaryBasicBlock::COUNT_NO_PROFILE ||
+        Loop->TotalBackEdgeCount < HotThreshold)
+      continue;
+
+    const uint64_t HeaderSize =
+        BC.computeCodeSize(Header->begin(), Header->end(), Emitter);
+    if (HeaderSize == 0) {
+      LLVM_DEBUG({
+        dbgs() << "BOLT-DEBUG: zero-sized loop header found at \""
+               << Function.getPrintName() << "\"+0x"
+               << Twine::utohexstr(Header->getOffset()) << ". How curious!";
+      });
+      continue;
+    }
+
+    const unsigned MaxBytes = std::min<unsigned>(
+        opts::HotLoopAlignment - 1, opts::HotLoopAlignmentMaxBytes);
+
+    if (BinaryBasicBlock *const LayoutPred = LayoutPreds.lookup(Header)) {
+      if (LayoutPred->getFallthrough() == Header) {
+        // Here we're having layouts like this:
+        //
+        // # --- BB LayoutPred ---
+        //    ...
+        //    instr
+        // # (fallthrough to Header)
+        // # --- loop header padding ---
+        //    nop
+        //    nop
+        // # --- BB Header ---
+        // .Lheader:
+        //    instr
+        //    ...
+        //
+        // We don't want to waste too much time executing the paddings on the
+        // fallthrough path. Thus, we skip padding this loop if the fallthrough
+        // takes up more then 1/5 of |Header|'s total execution count.  This
+        // percentage is taken from MachineBlockPlacement::alignBlocks().
+
+        const uint64_t FallthroughCount =
+            LayoutPred->getBranchInfo(*Header).Count;
+        if (FallthroughCount == BinaryBasicBlock::COUNT_NO_PROFILE)
+          continue;
+
+        // Don't pad when we might spend too much time on the padding itself.
+        if (FallthroughCount > Header->getKnownExecutionCount() / 5)
+          continue;
+      }
+    }
+
+    LLVM_DEBUG({ ++NumHotLoopHeadersSelected; });
+
+    if (applyBlockAlignment(*Header, opts::HotLoopAlignment, MaxBytes)) {
+      LLVM_DEBUG({
+        std::unique_lock<llvm::sys::RWMutex> Lock(AlignHistogramMtx);
+        AlignHistogram[MaxBytes]++;
+        AlignedBlocksCount += Header->getKnownExecutionCount();
+      });
+    }
+  }
 }
 
 void AlignerPass::alignBlocks(BinaryFunction &Function,
@@ -153,7 +282,17 @@ Error AlignerPass::runOnFunctions(BinaryContext &BC) {
   if (!BC.HasRelocations)
     return Error::success();
 
-  AlignHistogram.resize(opts::BlockAlignment);
+  BC.AlignHotLoopHeaders = opts::AlignHotLoopHeaders;
+  BC.HotLoopAlignment = opts::HotLoopAlignment;
+
+  const unsigned Alignment =
+      opts::AlignHotLoopHeaders
+          ? std::max(opts::BlockAlignment, opts::HotLoopAlignment)
+          : opts::BlockAlignment;
+  AlignHistogram.resize(Alignment);
+
+  // To avoid racing the static variable |Threshold| there.
+  const uint64_t HotThreshold = BC.getHotThreshold();
 
   ParallelUtilities::WorkFuncTy WorkFun = [&](BinaryFunction &BF) {
     // Create a separate MCCodeEmitter to allow lock free execution
@@ -167,20 +306,26 @@ Error AlignerPass::runOnFunctions(BinaryContext &BC) {
 
     if (opts::AlignBlocks && !opts::PreserveBlocksAlignment)
       alignBlocks(BF, Emitter.MCE.get());
+
+    if (opts::AlignHotLoopHeaders)
+      alignHotLoopHeaders(BF, Emitter.MCE.get(), HotThreshold);
   };
 
   ParallelUtilities::runOnEachFunction(
       BC, ParallelUtilities::SchedulingPolicy::SP_TRIVIAL, WorkFun,
       ParallelUtilities::PredicateTy(nullptr), "AlignerPass");
 
-  LLVM_DEBUG(
+  LLVM_DEBUG({
+    if (opts::AlignHotLoopHeaders)
+      dbgs() << "BOLT-DEBUG: selected " << NumHotLoopHeadersSelected << " of "
+             << NumHotLoopHeaderCandidates << " hot loop header candidates\n";
     dbgs() << "BOLT-DEBUG: max bytes per basic block alignment distribution:\n";
     for (unsigned I = 1; I < AlignHistogram.size(); ++I)
       dbgs() << "  " << I << " : " << AlignHistogram[I] << '\n';
 
     dbgs() << "BOLT-DEBUG: total execution count of aligned blocks: "
            << AlignedBlocksCount << '\n';
-  );
+  });
   return Error::success();
 }
 

@@ -494,7 +494,8 @@ void BinaryEmitter::emitFunctionBody(BinaryFunction &BF, FunctionFragment &FF,
   // Track the first emitted instruction with debug info.
   bool FirstInstr = true;
   for (BinaryBasicBlock *const BB : FF) {
-    if ((opts::AlignBlocks || opts::PreserveBlocksAlignment) &&
+    if ((opts::AlignBlocks || opts::PreserveBlocksAlignment ||
+         BC.AlignHotLoopHeaders) &&
         BB->getAlignment() > 1)
       Streamer.emitCodeAlignment(BB->getAlign(), &*BC.STI,
                                  BB->getAlignmentMaxBytes());
