@@ -912,14 +912,20 @@ void Instrumentation::createAuxiliaryFunctions(BinaryContext &BC) {
                              BC.MIB->createInstrumentedLoadHandlerBody(
                                  Summary->LoadCounterFuncPtr, &*BC.Ctx));
 
-  createSimpleFunction("__bolt_num_counters_getter",
-                       BC.MIB->createNumCountersGetter(BC.Ctx.get()));
-  createSimpleFunction("__bolt_instr_locations_getter",
-                       BC.MIB->createInstrLocationsGetter(BC.Ctx.get()));
-  createSimpleFunction("__bolt_instr_tables_getter",
-                       BC.MIB->createInstrTablesGetter(BC.Ctx.get()));
-  createSimpleFunction("__bolt_instr_num_funcs_getter",
-                       BC.MIB->createInstrNumFuncsGetter(BC.Ctx.get()));
+  // These helpers are not needed on ELFs.  Don't define them to prevent them
+  // from referencing non-existent symbols.
+  //
+  // Cf. "#if defined(__APPLE__)" in bolt/runtime/instr.cpp.
+  if (BC.isMachO()) {
+    createSimpleFunction("__bolt_num_counters_getter",
+                         BC.MIB->createNumCountersGetter(BC.Ctx.get()));
+    createSimpleFunction("__bolt_instr_locations_getter",
+                         BC.MIB->createInstrLocationsGetter(BC.Ctx.get()));
+    createSimpleFunction("__bolt_instr_tables_getter",
+                         BC.MIB->createInstrTablesGetter(BC.Ctx.get()));
+    createSimpleFunction("__bolt_instr_num_funcs_getter",
+                         BC.MIB->createInstrNumFuncsGetter(BC.Ctx.get()));
+  }
 
   if (BC.isELF()) {
     if (BC.StartFunctionAddress) {
