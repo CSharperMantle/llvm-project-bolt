@@ -756,10 +756,13 @@ IndirectCallPromotion::MethodInfoType IndirectCallPromotion::maybeGetVtableSyms(
 
   // Make sure the vtable reg is not clobbered by the argument passing code
   if (VtableReg != MethodReg) {
+    BitVector CalleeSavedRegs(BC.MRI->getNumRegs());
+    BC.MIB->getCalleeSavedRegs(CalleeSavedRegs);
     for (MCInst *CurInst = MethodFetchInsns.front(); CurInst < &Inst;
          ++CurInst) {
       const MCInstrDesc &InstrInfo = BC.MII->get(CurInst->getOpcode());
-      if (InstrInfo.hasDefOfPhysReg(*CurInst, VtableReg, *BC.MRI))
+      if (InstrInfo.hasDefOfPhysReg(*CurInst, VtableReg, *BC.MRI) ||
+          (BC.MIB->isCall(*CurInst) && !CalleeSavedRegs[VtableReg]))
         return MethodInfoType();
     }
   }
