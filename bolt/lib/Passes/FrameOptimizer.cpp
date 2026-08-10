@@ -174,11 +174,6 @@ void FrameOptimizerPass::removeUnusedStores(const FrameAnalysis &FA,
       LLVM_DEBUG({
         dbgs() << "\t\tNow at ";
         Inst.dump();
-        for (auto I = Prev ? SRU.expr_begin(*Prev) : SRU.expr_begin(BB);
-             I != SRU.expr_end(); ++I) {
-          dbgs() << "\t\t\tReached by: ";
-          (*I)->dump();
-        }
       });
       ErrorOr<const FrameIndexEntry &> FIEX = FA.getFIEFor(Inst);
       if (!FIEX) {
@@ -190,8 +185,11 @@ void FrameOptimizerPass::removeUnusedStores(const FrameAnalysis &FA,
         continue;
       }
 
-      if (SRU.isStoreUsed(*FIEX,
-                          Prev ? SRU.expr_begin(*Prev) : SRU.expr_begin(BB))) {
+      const BitVector &StackUses =
+          Prev ? *SRU.getStateAt(*Prev) : *SRU.getStateAt(BB);
+      LLVM_DEBUG(dbgs() << "\t\t\tReached by stack-use classes: " << StackUses
+                        << "\n");
+      if (SRU.isStoreUsed(*FIEX, StackUses)) {
         Prev = &Inst;
         continue;
       }

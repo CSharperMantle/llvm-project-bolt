@@ -12,21 +12,39 @@
 
 #include "bolt/Passes/StackReachingUses.h"
 #include "bolt/Passes/FrameAnalysis.h"
+#include <map>
+#include <utility>
 
 #define DEBUG_TYPE "sru"
 
 namespace llvm {
 namespace bolt {
 
-bool StackReachingUses::isLoadedInDifferentReg(const FrameIndexEntry &StoreFIE,
-                                               ExprIterator Candidates) const {
-  for (auto I = Candidates; I != expr_end(); ++I) {
-    const MCInst *ReachingInst = *I;
-    if (ErrorOr<const FrameIndexEntry &> FIEY = FA.getFIEFor(*ReachingInst)) {
-      assert(FIEY->IsLoad == 1);
-      if (StoreFIE.StackOffset + StoreFIE.Size > FIEY->StackOffset &&
-          StoreFIE.StackOffset < FIEY->StackOffset + FIEY->Size &&
-          StoreFIE.RegOrImm != FIEY->RegOrImm)
+namespace {
+
+/// Compare argument-use metadata by fields rather than pointer identity.
+struct ArgAccessesPtrLess {
+  bool operator()(const ArgAccesses *const &LHS,
+                  const ArgAccesses *const &RHS) const {
+    if (LHS->AssumeEverything != RHS->AssumeEverything)
+      return LHS->AssumeEverything < RHS->AssumeEverything;
+    if (LHS->AssumeEverything)
+      return false;
+    return LHS->Set < RHS->Set;
+  }
+};
+
+} // namespace
+
+bool StackReachingUses::isLoadedInDifferentReg(
+    const FrameIndexEntry &StoreFIE, const BitVector &Candidates) const {
+  assert(Candidates.size() == Classes.size());
+  for (int Idx = Candidates.find_first(); Idx != -1;
+       Idx = Candidates.find_next(Idx)) {
+    if (const std::optional<LoadClassInfo> &LCIY = Classes[Idx].Load) {
+      if (StoreFIE.StackOffset + StoreFIE.Size > LCIY->StackOffset &&
+          StoreFIE.StackOffset < LCIY->StackOffset + LCIY->Size &&
+          StoreFIE.RegOrImm != LCIY->RegOrImm)
         return true;
     }
   }
@@ -34,27 +52,25 @@ bool StackReachingUses::isLoadedInDifferentReg(const FrameIndexEntry &StoreFIE,
 }
 
 bool StackReachingUses::isStoreUsed(const FrameIndexEntry &StoreFIE,
-                                    ExprIterator Candidates,
+                                    const BitVector &Candidates,
                                     bool IncludeLocalAccesses) const {
-  for (auto I = Candidates; I != expr_end(); ++I) {
-    const MCInst *ReachingInst = *I;
-    if (IncludeLocalAccesses) {
-      if (ErrorOr<const FrameIndexEntry &> FIEY = FA.getFIEFor(*ReachingInst)) {
-        assert(FIEY->IsLoad == 1);
-        if (StoreFIE.StackOffset + StoreFIE.Size > FIEY->StackOffset &&
-            StoreFIE.StackOffset < FIEY->StackOffset + FIEY->Size)
-          return true;
-      }
-    }
-    ErrorOr<const ArgAccesses &> Args = FA.getArgAccessesFor(*ReachingInst);
-    if (!Args)
-      continue;
-    if (Args->AssumeEverything)
+  assert(Candidates.size() == Classes.size());
+  for (int Idx = Candidates.find_first(); Idx != -1;
+       Idx = Candidates.find_next(Idx)) {
+    const UseClassInfo &Class = Classes[Idx];
+    if (IncludeLocalAccesses && Class.Load &&
+        StoreFIE.StackOffset + StoreFIE.Size > Class.Load->StackOffset &&
+        StoreFIE.StackOffset < Class.Load->StackOffset + Class.Load->Size)
       return true;
 
-    for (ArgInStackAccess FIEY : Args->Set)
-      if (StoreFIE.StackOffset + StoreFIE.Size > FIEY.StackOffset &&
-          StoreFIE.StackOffset < FIEY.StackOffset + FIEY.Size)
+    if (!Class.Args)
+      continue;
+    if (Class.Args->AssumeEverything)
+      return true;
+
+    for (ArgInStackAccess Access : Class.Args->Set)
+      if (StoreFIE.StackOffset + StoreFIE.Size > Access.StackOffset &&
+          StoreFIE.StackOffset < Access.StackOffset + Access.Size)
         return true;
   }
   return false;
@@ -64,62 +80,77 @@ void StackReachingUses::preflight() {
   LLVM_DEBUG(dbgs() << "Starting StackReachingUses on \"" << Func.getPrintName()
                     << "\"\n");
 
-  // Populate our universe of tracked expressions. We are interested in
-  // tracking reaching loads from frame position at any given point of the
-  // program.
+  using UseClassKey =
+      std::pair<std::optional<LoadClassInfo>, std::optional<unsigned>>;
+  std::map<UseClassKey, unsigned> UseClasses;
+  std::map<const ArgAccesses *, unsigned, ArgAccessesPtrLess> ArgClasses;
+
+  // Populate the universe of observationally distinct stack uses. Every
+  // tracked instruction remains in InstToClass, while equivalent occurrences
+  // share one bit and one complete class descriptor.
   for (BinaryBasicBlock &BB : Func) {
     for (MCInst &Inst : BB) {
+      std::optional<LoadClassInfo> Load;
       if (ErrorOr<const FrameIndexEntry &> FIE = FA.getFIEFor(Inst)) {
-        if (FIE->IsLoad == true) {
-          Expressions.push_back(&Inst);
-          ExprToIdx[&Inst] = NumInstrs++;
-          continue;
-        }
+        if (FIE->IsLoad)
+          Load = LoadClassInfo{FIE->StackOffset, FIE->RegOrImm, FIE->Size,
+                               FIE->IsSimple};
       }
+
+      const ArgAccesses *Args = nullptr;
+      std::optional<unsigned> ArgClass;
       ErrorOr<const ArgAccesses &> AA = FA.getArgAccessesFor(Inst);
       if (AA && (!AA->Set.empty() || AA->AssumeEverything)) {
-        Expressions.push_back(&Inst);
-        ExprToIdx[&Inst] = NumInstrs++;
+        const unsigned NewArgClass = static_cast<unsigned>(ArgClasses.size());
+        const auto ArgIt = ArgClasses.try_emplace(&*AA, NewArgClass).first;
+        std::tie(Args, ArgClass) = *ArgIt;
       }
+
+      if (!Load && !Args)
+        continue;
+
+      const UseClassKey Key(Load, ArgClass);
+      const unsigned NewClass = static_cast<unsigned>(Classes.size());
+      const auto [ClassIt, Inserted] = UseClasses.try_emplace(Key, NewClass);
+      InstToClass[&Inst] = ClassIt->second;
+      if (Inserted)
+        Classes.push_back(UseClassInfo{Load, Args});
     }
   }
-}
 
-bool StackReachingUses::doesXKillsY(const MCInst *X, const MCInst *Y) {
-  // if X is a store to the same stack location and the bytes fetched is a
-  // superset of those bytes affected by the load in Y, return true
-  ErrorOr<const FrameIndexEntry &> FIEX = FA.getFIEFor(*X);
-  ErrorOr<const FrameIndexEntry &> FIEY = FA.getFIEFor(*Y);
-  if (FIEX && FIEY) {
-    if (FIEX->IsSimple == true && FIEY->IsSimple == true &&
-        FIEX->IsStore == true && FIEY->IsLoad == true &&
-        FIEX->StackOffset <= FIEY->StackOffset &&
-        FIEX->StackOffset + FIEX->Size >= FIEY->StackOffset + FIEY->Size)
-      return true;
-  }
-  return false;
+  assert(Classes.size() == UseClasses.size());
+
+  LLVM_DEBUG(dbgs() << "StackReachingUses classes for \"" << Func.getPrintName()
+                    << "\": " << InstToClass.size() << " tracked occurrences, "
+                    << Classes.size() << " classes\n");
 }
 
 BitVector StackReachingUses::computeNext(const MCInst &Point,
                                          const BitVector &Cur) {
+  assert(Cur.size() == Classes.size());
   BitVector Next = Cur;
-  // Kill
-  for (auto I = expr_begin(Next), E = expr_end(); I != E; ++I) {
-    assert(*I != nullptr && "Lost pointers");
-    if (doesXKillsY(&Point, *I)) {
-      LLVM_DEBUG(dbgs() << "\t\t\tKilling ");
-      LLVM_DEBUG((*I)->dump());
-      Next.reset(I.getBitVectorIndex());
+  // Kill. Decode the current instruction once and avoid scanning live classes
+  // unless it is a simple frame store.
+  ErrorOr<const FrameIndexEntry &> Store = FA.getFIEFor(Point);
+  if (Store && Store->IsSimple && Store->IsStore) {
+    for (int Idx = Next.find_first(); Idx != -1; Idx = Next.find_next(Idx)) {
+      const std::optional<LoadClassInfo> &Load = Classes[Idx].Load;
+      if (!Load || !Load->IsSimple)
+        continue;
+      if (Store->StackOffset <= Load->StackOffset &&
+          Store->StackOffset + Store->Size >= Load->StackOffset + Load->Size) {
+        LLVM_DEBUG(dbgs() << "\t\t\tKilling stack-use class " << Idx << "\n");
+        Next.reset(Idx);
+      }
     }
-  };
-  // Gen
-  if (ErrorOr<const FrameIndexEntry &> FIE = FA.getFIEFor(Point)) {
-    if (FIE->IsLoad == true)
-      Next.set(ExprToIdx[&Point]);
   }
-  ErrorOr<const ArgAccesses &> AA = FA.getArgAccessesFor(Point);
-  if (AA && (!AA->Set.empty() || AA->AssumeEverything))
-    Next.set(ExprToIdx[&Point]);
+
+  // Gen. An instruction with both load and argument-use semantics generates
+  // the single class containing both components. Kill intentionally precedes
+  // gen for read/modify/write instructions.
+  const auto ClassIt = InstToClass.find(&Point);
+  if (ClassIt != InstToClass.end())
+    Next.set(ClassIt->second);
   return Next;
 }
 

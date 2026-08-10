@@ -74,11 +74,13 @@ void CalleeSavedAnalysis::analyzeSaves() {
           continue;
         }
 
+        const BitVector &StackUses =
+            Prev ? *SRU.getStateAt(*Prev) : *SRU.getStateAt(BB);
+
         // If this stack position is accessed in another function, we are
         // probably dealing with a parameter passed in a stack -- do not mess
         // with it
-        if (SRU.isStoreUsed(*FIE,
-                            Prev ? SRU.expr_begin(*Prev) : SRU.expr_begin(BB),
+        if (SRU.isStoreUsed(*FIE, StackUses,
                             /*IncludeLocalAccesses=*/false)) {
           BlacklistedRegs.set(FIE->RegOrImm);
           CalleeSaved.reset(FIE->RegOrImm);
@@ -88,8 +90,7 @@ void CalleeSavedAnalysis::analyzeSaves() {
 
         // If this stack position is loaded elsewhere in another reg, we can't
         // update it, so blacklist it.
-        if (SRU.isLoadedInDifferentReg(*FIE, Prev ? SRU.expr_begin(*Prev)
-                                                  : SRU.expr_begin(BB))) {
+        if (SRU.isLoadedInDifferentReg(*FIE, StackUses)) {
           BlacklistedRegs.set(FIE->RegOrImm);
           CalleeSaved.reset(FIE->RegOrImm);
           Prev = &Inst;
@@ -322,11 +323,13 @@ void StackLayoutModifier::classifyStackAccesses() {
         Prev = &Inst;
         continue;
       }
+      const BitVector &StackUses =
+          Prev ? *SRU.getStateAt(*Prev) : *SRU.getStateAt(BB);
+
       // If this stack position is accessed in another function, we are
       // probably dealing with a parameter passed in a stack -- do not mess
       // with it
-      if (SRU.isStoreUsed(*FIEX,
-                          Prev ? SRU.expr_begin(*Prev) : SRU.expr_begin(BB),
+      if (SRU.isStoreUsed(*FIEX, StackUses,
                           /*IncludeLocalAccesses=*/false)) {
         blacklistRegion(FIEX->StackOffset, FIEX->Size);
         Prev = &Inst;
