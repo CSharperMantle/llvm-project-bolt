@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <optional>
 #include <tuple>
+#include <utility>
 
 namespace opts {
 extern llvm::cl::opt<bool> TimeOpts;
@@ -77,6 +78,8 @@ protected:
     const ArgAccesses *Args{nullptr};
   };
 
+  using StackRange = std::pair<int64_t, uint8_t>;
+
   // Reference to the result of stack frame analysis
   const FrameAnalysis &FA;
 
@@ -85,6 +88,12 @@ protected:
 
   /// Map every tracked instruction occurrence to its use-class bit.
   DenseMap<const MCInst *, unsigned> InstToClass;
+
+  /// Exact class bits killed by each distinct simple stack-store range.
+  DenseMap<StackRange, BitVector> KillSets;
+
+  static bool storeKillsLoad(const FrameIndexEntry &Store,
+                             const LoadClassInfo &Load);
 
   void preflight();
 

@@ -12,6 +12,7 @@
 
 #include "bolt/Passes/StackReachingUses.h"
 #include "bolt/Passes/FrameAnalysis.h"
+#include <limits>
 #include <map>
 #include <utility>
 
@@ -35,6 +36,13 @@ struct ArgAccessesPtrLess {
 };
 
 } // namespace
+
+bool StackReachingUses::storeKillsLoad(const FrameIndexEntry &Store,
+                                       const LoadClassInfo &Load) {
+  return Store.IsSimple && Store.IsStore && Load.IsSimple &&
+         Store.StackOffset <= Load.StackOffset &&
+         Store.StackOffset + Store.Size >= Load.StackOffset + Load.Size;
+}
 
 bool StackReachingUses::isLoadedInDifferentReg(
     const FrameIndexEntry &StoreFIE, const BitVector &Candidates) const {
@@ -119,6 +127,33 @@ void StackReachingUses::preflight() {
   }
 
   assert(Classes.size() == UseClasses.size());
+  assert(Classes.size() <= std::numeric_limits<unsigned>::max());
+  const unsigned NumClasses = static_cast<unsigned>(Classes.size());
+
+  // Precompute the exact kill mask for each distinct simple stack-store range.
+  // Store semantics are uniform for a range, and class semantics are complete,
+  // so the mask can be shared by every occurrence of that store range.
+  for (BinaryBasicBlock &BB : Func) {
+    for (MCInst &Inst : BB) {
+      ErrorOr<const FrameIndexEntry &> Store = FA.getFIEFor(Inst);
+      if (!Store || !Store->IsSimple || !Store->IsStore)
+        continue;
+
+      const StackRange Range(Store->StackOffset, Store->Size);
+      auto [KillIt, Inserted] =
+          KillSets.try_emplace(Range, NumClasses, false);
+      if (!Inserted)
+        continue;
+
+      BitVector &KillSet = KillIt->second;
+      for (unsigned Idx = 0; Idx != NumClasses; ++Idx) {
+        if (const std::optional<LoadClassInfo> &Load = Classes[Idx].Load) {
+          if (storeKillsLoad(*Store, *Load))
+            KillSet.set(Idx);
+        }
+      }
+    }
+  }
 
   LLVM_DEBUG(dbgs() << "StackReachingUses classes for \"" << Func.getPrintName()
                     << "\": " << InstToClass.size() << " tracked occurrences, "
@@ -129,20 +164,16 @@ BitVector StackReachingUses::computeNext(const MCInst &Point,
                                          const BitVector &Cur) {
   assert(Cur.size() == Classes.size());
   BitVector Next = Cur;
-  // Kill. Decode the current instruction once and avoid scanning live classes
-  // unless it is a simple frame store.
+  // Kill. X86 pushes are represented by FrameAnalysis as simple stores and
+  // therefore take this path. Pops are loads and do not. Each distinct range
+  // has an exact precomputed class mask.
   ErrorOr<const FrameIndexEntry &> Store = FA.getFIEFor(Point);
   if (Store && Store->IsSimple && Store->IsStore) {
-    for (int Idx = Next.find_first(); Idx != -1; Idx = Next.find_next(Idx)) {
-      const std::optional<LoadClassInfo> &Load = Classes[Idx].Load;
-      if (!Load || !Load->IsSimple)
-        continue;
-      if (Store->StackOffset <= Load->StackOffset &&
-          Store->StackOffset + Store->Size >= Load->StackOffset + Load->Size) {
-        LLVM_DEBUG(dbgs() << "\t\t\tKilling stack-use class " << Idx << "\n");
-        Next.reset(Idx);
-      }
-    }
+    const StackRange Range(Store->StackOffset, Store->Size);
+    const auto KillIt = KillSets.find(Range);
+    assert(KillIt != KillSets.end() && "missing stack-store kill set");
+    assert(KillIt->second.size() == Cur.size());
+    Next.reset(KillIt->second);
   }
 
   // Gen. An instruction with both load and argument-use semantics generates

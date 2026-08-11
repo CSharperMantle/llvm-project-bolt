@@ -1,5 +1,6 @@
-## Check that equivalent loads on different CFG paths keep the last store live
-## while a fully overwritten earlier store is removed.
+## Check that equivalent loads on different CFG paths keep the last full-width
+## store live, that a partial overwrite does not kill them, and that a fully
+## overwritten earlier store is removed.
 
 # REQUIRES: system-linux
 
@@ -16,6 +17,7 @@
 # OBJDUMP-LABEL: <_start>:
 # OBJDUMP-NOT: movq{{.*}}%rax, (%rsp)
 # OBJDUMP: movq{{.*}}%rcx, (%rsp)
+# OBJDUMP: movl{{.*}}%esi, (%rsp)
 
   .text
   .globl _start
@@ -34,6 +36,11 @@ _start:
   ## register prevents the load optimizer from forwarding the register value.
   movq %rcx, (%rsp)
   xorq %rcx, %rcx
+
+  ## A partial overwrite must not kill the reaching 8-byte load class. The
+  ## partial store itself remains live because the later load overlaps it.
+  movl %esi, (%rsp)
+  xorl %esi, %esi
   testq %rdi, %rdi
   je .Lleft
 
