@@ -491,3 +491,57 @@ _ZTI4ExcF:
 	.size	_ZTS4ExcF, 6
 _ZTS4ExcF:
 	.string	"4ExcF"
+
+// Definitions for runtime calls referenced above.
+// The test links without the C++ runtime, so these functions will remain
+// unresolved if not manually supplied.  This prevents them from being
+// correctly analyzed and their callers would use the conservative path.
+// The aligned-register operation preserves the original requirement that
+// main use load/store shrink wrapping instead of push/pop mode.
+	.text
+	.p2align 4,,15
+	.globl	__cxa_allocate_exception
+	.type	__cxa_allocate_exception, @function
+__cxa_allocate_exception:
+	.cfi_startproc
+	movaps	%xmm0, %xmm1
+	retq
+	.cfi_endproc
+	.size	__cxa_allocate_exception, .-__cxa_allocate_exception
+
+.macro STACKLESS_STUB name
+	.globl	\name
+	.type	\name, @function
+\name:
+	.cfi_startproc
+	retq
+	.cfi_endproc
+	.size	\name, .-\name
+.endm
+
+STACKLESS_STUB __cxa_throw
+STACKLESS_STUB __cxa_call_unexpected
+STACKLESS_STUB _Unwind_Resume
+STACKLESS_STUB puts
+STACKLESS_STUB __cxa_begin_catch
+STACKLESS_STUB _Znwm
+STACKLESS_STUB __cxa_free_exception
+STACKLESS_STUB __cxa_end_catch
+
+	.globl	__gxx_personality_v0
+	.type	__gxx_personality_v0, @function
+__gxx_personality_v0:
+	retq
+	.size	__gxx_personality_v0, .-__gxx_personality_v0
+
+	.globl	_ZTIPi
+	.type	_ZTIPi, @object
+_ZTIPi:
+	.quad	0
+	.size	_ZTIPi, .-_ZTIPi
+
+	.globl	_ZTVN10__cxxabiv117__class_type_infoE
+	.type	_ZTVN10__cxxabiv117__class_type_infoE, @object
+_ZTVN10__cxxabiv117__class_type_infoE:
+	.zero	24
+	.size	_ZTVN10__cxxabiv117__class_type_infoE, .-_ZTVN10__cxxabiv117__class_type_infoE
