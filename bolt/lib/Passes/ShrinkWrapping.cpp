@@ -38,6 +38,17 @@ static cl::opt<unsigned> ShrinkWrappingThreshold(
 namespace llvm {
 namespace bolt {
 
+void CalleeSavedAnalysis::compute() {
+  analyzeSaves();
+  Info.invalidateReachingDefs();
+
+  if (CalleeSaved.none())
+    return;
+
+  analyzeRestores();
+  Info.invalidateReachingUses();
+}
+
 void CalleeSavedAnalysis::analyzeSaves() {
   ReachingDefOrUse</*Def=*/true> &RD = Info.getReachingDefs();
   StackReachingUses &SRU = Info.getStackReachingUses();

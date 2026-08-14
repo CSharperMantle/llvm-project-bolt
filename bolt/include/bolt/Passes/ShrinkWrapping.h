@@ -74,10 +74,7 @@ public:
 
   ~CalleeSavedAnalysis();
 
-  void compute() {
-    analyzeSaves();
-    analyzeRestores();
-  }
+  void compute();
 
   /// Retrieves the value of the callee-saved register that is saved by this
   /// instruction or 0 if this is not a CSR save instruction.
