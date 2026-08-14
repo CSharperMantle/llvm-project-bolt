@@ -321,8 +321,8 @@ Error FrameOptimizerPass::performShrinkWrapping(const RegAnalysis &RA,
   BC.MIB->getOrCreateAnnotationIndex(StackLayoutModifier::getSlotTagName());
   BC.MIB->getOrCreateAnnotationIndex(
       StackLayoutModifier::getOffsetCFIRegTagName());
-  BC.MIB->getOrCreateAnnotationIndex("ReachingDefs");
-  BC.MIB->getOrCreateAnnotationIndex("ReachingUses");
+  BC.MIB->getOrCreateAnnotationIndex("RegReachingDefs");
+  BC.MIB->getOrCreateAnnotationIndex("RegReachingUses");
   BC.MIB->getOrCreateAnnotationIndex("LivenessAnalysis");
   BC.MIB->getOrCreateAnnotationIndex("StackReachingUses");
   BC.MIB->getOrCreateAnnotationIndex("PostDominatorAnalysis");

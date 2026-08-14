@@ -15,22 +15,22 @@
 namespace llvm {
 namespace bolt {
 
-ReachingDefOrUse</*Def=*/true> &DataflowInfoManager::getReachingDefs() {
+RegReachingDefOrUse</*Def=*/true> &DataflowInfoManager::getReachingDefs() {
   if (RD)
     return *RD;
   assert(RA && "RegAnalysis required");
-  RD.reset(new ReachingDefOrUse<true>(*RA, BF, std::nullopt, AllocatorId));
+  RD.reset(new RegReachingDefOrUse<true>(*RA, BF, AllocatorId));
   RD->run();
   return *RD;
 }
 
 void DataflowInfoManager::invalidateReachingDefs() { RD.reset(nullptr); }
 
-ReachingDefOrUse</*Def=*/false> &DataflowInfoManager::getReachingUses() {
+RegReachingDefOrUse</*Def=*/false> &DataflowInfoManager::getReachingUses() {
   if (RU)
     return *RU;
   assert(RA && "RegAnalysis required");
-  RU.reset(new ReachingDefOrUse<false>(*RA, BF, std::nullopt, AllocatorId));
+  RU.reset(new RegReachingDefOrUse<false>(*RA, BF, AllocatorId));
   RU->run();
   return *RU;
 }

@@ -13,7 +13,8 @@
 # RUN: llvm-bolt %t.exe -relocs -o %t.out -data %t.fdata \
 # RUN:     -frame-opt=all -simplify-conditional-tail-calls=false \
 # RUN:     -experimental-shrink-wrapping \
-# RUN:     -eliminate-unreachable=false | FileCheck %s
+# RUN:     -eliminate-unreachable=false \
+# RUN:     -debug-only=reaching-def-or-use 2>&1 | FileCheck %s
 
   .globl _start
   .type _start, %function
@@ -55,4 +56,6 @@ JT:
   .quad f
 
 
-# CHECK:   BOLT-INFO: Shrink wrapping moved 2 spills inserting load/stores and 0 spills inserting push/pops
+# CHECK: RegReachingDefs classes for "_start": 17 tracked occurrences, 8 classes
+# CHECK: RegReachingUses classes for "_start": 20 tracked occurrences, 10 classes
+# CHECK: BOLT-INFO: Shrink wrapping moved 2 spills inserting load/stores and 0 spills inserting push/pops

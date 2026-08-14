@@ -31,8 +31,8 @@ class DataflowInfoManager {
   const FrameAnalysis *FA;
   const BinaryContext &BC;
   BinaryFunction &BF;
-  std::unique_ptr<ReachingDefOrUse</*Def=*/true>> RD;
-  std::unique_ptr<ReachingDefOrUse</*Def=*/false>> RU;
+  std::unique_ptr<RegReachingDefOrUse</*Def=*/true>> RD;
+  std::unique_ptr<RegReachingDefOrUse</*Def=*/false>> RU;
   std::unique_ptr<LivenessAnalysis> LA;
   std::unique_ptr<StackReachingUses> SRU;
   std::unique_ptr<DominatorAnalysis</*Bwd=*/false>> DA;
@@ -61,9 +61,9 @@ public:
     return PP.isBB() ? PP.getBB() : getInsnToBBMap()[PP.getInst()];
   }
 
-  ReachingDefOrUse</*Def=*/true> &getReachingDefs();
+  RegReachingDefOrUse</*Def=*/true> &getReachingDefs();
   void invalidateReachingDefs();
-  ReachingDefOrUse</*Def=*/false> &getReachingUses();
+  RegReachingDefOrUse</*Def=*/false> &getReachingUses();
   void invalidateReachingUses();
   LivenessAnalysis &getLivenessAnalysis();
   void invalidateLivenessAnalysis();

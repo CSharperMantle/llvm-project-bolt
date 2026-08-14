@@ -50,7 +50,7 @@ void CalleeSavedAnalysis::compute() {
 }
 
 void CalleeSavedAnalysis::analyzeSaves() {
-  ReachingDefOrUse</*Def=*/true> &RD = Info.getReachingDefs();
+  RegReachingDefOrUse</*Def=*/true> &RD = Info.getReachingDefs();
   StackReachingUses &SRU = Info.getStackReachingUses();
   auto &InsnToBB = Info.getInsnToBBMap();
   BitVector BlacklistedRegs(BC.MRI->getNumRegs(), false);
@@ -77,8 +77,9 @@ void CalleeSavedAnalysis::analyzeSaves() {
         }
 
         // If this reg is defined locally, it is not a callee-saved reg
-        if (RD.isReachedBy(FIE->RegOrImm,
-                           Prev ? RD.expr_begin(*Prev) : RD.expr_begin(BB))) {
+        const BitVector &Defs =
+            Prev ? *RD.getStateAt(*Prev) : *RD.getStateAt(BB);
+        if (RD.isReachedBy(FIE->RegOrImm, Defs)) {
           BlacklistedRegs.set(FIE->RegOrImm);
           CalleeSaved.reset(FIE->RegOrImm);
           Prev = &Inst;
@@ -130,7 +131,7 @@ void CalleeSavedAnalysis::analyzeSaves() {
 }
 
 void CalleeSavedAnalysis::analyzeRestores() {
-  ReachingDefOrUse</*Def=*/false> &RU = Info.getReachingUses();
+  RegReachingDefOrUse</*Def=*/false> &RU = Info.getReachingUses();
 
   // Now compute all restores of these callee-saved regs
   for (BinaryBasicBlock &BB : BF) {
@@ -147,9 +148,10 @@ void CalleeSavedAnalysis::analyzeRestores() {
         // another store, but we don't cover this case yet.
         // Also not callee-saved if this load accesses caller stack or isn't
         // simple.
+        const BitVector &Uses =
+            Prev ? *RU.getStateAt(*Prev) : *RU.getStateAt(BB);
         if (!FIE->IsSimple || FIE->StackOffset >= 0 ||
-            RU.isReachedBy(FIE->RegOrImm,
-                           Prev ? RU.expr_begin(*Prev) : RU.expr_begin(BB))) {
+            RU.isReachedBy(FIE->RegOrImm, Uses)) {
           CalleeSaved.reset(FIE->RegOrImm);
           Prev = &Inst;
           continue;

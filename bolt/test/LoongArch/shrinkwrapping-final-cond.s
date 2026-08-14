@@ -4,9 +4,11 @@
 // RUN: ld.lld --emit-relocs -e dummy -o %t %t.o
 // RUN: llvm-bolt %t -o %t.bolt --relocs --data=%t.fdata --frame-opt=all \
 // RUN:   --experimental-shrink-wrapping --reorder-blocks=none --print-fop \
-// RUN:   --print-only=_start 2>&1 | FileCheck %s
+// RUN:   --print-only=_start --debug-only=reaching-def-or-use 2>&1 | FileCheck %s
 // RUN: llvm-objdump -d --no-show-raw-insn %t.bolt | FileCheck %s --check-prefix=OBJDUMP
 
+// CHECK: RegReachingDefs classes for "_start": 7 tracked occurrences, 4 classes
+// CHECK: RegReachingUses classes for "_start": 11 tracked occurrences, 7 classes
 // CHECK: BOLT-INFO: Shrink wrapping moved 1 spills inserting load/stores and 0 spills inserting push/pops
 
 // CHECK-LABEL: Binary Function "_start" after frame-optimizer
