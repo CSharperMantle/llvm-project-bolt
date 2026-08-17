@@ -1870,6 +1870,21 @@ bool BinaryFunction::scanExternalRefs() {
       }
     }
 
+    if (BC.isLoongArch() &&
+        BC.MIB->tryGetLoongArchPCADDIPCRel20SubExpr(Instruction)) {
+      const MCSymbol *Symbol = BC.MIB->getTargetSymbol(Instruction);
+      // If PCADDI was emitted by the compiler/assembler to reference a nearby
+      // local function, we cannot move away that function due to PCADDI address
+      // span limitation. Hence, we skip the optimization.
+      if (BinaryFunction *TargetBF = BC.getFunctionForSymbol(Symbol)) {
+        BC.errs() << "BOLT-WARNING: unable to expand PCADDI in function "
+                  << *this << " that references " << Symbol->getName()
+                  << ". Will not optimize the target\n";
+        TargetBF->setIgnored();
+        continue;
+      }
+    }
+
     // On AArch64, we use instruction patches for fixing references. We make an
     // exception for branch instructions since they require optional
     // relocations.
