@@ -793,8 +793,8 @@ static uint64_t fixDoubleJumps(BinaryFunction &Function, bool MarkInvalid) {
         // Succ will be null in the tail call case.  In this case we
         // need to explicitly add a tail call instruction.
         MCInst *Branch = Pred->getLastNonPseudoInstr();
-        if (Branch && MIB->isUnconditionalBranch(*Branch)) {
-          assert(MIB->getTargetSymbol(*Branch) == BB.getLabel());
+        if (Branch && MIB->isUnconditionalBranch(*Branch) &&
+            MIB->getTargetSymbol(*Branch) == BB.getLabel()) {
           Pred->removeSuccessor(&BB);
           Pred->eraseInstruction(Pred->findInstruction(Branch));
           Pred->addTailCallInstruction(SuccSym);
