@@ -19,6 +19,7 @@ namespace bolt {
 class LoongArchMCSymbolizer : public MCSymbolizer {
 protected:
   BinaryFunction &Function;
+  bool CreateNewSymbols;
 
   /// Return true if \p Rel is one half of a GOT relocation pair whose
   /// encoded values materialize the referenced symbol directly rather than
@@ -33,9 +34,9 @@ protected:
                                              const MCInst &Inst) const;
 
 public:
-  explicit LoongArchMCSymbolizer(BinaryFunction &Function)
+  LoongArchMCSymbolizer(BinaryFunction &Function, bool CreateNewSymbols)
       : MCSymbolizer(*Function.getBinaryContext().Ctx, nullptr),
-        Function(Function) {}
+        Function(Function), CreateNewSymbols(CreateNewSymbols) {}
 
   LoongArchMCSymbolizer(const LoongArchMCSymbolizer &) = delete;
   LoongArchMCSymbolizer &operator=(const LoongArchMCSymbolizer &) = delete;

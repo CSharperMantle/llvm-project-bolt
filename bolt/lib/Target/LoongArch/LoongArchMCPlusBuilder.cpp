@@ -38,9 +38,10 @@ class LoongArchMCPlusBuilder : public MCPlusBuilder {
 public:
   using MCPlusBuilder::MCPlusBuilder;
 
-  std::unique_ptr<MCSymbolizer> createTargetSymbolizer(BinaryFunction &Function,
-                                                       bool) const override {
-    return std::make_unique<LoongArchMCSymbolizer>(Function);
+  std::unique_ptr<MCSymbolizer>
+  createTargetSymbolizer(BinaryFunction &Function,
+                         bool CreateNewSymbols) const override {
+    return std::make_unique<LoongArchMCSymbolizer>(Function, CreateNewSymbols);
   }
 
   bool shouldRecordCodeRelocation(uint32_t RelType) const override {

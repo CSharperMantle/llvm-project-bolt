@@ -66,7 +66,20 @@ bool LoongArchMCSymbolizer::tryAddingSymbolicOperand(
   }
 
   const MCSymbol *Symbol = AdjustedRel->Symbol;
-  uint64_t Addend = AdjustedRel->Addend;
+  const uint64_t Addend = AdjustedRel->Addend;
+  if (CreateNewSymbols && Relocation::isPCRelative(AdjustedRel->Type) &&
+      !Relocation::isGOT(AdjustedRel->Type) &&
+      !Relocation::isTLS(AdjustedRel->Type) &&
+      !Relocation::isInstructionReference(AdjustedRel->Type)) {
+    if (ErrorOr<uint64_t> SymbolValue = BC.getSymbolValue(*Symbol)) {
+      // Process the reference for its side effects, such as independently
+      // registering a jump table. Preserve the relocation symbol selected by
+      // RewriteInstance instead of replacing it with a symbol inferred from
+      // the referenced address.
+      BC.handleAddressRef(*SymbolValue + Addend, Function,
+                          /*IsPCRel=*/true);
+    }
+  }
 
   const MCExpr *Expr = MCSymbolRefExpr::create(Symbol, *BC.Ctx);
   if (Addend)
