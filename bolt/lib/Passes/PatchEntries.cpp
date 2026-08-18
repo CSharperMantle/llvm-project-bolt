@@ -22,6 +22,7 @@
 #include "bolt/Utils/CommandLineOpts.h"
 #include "bolt/Utils/NameResolver.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/CommandLine.h"
 
 namespace opts {
@@ -58,6 +59,9 @@ Error PatchEntries::runOnFunctions(BinaryContext &BC) {
     PatchSize = BC.computeCodeSize(Seq.begin(), Seq.end());
   }
 
+  // Build all entry-patch plans before emitting any of them.
+  SmallVector<std::pair<BinaryFunction *, SmallVector<Patch, 0>>> PatchPlans;
+
   for (auto &BFI : BC.getBinaryFunctions()) {
     BinaryFunction &Function = BFI.second;
 
@@ -73,7 +77,7 @@ Error PatchEntries::runOnFunctions(BinaryContext &BC) {
     // List of patches for function entries. We either successfully patch
     // all entries or, if we cannot patch one or more, do no patch any and
     // mark the function as ignorable.
-    std::vector<Patch> PendingPatches;
+    SmallVector<Patch, 0> PendingPatches;
 
     uint64_t NextValidByte = 0; // offset of the byte past the last patch
     bool Success = Function.forEachEntryPoint([&](uint64_t Offset,
@@ -106,6 +110,15 @@ Error PatchEntries::runOnFunctions(BinaryContext &BC) {
       Function.setIgnored();
       continue;
     }
+
+    PatchPlans.emplace_back(&Function, std::move(PendingPatches));
+  }
+
+  for (auto &[Function, PendingPatches] : PatchPlans) {
+    // A function can become ignored while a later function's preserved body
+    // is scanned above.
+    if (!BC.shouldEmit(*Function))
+      continue;
 
     for (Patch &Patch : PendingPatches) {
       // Add instruction patch to the binary.
